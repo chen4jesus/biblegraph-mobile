@@ -10,6 +10,7 @@ import './src/i18n'; // Import i18n configuration
 export default function App() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [loadingMessage, setLoadingMessage] = useState<string>('Loading Bible Graph...');
 
   useEffect(() => {
     const initializeDatabase = async () => {
@@ -18,11 +19,15 @@ export default function App() {
         await neo4jDriverService.connect();
         
         console.log('Checking if Bible data is already loaded...');
+        setLoadingMessage('Checking database...');
+        
         // Check if Bible data is already loaded
         const isLoaded = await bibleDataLoader.isBibleLoaded();
         
         if (!isLoaded) {
           console.log('Bible data not loaded. Loading XML data...');
+          setLoadingMessage('Loading Bible data from XML (limited to 5000 verses)...');
+          
           try {
             // Load data from XML file
             await bibleDataLoader.loadXmlData();
@@ -48,7 +53,10 @@ export default function App() {
   if (loading) {
     return (
       <View style={styles.container}>
-        <Text style={styles.text}>Loading Bible Graph...</Text>
+        <Text style={styles.text}>{loadingMessage}</Text>
+        <Text style={styles.subText}>
+          For performance reasons, database operations are limited to 100 records per query.
+        </Text>
       </View>
     );
   }
@@ -86,6 +94,13 @@ const styles = StyleSheet.create({
     fontSize: 16,
     marginVertical: 10,
     textAlign: 'center',
+  },
+  subText: {
+    fontSize: 14,
+    color: '#666',
+    marginTop: 5,
+    textAlign: 'center',
+    maxWidth: '80%',
   },
   errorText: {
     fontSize: 24,
