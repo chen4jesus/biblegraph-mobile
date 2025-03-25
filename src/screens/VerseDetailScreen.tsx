@@ -37,13 +37,18 @@ const CONNECTION_COLORS = {
   INCOMING: '#FF9500'  // Orange for incoming connections
 };
 
+// Add this type near the top of the file after the existing types
+interface ConnectionWithVerse extends Connection {
+  connectedVerse?: Verse | null;
+}
+
 const VerseDetailScreen: React.FC = () => {
   const { t } = useTranslation(['verseDetail', 'common']);
   const route = useRoute<VerseDetailScreenRouteProp>();
   const navigation = useNavigation<VerseDetailNavigationProp>();
   const [verse, setVerse] = useState<Verse | null>(null);
   const [notes, setNotes] = useState<Note[]>([]);
-  const [connections, setConnections] = useState<Connection[]>([]);
+  const [connections, setConnections] = useState<ConnectionWithVerse[]>([]);
   const [newNote, setNewNote] = useState('');
   const [newNoteTags, setNewNoteTags] = useState<string[]>([]);
   const [newTagInput, setNewTagInput] = useState('');
@@ -54,6 +59,7 @@ const VerseDetailScreen: React.FC = () => {
   const [editedNoteContent, setEditedNoteContent] = useState('');
   const [editedNoteTags, setEditedNoteTags] = useState<string[]>([]);
   const [allTags, setAllTags] = useState<string[]>([]);
+  const [activeTab, setActiveTab] = useState<'notes' | 'connections'>('notes');
 
   useEffect(() => {
     loadVerseDetails();
@@ -154,7 +160,31 @@ const VerseDetailScreen: React.FC = () => {
           }
         });
         
-        setConnections(Array.from(uniqueConnectionsMap.values()));
+        const dedupedConnections = Array.from(uniqueConnectionsMap.values()) as ConnectionWithVerse[];
+        
+        // Fetch verse content for each connection
+        const connectionsWithVerses = await Promise.all(
+          dedupedConnections.map(async (connection) => {
+            const isOutgoing = connection.sourceVerseId === verseToDisplay!.id;
+            const connectedVerseId = isOutgoing ? connection.targetVerseId : connection.sourceVerseId;
+            
+            try {
+              const connectedVerse = await neo4jService.getVerse(connectedVerseId);
+              return {
+                ...connection,
+                connectedVerse
+              } as ConnectionWithVerse;
+            } catch (error) {
+              console.error(`Error fetching verse ${connectedVerseId}:`, error);
+              return {
+                ...connection,
+                connectedVerse: null
+              } as ConnectionWithVerse;
+            }
+          })
+        );
+        
+        setConnections(connectionsWithVerses);
       }
       
       setIsLoading(false);
@@ -551,136 +581,196 @@ const VerseDetailScreen: React.FC = () => {
           <Text style={styles.translation}>{verse.translation}</Text>
         </View>
 
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>{t('verseDetail:notes')}</Text>
-          {notes.map(renderNoteItem)}
-          <View style={styles.addNoteContainer}>
-            <TextInput
-              style={styles.noteInput}
-              placeholder={t('verseDetail:addNoteHint')}
-              value={newNote}
-              onChangeText={setNewNote}
-              multiline
+        <View style={styles.tabContainer}>
+          <TouchableOpacity
+            style={[
+              styles.tabButton,
+              activeTab === 'notes' && styles.activeTabButton
+            ]}
+            onPress={() => setActiveTab('notes')}
+          >
+            <Ionicons 
+              name="book" 
+              size={20} 
+              color={activeTab === 'notes' ? '#007AFF' : '#666'} 
             />
-            <TouchableOpacity
-              style={styles.addNoteButton}
-              onPress={handleAddNote}
-            >
-              <Ionicons name="add-circle" size={24} color="#007AFF" />
-            </TouchableOpacity>
-          </View>
-          {renderTagsSection(newNoteTags)}
-        </View>
-
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>{t('verseDetail:connections')}</Text>
-            <View style={styles.labelToggle}>
-              <Text style={styles.labelToggleText}>{t('verseDetail:showLabels')}</Text>
-              <Switch
-                value={showLabels}
-                onValueChange={toggleLabels}
-                trackColor={{ false: '#767577', true: '#81b0ff' }}
-                thumbColor={showLabels ? '#007AFF' : '#f4f3f4'}
-              />
-            </View>
-          </View>
+            <Text style={[
+              styles.tabText,
+              activeTab === 'notes' && styles.activeTabText
+            ]}>
+              {t('verseDetail:notes')}
+            </Text>
+          </TouchableOpacity>
           
-          {connections.length === 0 ? (
-            <Text style={styles.emptyMessage}>{t('verseDetail:noConnections')}</Text>
-          ) : (
-            connections.map((connection) => {
-              // Skip if the connection is a self-connection
-              if (connection.sourceVerseId === connection.targetVerseId) {
-                return null;
-              }
-              
-              // Determine if this is an outgoing or incoming connection
-              const isOutgoing = connection.sourceVerseId === verse.id;
-              const connectedVerseId = isOutgoing ? connection.targetVerseId : connection.sourceVerseId;
-              const connectionColor = isOutgoing ? CONNECTION_COLORS.OUTGOING : CONNECTION_COLORS.INCOMING;
-              
-              return (
-                <TouchableOpacity
-                  key={connection.id}
-                  style={[styles.connectionItem, { borderLeftColor: connectionColor, borderLeftWidth: 4 }]}
-                  onPress={() => navigateToConnectedVerse(connectedVerseId)}
-                >
-                  <Ionicons
-                    name={
-                      connection.type === ConnectionType.THEMATIC
-                        ? 'link'
-                        : connection.type === ConnectionType.PROPHECY
-                        ? 'star'
-                        : 'git-compare'
-                    }
-                    size={20}
-                    color={connectionColor}
-                  />
-                  <View style={styles.connectionContent}>
-                    <View style={styles.connectionHeader}>
-                      <Text style={[styles.connectionText, { color: connectionColor }]}>
-                        {formatVerseId(connectedVerseId)}
-                      </Text>
-                      {isOutgoing ? (
-                        <Ionicons name="arrow-forward" size={14} color={connectionColor} />
-                      ) : (
-                        <Ionicons name="arrow-back" size={14} color={connectionColor} />
-                      )}
-                    </View>
-                    {showLabels && (
-                      <View style={styles.connectionLabels}>
-                        <Text style={[styles.connectionTypeLabel, { backgroundColor: isOutgoing ? '#E1F0FF' : '#FFF5E6' }]}>
-                          {connection.type === ConnectionType.THEMATIC
-                            ? t('verseDetail:thematic')
-                            : connection.type === ConnectionType.PROPHECY
-                            ? t('verseDetail:prophecy')
-                            : t('verseDetail:crossReference')}
-                        </Text>
-                        <Text style={[styles.connectionDirectionLabel, { backgroundColor: isOutgoing ? '#E1F0FF' : '#FFF5E6' }]}>
-                          {isOutgoing ? t('verseDetail:connectsTo') : t('verseDetail:connectedBy')}
-                        </Text>
-                      </View>
-                    )}
-                  </View>
-                </TouchableOpacity>
-              );
-            })
-          )}
+          <TouchableOpacity
+            style={[
+              styles.tabButton,
+              activeTab === 'connections' && styles.activeTabButton
+            ]}
+            onPress={() => setActiveTab('connections')}
+          >
+            <Ionicons 
+              name="git-network" 
+              size={20} 
+              color={activeTab === 'connections' ? '#007AFF' : '#666'} 
+            />
+            <Text style={[
+              styles.tabText,
+              activeTab === 'connections' && styles.activeTabText
+            ]}>
+              {t('verseDetail:connections')}
+            </Text>
+          </TouchableOpacity>
         </View>
 
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>{t('verseDetail:addConnection')}</Text>
-          <TextInput
-            style={styles.connectionInput}
-            placeholder={t('verseDetail:enterVerseReference')}
-            value={targetVerseRef}
-            onChangeText={setTargetVerseRef}
-          />
-          <View style={styles.connectionTypeContainer}>
-            <TouchableOpacity
-              style={styles.connectionTypeButton}
-              onPress={() => handleAddConnection(ConnectionType.THEMATIC)}
-            >
-              <Ionicons name="link" size={20} color="#007AFF" />
-              <Text style={styles.connectionTypeText}>{t('verseDetail:thematic')}</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.connectionTypeButton}
-              onPress={() => handleAddConnection(ConnectionType.CROSS_REFERENCE)}
-            >
-              <Ionicons name="git-compare" size={20} color="#007AFF" />
-              <Text style={styles.connectionTypeText}>{t('verseDetail:crossReference')}</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.connectionTypeButton}
-              onPress={() => handleAddConnection(ConnectionType.PROPHECY)}
-            >
-              <Ionicons name="star" size={20} color="#007AFF" />
-              <Text style={styles.connectionTypeText}>{t('verseDetail:prophecy')}</Text>
-            </TouchableOpacity>
+        {/* Notes Tab Content */}
+        {activeTab === 'notes' && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>{t('verseDetail:notes')}</Text>
+            {notes.map(renderNoteItem)}
+            <View style={styles.addNoteContainer}>
+              <TextInput
+                style={styles.noteInput}
+                placeholder={t('verseDetail:addNoteHint')}
+                value={newNote}
+                onChangeText={setNewNote}
+                multiline
+              />
+              <TouchableOpacity
+                style={styles.addNoteButton}
+                onPress={handleAddNote}
+              >
+                <Ionicons name="add-circle" size={24} color="#007AFF" />
+              </TouchableOpacity>
+            </View>
+            {renderTagsSection(newNoteTags)}
           </View>
-        </View>
+        )}
+
+        {/* Connections Tab Content */}
+        {activeTab === 'connections' && (
+          <>
+            <View style={styles.section}>
+              <View style={styles.sectionHeader}>
+                <Text style={styles.sectionTitle}>{t('verseDetail:connections')}</Text>
+                <View style={styles.labelToggle}>
+                  <Text style={styles.labelToggleText}>{t('verseDetail:showLabels')}</Text>
+                  <Switch
+                    value={showLabels}
+                    onValueChange={toggleLabels}
+                    trackColor={{ false: '#767577', true: '#81b0ff' }}
+                    thumbColor={showLabels ? '#007AFF' : '#f4f3f4'}
+                  />
+                </View>
+              </View>
+              
+              {connections.length === 0 ? (
+                <Text style={styles.emptyMessage}>{t('verseDetail:noConnections')}</Text>
+              ) : (
+                connections.map((connection) => {
+                  // Skip if the connection is a self-connection
+                  if (connection.sourceVerseId === connection.targetVerseId) {
+                    return null;
+                  }
+                  
+                  // Determine if this is an outgoing or incoming connection
+                  const isOutgoing = connection.sourceVerseId === verse.id;
+                  const connectedVerseId = isOutgoing ? connection.targetVerseId : connection.sourceVerseId;
+                  const connectionColor = isOutgoing ? CONNECTION_COLORS.OUTGOING : CONNECTION_COLORS.INCOMING;
+                  
+                  return (
+                    <TouchableOpacity
+                      key={connection.id}
+                      style={[styles.connectionItem, { borderLeftColor: connectionColor, borderLeftWidth: 4 }]}
+                      onPress={() => navigateToConnectedVerse(connectedVerseId)}
+                    >
+                      <View style={styles.connectionIconContainer}>
+                        <Ionicons
+                          name={
+                            connection.type === ConnectionType.THEMATIC
+                              ? 'link'
+                              : connection.type === ConnectionType.PROPHECY
+                              ? 'star'
+                              : 'git-compare'
+                          }
+                          size={20}
+                          color={connectionColor}
+                        />
+                      </View>
+                      <View style={styles.connectionContent}>
+                        <View style={styles.connectionHeader}>
+                          {connection.connectedVerse && (<Text style={[styles.connectionText, { color: connectionColor }]}>
+                            {connection.connectedVerse?.book} {connection.connectedVerse?.chapter}:{connection.connectedVerse?.verse}
+                          </Text>
+                          )}
+                          {isOutgoing ? (
+                            <Ionicons name="arrow-forward" size={14} color={connectionColor} />
+                          ) : (
+                            <Ionicons name="arrow-back" size={14} color={connectionColor} />
+                          )}
+                        </View>
+                        
+                        {connection.connectedVerse && (
+                          <Text style={styles.connectionVerseText} numberOfLines={2}>
+                            {connection.connectedVerse.text}
+                          </Text>
+                        )}
+                        
+                        {showLabels && (
+                          <View style={styles.connectionLabels}>
+                            <Text style={[styles.connectionTypeLabel, { backgroundColor: isOutgoing ? '#E1F0FF' : '#FFF5E6' }]}>
+                              {connection.type === ConnectionType.THEMATIC
+                                ? t('verseDetail:thematic')
+                                : connection.type === ConnectionType.PROPHECY
+                                ? t('verseDetail:prophecy')
+                                : t('verseDetail:crossReference')}
+                            </Text>
+                            <Text style={[styles.connectionDirectionLabel, { backgroundColor: isOutgoing ? '#E1F0FF' : '#FFF5E6' }]}>
+                              {isOutgoing ? t('verseDetail:connectsTo') : t('verseDetail:connectedBy')}
+                            </Text>
+                          </View>
+                        )}
+                      </View>
+                    </TouchableOpacity>
+                  );
+                })
+              )}
+            </View>
+
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>{t('verseDetail:addConnection')}</Text>
+              <TextInput
+                style={styles.connectionInput}
+                placeholder={t('verseDetail:enterVerseReference')}
+                value={targetVerseRef}
+                onChangeText={setTargetVerseRef}
+              />
+              <View style={styles.connectionTypeContainer}>
+                <TouchableOpacity
+                  style={styles.connectionTypeButton}
+                  onPress={() => handleAddConnection(ConnectionType.THEMATIC)}
+                >
+                  <Ionicons name="link" size={20} color="#007AFF" />
+                  <Text style={styles.connectionTypeText}>{t('verseDetail:thematic')}</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.connectionTypeButton}
+                  onPress={() => handleAddConnection(ConnectionType.CROSS_REFERENCE)}
+                >
+                  <Ionicons name="git-compare" size={20} color="#007AFF" />
+                  <Text style={styles.connectionTypeText}>{t('verseDetail:crossReference')}</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.connectionTypeButton}
+                  onPress={() => handleAddConnection(ConnectionType.PROPHECY)}
+                >
+                  <Ionicons name="star" size={20} color="#007AFF" />
+                  <Text style={styles.connectionTypeText}>{t('verseDetail:prophecy')}</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </>
+        )}
       </ScrollView>
     </SafeAreaView>
   );
@@ -814,7 +904,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     padding: 8,
     fontSize: 14,
-    minHeight: 40,
+    minHeight: 200,
   },
   addNoteButton: {
     marginLeft: 8,
@@ -901,46 +991,56 @@ const styles = StyleSheet.create({
   },
   connectionItem: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     backgroundColor: '#f8f8f8',
     padding: 12,
     borderRadius: 8,
-    marginBottom: 8,
+    marginBottom: 12,
+  },
+  connectionIconContainer: {
+    marginRight: 8,
+    paddingTop: 2,
   },
   connectionContent: {
     flex: 1,
-    marginLeft: 8,
     flexDirection: 'column',
   },
   connectionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    marginBottom: 4,
   },
   connectionText: {
     fontSize: 14,
     color: '#007AFF',
     fontWeight: '500',
   },
+  connectionVerseText: {
+    fontSize: 13,
+    color: '#333',
+    marginTop: 2,
+    marginBottom: 4,
+    lineHeight: 18,
+  },
+  connectionLabels: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 2,
+  },
   connectionTypeLabel: {
     fontSize: 12,
     color: '#666',
-    marginTop: 2,
     backgroundColor: '#e8e8e8',
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 4,
     alignSelf: 'flex-start',
   },
-  connectionLabels: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
   connectionDirectionLabel: {
     fontSize: 12,
     color: '#666',
-    marginTop: 2,
     backgroundColor: '#e8e8e8',
     paddingHorizontal: 6,
     paddingVertical: 2,
@@ -990,6 +1090,34 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#007AFF',
     marginRight: 4,
+  },
+  tabContainer: {
+    flexDirection: 'row',
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
+  },
+  tabButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    backgroundColor: '#f8f8f8',
+  },
+  activeTabButton: {
+    backgroundColor: '#fff',
+    borderBottomWidth: 2,
+    borderBottomColor: '#007AFF',
+  },
+  tabText: {
+    fontSize: 14,
+    color: '#666',
+    marginLeft: 8,
+  },
+  activeTabText: {
+    color: '#007AFF',
+    fontWeight: '600',
   },
 });
 
