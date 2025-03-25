@@ -1,0 +1,115 @@
+{
+  "common": {
+    "loading": "加载中...",
+    "error": "错误",
+    "retry": "重试",
+    "cancel": "取消",
+    "save": "保存",
+    "delete": "删除",
+    "edit": "编辑",
+    "search": "搜索圣经经文..."
+  },
+  "home": {
+    "title": "圣经图谱",
+    "recentVerses": "最近浏览的经文",
+    "noRecentVerses": "没有最近浏览的经文",
+    "loadPopularVerses": "加载常见经文"
+  },
+  "navigation": {
+    "home": "首页",
+    "graph": "图谱视图",
+    "notes": "我的笔记",
+    "profile": "个人资料",
+    "settings": "设置",
+    "search": "搜索"
+  },
+  "verses": {
+    "chapter": "章",
+    "verse": "节",
+    "noVersesFound": "未找到经文"
+  },
+  "notes": {
+    "title": "我的笔记",
+    "searchNotes": "搜索笔记...",
+    "noNotesFound": "未找到笔记",
+    "noNotesYet": "暂无笔记",
+    "addNote": "添加笔记",
+    "editNote": "编辑笔记",
+    "deleteNote": "删除笔记",
+    "noteContent": "笔记内容"
+  },
+  "connections": {
+    "title": "连接",
+    "addConnection": "添加连接",
+    "editConnection": "编辑连接",
+    "deleteConnection": "删除连接",
+    "connectionTypes": {
+      "crossReference": "交叉引用",
+      "theme": "主题",
+      "parallel": "平行经文",
+      "note": "笔记",
+      "thematic": "主题性",
+      "prophecy": "预言"
+    }
+  },
+  "verseDetail": {
+    "title": "经文详情",
+    "notes": "笔记",
+    "connections": "连接",
+    "addNote": "添加笔记",
+    "addConnection": "添加连接",
+    "failedToAddNote": "添加笔记失败",
+    "failedToAddConnection": "添加连接失败",
+    "verseNotFound": "未找到经文",
+    "addNoteHint": "添加笔记...",
+    "noConnections": "此经文暂无连接",
+    "enterVerseReference": "输入经文引用 (例如: 约翰福音 3:16)",
+    "thematic": "主题性",
+    "crossReference": "交叉引用",
+    "prophecy": "预言"
+  },
+  "graph": {
+    "title": "图谱视图",
+    "noVerseSelected": "未选择经文",
+    "selectVerse": "选择一节经文查看详情"
+  },
+  "settings": {
+    "title": "设置",
+    "appearance": "外观",
+    "language": "语言",
+    "languageDescription": "更改显示语言",
+    "fontSize": "字体大小",
+    "fontSizeDescription": "调整文本大小以便于阅读",
+    "lineHeight": "行高",
+    "lineHeightDescription": "调整行间距",
+    "theme": "主题",
+    "darkMode": "深色模式",
+    "lightMode": "浅色模式",
+    "autoSave": "自动保存",
+    "autoSaveDescription": "自动保存笔记和更改",
+    "showVerseNumbers": "显示经文编号",
+    "showVerseNumbersDescription": "在文本中显示经文编号",
+    "showCrossReferences": "显示交叉引用",
+    "showCrossReferencesDescription": "在图谱中显示交叉引用",
+    "graphLayout": "图谱布局",
+    "graphLayoutDescription": "选择图谱的显示方式",
+    "forceDirected": "力导向",
+    "hierarchical": "层次结构",
+    "circular": "环形",
+    "grid": "网格",
+    "reset": "重置设置",
+    "readingSection": "阅读",
+    "graphViewSection": "图谱视图",
+    "generalSection": "通用"
+  },
+  "auth": {
+    "login": "登录",
+    "signup": "注册",
+    "logout": "退出登录",
+    "email": "电子邮件",
+    "password": "密码",
+    "forgotPassword": "忘记密码？",
+    "confirmPassword": "确认密码",
+    "name": "姓名"
+  }
+} 

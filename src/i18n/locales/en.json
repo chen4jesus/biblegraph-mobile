@@ -1,0 +1,115 @@
+{
+  "common": {
+    "loading": "Loading...",
+    "error": "Error",
+    "retry": "Retry",
+    "cancel": "Cancel",
+    "save": "Save",
+    "delete": "Delete",
+    "edit": "Edit",
+    "search": "Search Bible verses..."
+  },
+  "home": {
+    "title": "Bible Graph",
+    "recentVerses": "Recent Verses",
+    "noRecentVerses": "No recent verses found",
+    "loadPopularVerses": "Load Popular Verses"
+  },
+  "navigation": {
+    "home": "Home",
+    "graph": "Graph View",
+    "notes": "My Notes",
+    "profile": "Profile",
+    "settings": "Settings",
+    "search": "Search"
+  },
+  "verses": {
+    "chapter": "Chapter",
+    "verse": "Verse",
+    "noVersesFound": "No verses found"
+  },
+  "notes": {
+    "title": "My Notes",
+    "searchNotes": "Search notes...",
+    "noNotesFound": "No notes found",
+    "noNotesYet": "No notes yet",
+    "addNote": "Add Note",
+    "editNote": "Edit Note",
+    "deleteNote": "Delete Note",
+    "noteContent": "Note content"
+  },
+  "connections": {
+    "title": "Connections",
+    "addConnection": "Add Connection",
+    "editConnection": "Edit Connection",
+    "deleteConnection": "Delete Connection",
+    "connectionTypes": {
+      "crossReference": "Cross Reference",
+      "theme": "Theme",
+      "parallel": "Parallel",
+      "note": "Note",
+      "thematic": "Thematic",
+      "prophecy": "Prophecy"
+    }
+  },
+  "verseDetail": {
+    "title": "Verse Detail",
+    "notes": "Notes",
+    "connections": "Connections",
+    "addNote": "Add Note",
+    "addConnection": "Add Connection",
+    "failedToAddNote": "Failed to add note",
+    "failedToAddConnection": "Failed to add connection",
+    "verseNotFound": "Verse not found",
+    "addNoteHint": "Add a note...",
+    "noConnections": "No connections for this verse",
+    "enterVerseReference": "Enter verse reference (e.g., John 3:16)",
+    "thematic": "Thematic",
+    "crossReference": "Cross Reference",
+    "prophecy": "Prophecy"
+  },
+  "graph": {
+    "title": "Graph View",
+    "noVerseSelected": "No verse selected",
+    "selectVerse": "Select a verse to view details"
+  },
+  "settings": {
+    "title": "Settings",
+    "appearance": "Appearance",
+    "language": "Language",
+    "languageDescription": "Change the display language",
+    "fontSize": "Font Size",
+    "fontSizeDescription": "Adjust the text size for better readability",
+    "lineHeight": "Line Height",
+    "lineHeightDescription": "Adjust the spacing between lines",
+    "theme": "Theme",
+    "darkMode": "Dark Mode",
+    "lightMode": "Light Mode",
+    "autoSave": "Auto Save",
+    "autoSaveDescription": "Automatically save notes and changes",
+    "showVerseNumbers": "Show Verse Numbers",
+    "showVerseNumbersDescription": "Display verse numbers in the text",
+    "showCrossReferences": "Show Cross References",
+    "showCrossReferencesDescription": "Display cross-references in the graph",
+    "graphLayout": "Graph Layout",
+    "graphLayoutDescription": "Choose how the graph is displayed",
+    "forceDirected": "Force Directed",
+    "hierarchical": "Hierarchical",
+    "circular": "Circular",
+    "grid": "Grid",
+    "reset": "Reset Settings",
+    "readingSection": "Reading",
+    "graphViewSection": "Graph View",
+    "generalSection": "General"
+  },
+  "auth": {
+    "login": "Login",
+    "signup": "Sign Up",
+    "logout": "Logout",
+    "email": "Email",
+    "password": "Password",
+    "forgotPassword": "Forgot Password?",
+    "confirmPassword": "Confirm Password",
+    "name": "Name"
+  }
+} 
