@@ -53,7 +53,7 @@ const GraphViewScreen: React.FC = () => {
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color="#007AFF" />
-        <Text style={styles.loadingText}>Loading graph data...</Text>
+        <Text style={styles.loadingText}>{t('graph:loading')}</Text>
       </View>
     );
   }
@@ -64,7 +64,7 @@ const GraphViewScreen: React.FC = () => {
         <Ionicons name="alert-circle-outline" size={48} color="#FF3B30" />
         <Text style={styles.errorText}>Error: {error}</Text>
         <TouchableOpacity style={styles.retryButton} onPress={handleRefresh}>
-          <Text style={styles.retryButtonText}>Retry</Text>
+          <Text style={styles.retryButtonText}>{t('graph:retry')}</Text>
         </TouchableOpacity>
       </View>
     );
@@ -84,9 +84,9 @@ const GraphViewScreen: React.FC = () => {
       {verses.length === 0 || connections.length === 0 ? (
         <View style={styles.emptyContainer}>
           <Ionicons name="map-outline" size={64} color="#8E8E93" />
-          <Text style={styles.emptyText}>No graph data available</Text>
+          <Text style={styles.emptyText}>{t('graph:noData')}</Text>
           <TouchableOpacity style={styles.button} onPress={handleRefresh}>
-            <Text style={styles.buttonText}>Refresh</Text>
+            <Text style={styles.buttonText}>{t('graph:refresh')}</Text>
           </TouchableOpacity>
         </View>
       ) : (
@@ -103,7 +103,7 @@ const GraphViewScreen: React.FC = () => {
       {showControls && (
         <View style={styles.controls}>
           <View style={styles.controlItem}>
-            <Text style={styles.controlLabel}>Show Labels</Text>
+            <Text style={styles.controlLabel}>{t('graph:showLabels')}</Text>
             <Switch
               value={showLabels}
               onValueChange={setShowLabels}

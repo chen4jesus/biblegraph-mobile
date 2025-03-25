@@ -188,7 +188,7 @@ const NotesScreen: React.FC = () => {
         <Ionicons name="search" size={20} color="#666" style={styles.searchIcon} />
         <TextInput
           style={styles.searchInput}
-          placeholder={t('notes:searchNotes') + ' (e.g. Genesis 1:1)'}
+          placeholder={t('notes:searchNotes')}
           value={searchQuery}
           onChangeText={setSearchQuery}
         />
