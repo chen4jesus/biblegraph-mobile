@@ -16,10 +16,12 @@ import { Verse } from '../types/bible';
 import { neo4jService } from '../services/neo4j';
 import { Ionicons } from '@expo/vector-icons';
 import debounce from 'lodash/debounce';
+import { useTranslation } from 'react-i18next';
 
 type SearchScreenNavigationProp = NativeStackNavigationProp<RootStackParamList, 'Search'>;
 
 const SearchScreen: React.FC = () => {
+  const { t } = useTranslation(['common', 'navigation']);
   const navigation = useNavigation<SearchScreenNavigationProp>();
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<Verse[]>([]);
@@ -73,7 +75,7 @@ const SearchScreen: React.FC = () => {
         <Ionicons name="search" size={20} color="#666" style={styles.searchIcon} />
         <TextInput
           style={styles.searchInput}
-          placeholder="Search Bible verses..."
+          placeholder={t('common:search')}
           value={query}
           onChangeText={handleSearch}
           autoFocus
@@ -101,7 +103,7 @@ const SearchScreen: React.FC = () => {
           contentContainerStyle={styles.resultsList}
           ListEmptyComponent={
             query.length > 0 ? (
-              <Text style={styles.emptyText}>No verses found</Text>
+              <Text style={styles.emptyText}>{t('verses:noVersesFound')}</Text>
             ) : null
           }
         />

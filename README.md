@@ -40,6 +40,14 @@ A React Native mobile application for visualizing and exploring Bible verses and
 - Theme and appearance options
 - Show/hide verse numbers and cross-references
 
+### 6. Internationalization (i18n)
+
+- Multi-language support with English and Chinese translations
+- Language detection based on device settings
+- User-selectable language preference
+- Persistence of language settings
+- Full localization of UI elements, error messages, and content
+
 ## Technical Architecture
 
 ### Components
@@ -49,12 +57,22 @@ A React Native mobile application for visualizing and exploring Bible verses and
   - Implements pan and zoom using `react-native-gesture-handler`
   - Optimized rendering with callbacks for interactions
 
+- **LanguageProvider**: Context provider for language management
+  - Provides language switching capabilities throughout the app
+  - Detects and sets initial language based on device settings
+  - Persists language preference using AsyncStorage
+
 ### Hooks
 
 - **useBibleGraph**: Custom hook for graph data management
   - Handles data fetching and merging from online/offline sources
   - Manages verse and connection selection state
   - Provides methods for refreshing graph data
+
+- **useLanguage**: Custom hook for accessing language context
+  - Provides current language code and switching function
+  - Exposes available languages and RTL status
+  - Simplifies i18n integration throughout components
 
 ### Services
 
@@ -80,6 +98,7 @@ Comprehensive TypeScript typing for all data structures:
 - User and authentication data
 - Graph nodes and edges
 - Configuration and settings
+- Internationalization related types
 
 ## Implementation Details
 

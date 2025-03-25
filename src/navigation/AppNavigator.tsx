@@ -6,6 +6,7 @@ import { RootStackParamList, MainTabParamList } from './types';
 import { authService } from '../services/auth';
 import LoadingScreen from '../components/LoadingScreen';
 import { Ionicons } from '@expo/vector-icons';
+import { useTranslation } from 'react-i18next';
 
 // Auth Screens
 import LoginScreen from '../screens/LoginScreen';
@@ -20,11 +21,14 @@ import GraphViewScreen from '../screens/GraphViewScreen';
 import NotesScreen from '../screens/NotesScreen';
 import ProfileScreen from '../screens/ProfileScreen';
 import SettingsScreen from '../screens/SettingsScreen';
+import LanguageSettingsScreen from '../screens/LanguageSettingsScreen';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 const Tab = createBottomTabNavigator<MainTabParamList>();
 
 const MainTabs = () => {
+  const { t } = useTranslation('navigation');
+
   return (
     <Tab.Navigator
       screenOptions={({ route }) => ({
@@ -47,15 +51,32 @@ const MainTabs = () => {
         tabBarInactiveTintColor: 'gray',
       })}
     >
-      <Tab.Screen name="Home" component={HomeScreen} />
-      <Tab.Screen name="Graph" component={GraphViewScreen} />
-      <Tab.Screen name="Notes" component={NotesScreen} />
-      <Tab.Screen name="Profile" component={ProfileScreen} />
+      <Tab.Screen 
+        name="Home" 
+        component={HomeScreen} 
+        options={{ title: t('home') }}
+      />
+      <Tab.Screen 
+        name="Graph" 
+        component={GraphViewScreen} 
+        options={{ title: t('graph') }}
+      />
+      <Tab.Screen 
+        name="Notes" 
+        component={NotesScreen} 
+        options={{ title: t('notes') }}
+      />
+      <Tab.Screen 
+        name="Profile" 
+        component={ProfileScreen} 
+        options={{ title: t('profile') }}
+      />
     </Tab.Navigator>
   );
 };
 
 const AppNavigator: React.FC = () => {
+  const { t } = useTranslation(['navigation', 'common']);
   const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
 
   useEffect(() => {
@@ -87,9 +108,21 @@ const AppNavigator: React.FC = () => {
         {/* Auth Stack */}
         {!isAuthenticated && (
           <>
-            <Stack.Screen name="Login" component={LoginScreen} />
-            <Stack.Screen name="SignUp" component={SignUpScreen} />
-            <Stack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
+            <Stack.Screen 
+              name="Login" 
+              component={LoginScreen}
+              options={{ title: t('auth:login') }} 
+            />
+            <Stack.Screen 
+              name="SignUp" 
+              component={SignUpScreen}
+              options={{ title: t('auth:signup') }} 
+            />
+            <Stack.Screen 
+              name="ForgotPassword" 
+              component={ForgotPasswordScreen}
+              options={{ title: t('auth:forgotPassword') }} 
+            />
           </>
         )}
 
@@ -97,10 +130,31 @@ const AppNavigator: React.FC = () => {
         {isAuthenticated && (
           <>
             <Stack.Screen name="MainTabs" component={MainTabs} />
-            <Stack.Screen name="Search" component={SearchScreen} />
-            <Stack.Screen name="VerseDetail" component={VerseDetailScreen} />
-            <Stack.Screen name="GraphView" component={GraphViewScreen} />
-            <Stack.Screen name="Settings" component={SettingsScreen} />
+            <Stack.Screen 
+              name="Search" 
+              component={SearchScreen}
+              options={{ title: t('search') }} 
+            />
+            <Stack.Screen 
+              name="VerseDetail" 
+              component={VerseDetailScreen} 
+              options={{ title: t('verseDetail:title') }}
+            />
+            <Stack.Screen 
+              name="GraphView" 
+              component={GraphViewScreen}
+              options={{ title: t('graph') }} 
+            />
+            <Stack.Screen 
+              name="Settings" 
+              component={SettingsScreen}
+              options={{ title: t('settings') }} 
+            />
+            <Stack.Screen 
+              name="LanguageSettings" 
+              component={LanguageSettingsScreen}
+              options={{ title: t('settings:language') }} 
+            />
           </>
         )}
       </Stack.Navigator>

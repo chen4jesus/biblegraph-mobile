@@ -14,10 +14,12 @@ import { RootStackParamList } from '../navigation/types';
 import { Verse, Note, Connection, ConnectionType } from '../types/bible';
 import { neo4jService } from '../services/neo4j';
 import { Ionicons } from '@expo/vector-icons';
+import { useTranslation } from 'react-i18next';
 
 type VerseDetailScreenRouteProp = RouteProp<RootStackParamList, 'VerseDetail'>;
 
 const VerseDetailScreen: React.FC = () => {
+  const { t } = useTranslation(['verseDetail', 'common']);
   const route = useRoute<VerseDetailScreenRouteProp>();
   const [verse, setVerse] = useState<Verse | null>(null);
   const [notes, setNotes] = useState<Note[]>([]);
@@ -102,7 +104,7 @@ const VerseDetailScreen: React.FC = () => {
       setNewNote('');
     } catch (error) {
       console.error('Error adding note:', error);
-      Alert.alert('Error', 'Failed to add note');
+      Alert.alert(t('common:error'), t('verseDetail:failedToAddNote'));
     }
   };
 
@@ -123,14 +125,14 @@ const VerseDetailScreen: React.FC = () => {
       setConnections([...connections, connection]);
     } catch (error) {
       console.error('Error adding connection:', error);
-      Alert.alert('Error', 'Failed to add connection');
+      Alert.alert(t('common:error'), t('verseDetail:failedToAddConnection'));
     }
   };
 
   if (isLoading) {
     return (
       <View style={styles.loadingContainer}>
-        <Text>Loading...</Text>
+        <Text>{t('common:loading')}</Text>
       </View>
     );
   }
@@ -138,7 +140,7 @@ const VerseDetailScreen: React.FC = () => {
   if (!verse) {
     return (
       <View style={styles.errorContainer}>
-        <Text>Verse not found</Text>
+        <Text>{t('verseDetail:verseNotFound')}</Text>
       </View>
     );
   }
@@ -155,7 +157,7 @@ const VerseDetailScreen: React.FC = () => {
         </View>
 
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Notes</Text>
+          <Text style={styles.sectionTitle}>{t('verseDetail:notes')}</Text>
           {notes.map((note) => (
             <View key={note.id} style={styles.noteItem}>
               <Text style={styles.noteContent}>{note.content}</Text>
@@ -167,7 +169,7 @@ const VerseDetailScreen: React.FC = () => {
           <View style={styles.addNoteContainer}>
             <TextInput
               style={styles.noteInput}
-              placeholder="Add a note..."
+              placeholder={t('verseDetail:addNoteHint')}
               value={newNote}
               onChangeText={setNewNote}
               multiline
@@ -182,31 +184,71 @@ const VerseDetailScreen: React.FC = () => {
         </View>
 
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Connections</Text>
-          {connections.map((connection) => (
+          <Text style={styles.sectionTitle}>{t('verseDetail:connections')}</Text>
+          {connections.length === 0 ? (
+            <Text style={styles.emptyMessage}>{t('verseDetail:noConnections')}</Text>
+          ) : (
+            connections.map((connection) => (
+              <TouchableOpacity
+                key={connection.id}
+                style={styles.connectionItem}
+                onPress={() => {
+                  // Navigate to connected verse
+                }}
+              >
+                <Ionicons
+                  name={
+                    connection.type === ConnectionType.THEMATIC
+                      ? 'link'
+                      : connection.type === ConnectionType.PROPHECY
+                      ? 'star'
+                      : 'git-compare'
+                  }
+                  size={20}
+                  color="#007AFF"
+                />
+                <Text style={styles.connectionText}>{connection.targetVerseId}</Text>
+              </TouchableOpacity>
+            ))
+          )}
+        </View>
+
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>{t('verseDetail:addConnection')}</Text>
+          <TextInput
+            style={styles.connectionInput}
+            placeholder={t('verseDetail:enterVerseReference')}
+            // Additional implementation details
+          />
+          <View style={styles.connectionTypeContainer}>
             <TouchableOpacity
-              key={connection.id}
-              style={styles.connectionItem}
+              style={styles.connectionTypeButton}
               onPress={() => {
-                // Navigate to connected verse
+                // Add thematic connection
               }}
             >
-              <Ionicons
-                name={
-                  connection.type === ConnectionType.THEMATIC
-                    ? 'link'
-                    : connection.type === ConnectionType.PROPHECY
-                    ? 'star'
-                    : 'git-compare'
-                }
-                size={20}
-                color="#007AFF"
-              />
-              <Text style={styles.connectionType}>
-                {connection.type.toLowerCase()}
-              </Text>
+              <Ionicons name="link" size={20} color="#007AFF" />
+              <Text style={styles.connectionTypeText}>{t('verseDetail:thematic')}</Text>
             </TouchableOpacity>
-          ))}
+            <TouchableOpacity
+              style={styles.connectionTypeButton}
+              onPress={() => {
+                // Add cross-reference connection
+              }}
+            >
+              <Ionicons name="git-compare" size={20} color="#007AFF" />
+              <Text style={styles.connectionTypeText}>{t('verseDetail:crossReference')}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.connectionTypeButton}
+              onPress={() => {
+                // Add prophecy connection
+              }}
+            >
+              <Ionicons name="star" size={20} color="#007AFF" />
+              <Text style={styles.connectionTypeText}>{t('verseDetail:prophecy')}</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -237,20 +279,19 @@ const styles = StyleSheet.create({
     borderBottomColor: '#eee',
   },
   reference: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: 'bold',
-    color: '#007AFF',
     marginBottom: 8,
   },
   text: {
-    fontSize: 18,
-    lineHeight: 26,
-    color: '#333',
+    fontSize: 16,
+    lineHeight: 24,
     marginBottom: 8,
   },
   translation: {
-    fontSize: 14,
+    fontSize: 12,
     color: '#666',
+    marginTop: 4,
   },
   section: {
     padding: 16,
@@ -259,53 +300,85 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     fontSize: 18,
-    fontWeight: '600',
-    color: '#333',
-    marginBottom: 12,
+    fontWeight: 'bold',
+    marginBottom: 16,
   },
   noteItem: {
-    backgroundColor: '#f8f9fa',
-    borderRadius: 8,
+    backgroundColor: '#f8f8f8',
     padding: 12,
+    borderRadius: 8,
     marginBottom: 8,
   },
   noteContent: {
     fontSize: 14,
-    color: '#333',
-    marginBottom: 4,
   },
   noteDate: {
     fontSize: 12,
     color: '#666',
+    marginTop: 4,
   },
   addNoteContainer: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
+    alignItems: 'center',
     marginTop: 8,
   },
   noteInput: {
     flex: 1,
-    backgroundColor: '#f8f9fa',
+    borderWidth: 1,
+    borderColor: '#ddd',
     borderRadius: 8,
-    padding: 12,
-    marginRight: 8,
+    padding: 8,
+    fontSize: 14,
     minHeight: 40,
   },
   addNoteButton: {
-    padding: 8,
+    marginLeft: 8,
+    padding: 4,
   },
   connectionItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#f8f9fa',
-    borderRadius: 8,
+    backgroundColor: '#f8f8f8',
     padding: 12,
+    borderRadius: 8,
     marginBottom: 8,
   },
-  connectionType: {
+  connectionText: {
     marginLeft: 8,
     fontSize: 14,
     color: '#007AFF',
+  },
+  emptyMessage: {
+    fontSize: 14,
+    color: '#666',
+    textAlign: 'center',
+  },
+  connectionInput: {
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 8,
+    padding: 8,
+    fontSize: 14,
+    minHeight: 40,
+    marginBottom: 12,
+  },
+  connectionTypeContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  connectionTypeButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f0f0f0',
+    padding: 8,
+    borderRadius: 8,
+    flex: 1,
+    marginHorizontal: 4,
+  },
+  connectionTypeText: {
+    fontSize: 12,
+    color: '#007AFF',
+    marginLeft: 4,
   },
 });
 

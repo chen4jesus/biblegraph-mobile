@@ -15,6 +15,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Verse } from '../types/bible';
 import { neo4jService } from '../services/neo4j';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useTranslation } from 'react-i18next';
 
 // Storage key for recent verses
 const RECENT_VERSES_KEY = '@biblegraph:recent_verses';
@@ -22,6 +23,7 @@ const RECENT_VERSES_KEY = '@biblegraph:recent_verses';
 type HomeScreenNavigationProp = NativeStackNavigationProp<RootStackParamList, 'MainTabs'>;
 
 const HomeScreen: React.FC = () => {
+  const { t } = useTranslation(['home', 'navigation', 'common']);
   const navigation = useNavigation<HomeScreenNavigationProp>();
   const [recentVerses, setRecentVerses] = useState<Verse[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
@@ -135,7 +137,7 @@ const HomeScreen: React.FC = () => {
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.title}>Bible Graph</Text>
+        <Text style={styles.title}>{t('home:title')}</Text>
         <TouchableOpacity
           style={styles.searchButton}
           onPress={() => navigation.navigate('Search')}
@@ -150,19 +152,19 @@ const HomeScreen: React.FC = () => {
           onPress={() => navigation.navigate('GraphView', {})}
         >
           <Ionicons name="git-network" size={24} color="#007AFF" />
-          <Text style={styles.actionText}>Graph View</Text>
+          <Text style={styles.actionText}>{t('navigation:graph')}</Text>
         </TouchableOpacity>
         <TouchableOpacity
           style={styles.actionButton}
           onPress={() => navigation.navigate('Notes')}
         >
           <Ionicons name="book" size={24} color="#007AFF" />
-          <Text style={styles.actionText}>My Notes</Text>
+          <Text style={styles.actionText}>{t('navigation:notes')}</Text>
         </TouchableOpacity>
       </View>
 
       <View style={styles.recentSection}>
-        <Text style={styles.sectionTitle}>Recent Verses</Text>
+        <Text style={styles.sectionTitle}>{t('home:recentVerses')}</Text>
         {isLoading ? (
           <View style={styles.loadingContainer}>
             <ActivityIndicator size="large" color="#007AFF" />
@@ -176,12 +178,12 @@ const HomeScreen: React.FC = () => {
           />
         ) : (
           <View style={styles.emptyContainer}>
-            <Text style={styles.emptyText}>No recent verses found</Text>
+            <Text style={styles.emptyText}>{t('home:noRecentVerses')}</Text>
             <TouchableOpacity 
               style={styles.refreshButton}
               onPress={loadRecentVerses}
             >
-              <Text style={styles.refreshButtonText}>Load Popular Verses</Text>
+              <Text style={styles.refreshButtonText}>{t('home:loadPopularVerses')}</Text>
             </TouchableOpacity>
           </View>
         )}

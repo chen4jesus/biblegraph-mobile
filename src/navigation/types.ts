@@ -9,6 +9,7 @@ export type RootStackParamList = {
   Notes: undefined;
   Profile: undefined;
   Settings: undefined;
+  LanguageSettings: undefined;
 };
 
 export type MainTabParamList = {

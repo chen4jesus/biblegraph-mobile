@@ -12,6 +12,11 @@ import {
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
+import { useNavigation } from '@react-navigation/native';
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { RootStackParamList } from '../navigation/types';
+import { useTranslation } from 'react-i18next';
+import { useLanguage } from '../i18n/LanguageProvider';
 
 interface AppSettings {
   fontSize: number;
@@ -22,7 +27,13 @@ interface AppSettings {
   graphLayout: 'force-directed' | 'hierarchical' | 'circular';
 }
 
+type SettingsScreenNavigationProp = NativeStackNavigationProp<RootStackParamList>;
+
 const SettingsScreen: React.FC = () => {
+  const { t } = useTranslation();
+  const navigation = useNavigation<SettingsScreenNavigationProp>();
+  const { currentLanguage } = useLanguage();
+  
   const [settings, setSettings] = useState<AppSettings>({
     fontSize: 16,
     lineHeight: 1.5,
@@ -123,32 +134,53 @@ const SettingsScreen: React.FC = () => {
     </View>
   );
 
+  const renderNavigableSettingItem = (
+    title: string,
+    description: string, 
+    currentValue: string,
+    onPress: () => void
+  ) => (
+    <TouchableOpacity 
+      style={styles.settingItem} 
+      onPress={onPress}
+    >
+      <View style={styles.settingInfo}>
+        <Text style={styles.settingTitle}>{title}</Text>
+        <Text style={styles.settingDescription}>{description}</Text>
+      </View>
+      <View style={styles.navigationItem}>
+        <Text style={styles.currentValue}>{currentValue}</Text>
+        <Ionicons name="chevron-forward" size={20} color="#666" />
+      </View>
+    </TouchableOpacity>
+  );
+
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView style={styles.content}>
         <View style={styles.header}>
-          <Text style={styles.title}>Settings</Text>
+          <Text style={styles.title}>{t('settings:title')}</Text>
         </View>
 
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Reading</Text>
+          <Text style={styles.sectionTitle}>{t('settings:readingSection')}</Text>
           {renderSettingItem(
-            'Font Size',
-            'Adjust the text size for better readability',
+            t('settings:fontSize'),
+            t('settings:fontSizeDescription'),
             'slider',
             'fontSize',
             settings.fontSize
           )}
           {renderSettingItem(
-            'Line Height',
-            'Adjust the spacing between lines',
+            t('settings:lineHeight'),
+            t('settings:lineHeightDescription'),
             'slider',
             'lineHeight',
             settings.lineHeight
           )}
           {renderSettingItem(
-            'Show Verse Numbers',
-            'Display verse numbers in the text',
+            t('settings:showVerseNumbers'),
+            t('settings:showVerseNumbersDescription'),
             'switch',
             'showVerseNumbers',
             settings.showVerseNumbers
@@ -156,22 +188,22 @@ const SettingsScreen: React.FC = () => {
         </View>
 
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Graph View</Text>
+          <Text style={styles.sectionTitle}>{t('settings:graphViewSection')}</Text>
           {renderSettingItem(
-            'Graph Layout',
-            'Choose how the graph is displayed',
+            t('settings:graphLayout'),
+            t('settings:graphLayoutDescription'),
             'select',
             'graphLayout',
             settings.graphLayout,
             [
-              { label: 'Force Directed', value: 'force-directed' },
-              { label: 'Hierarchical', value: 'hierarchical' },
-              { label: 'Circular', value: 'circular' },
+              { label: t('settings:forceDirected'), value: 'force-directed' },
+              { label: t('settings:hierarchical'), value: 'hierarchical' },
+              { label: t('settings:circular'), value: 'circular' },
             ]
           )}
           {renderSettingItem(
-            'Show Cross References',
-            'Display cross-references in the graph',
+            t('settings:showCrossReferences'),
+            t('settings:showCrossReferencesDescription'),
             'switch',
             'showCrossReferences',
             settings.showCrossReferences
@@ -179,13 +211,20 @@ const SettingsScreen: React.FC = () => {
         </View>
 
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>General</Text>
+          <Text style={styles.sectionTitle}>{t('settings:generalSection')}</Text>
           {renderSettingItem(
-            'Auto Save',
-            'Automatically save notes and changes',
+            t('settings:autoSave'),
+            t('settings:autoSaveDescription'),
             'switch',
             'autoSave',
             settings.autoSave
+          )}
+          
+          {renderNavigableSettingItem(
+            t('settings:language'),
+            t('settings:languageDescription'),
+            currentLanguage === 'en' ? 'English' : '中文',
+            () => navigation.navigate('LanguageSettings')
           )}
         </View>
       </ScrollView>
@@ -248,8 +287,8 @@ const styles = StyleSheet.create({
   },
   selectValue: {
     fontSize: 16,
-    color: '#666',
-    marginRight: 4,
+    color: '#333',
+    marginRight: 8,
   },
   sliderContainer: {
     flexDirection: 'row',
@@ -257,12 +296,28 @@ const styles = StyleSheet.create({
   },
   sliderValue: {
     fontSize: 16,
-    color: '#666',
-    marginHorizontal: 8,
-    minWidth: 30,
+    color: '#333',
+    marginRight: 8,
+    minWidth: 24,
+    textAlign: 'right',
   },
   sliderButton: {
-    padding: 8,
+    width: 32,
+    height: 32,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#f0f0f0',
+    borderRadius: 16,
+    marginHorizontal: 4,
+  },
+  navigationItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  currentValue: {
+    fontSize: 16,
+    color: '#666',
+    marginRight: 8,
   },
 });
 

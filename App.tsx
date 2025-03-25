@@ -3,6 +3,8 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import AppNavigator from './src/navigation/AppNavigator';
 import { neo4jDriverService } from './src/services/neo4jDriver';
 import { bibleDataLoader } from './src/services/bibleDataLoader';
+import { LanguageProvider } from './src/i18n/LanguageProvider';
+import './src/i18n'; // Import i18n configuration
 
 export default function App() {
   useEffect(() => {
@@ -23,7 +25,9 @@ export default function App() {
 
   return (
     <SafeAreaProvider>
-      <AppNavigator />
+      <LanguageProvider>
+        <AppNavigator />
+      </LanguageProvider>
     </SafeAreaProvider>
   );
 }
