@@ -98,7 +98,7 @@
     "connectedBy": "被引用"
   },
   "graph": {
-    "title": "经文图谱",
+    "title": "图谱视图",
     "resetLayout": "重置布局",
     "centerNode": "居中节点",
     "noData": "暂无图谱数据",
