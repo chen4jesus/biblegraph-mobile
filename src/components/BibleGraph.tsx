@@ -97,6 +97,8 @@ const BibleGraph: React.FC<BibleGraphProps> = ({
   const { t } = useTranslation();
   const [showHint, setShowHint] = useState(true);
   
+  const [iconAnimation] = useState(new Animated.Value(0));
+
   useEffect(() => {
     initializeGraph();
   }, [verses, connections]);
@@ -373,7 +375,22 @@ const BibleGraph: React.FC<BibleGraphProps> = ({
   };
 
   const toggleControls = () => {
-    setControls(prev => ({ visible: !prev.visible }));
+    // Use spring animation for smoother, more natural transitions
+    Animated.spring(iconAnimation, {
+      toValue: controls.visible ? 0 : 1,
+      friction: 8,  // Lower friction for more bounce
+      tension: 50,  // Higher tension for faster animation
+      useNativeDriver: true,
+    }).start();
+
+    // Add a small delay when hiding to ensure animations complete
+    if (controls.visible) {
+      // First hide the controls
+      setControls(prev => ({ visible: false }));
+    } else {
+      // Show the controls
+      setControls(prev => ({ visible: true }));
+    }
   };
 
   const renderEdge = (edge: Edge) => {
@@ -554,21 +571,66 @@ const BibleGraph: React.FC<BibleGraphProps> = ({
     );
   };
 
-  const renderControls = () => (
-    <Animated.View style={[styles.controlsContainer, controls.visible ? styles.visible : styles.hidden]}>
-      <TouchableOpacity style={styles.controlButton} onPress={resetLayout}>
-        <Ionicons name="refresh" size={22} color="#FFFFFF" />
-        <Text style={styles.controlText}>Reset</Text>
-      </TouchableOpacity>
-      
-      {selectedNode && (
-        <TouchableOpacity style={styles.controlButton} onPress={() => centerOnNode(selectedNode.id)}>
-          <Ionicons name="locate" size={22} color="#FFFFFF" />
-          <Text style={styles.controlText}>Center</Text>
+  const renderControls = () => {
+    // Create a smooth slide-in from the right that complements the FAB animation
+    const translateX = iconAnimation.interpolate({
+      inputRange: [0, 1],
+      outputRange: [50, 0]
+    });
+    
+    const translateY = iconAnimation.interpolate({
+      inputRange: [0, 1],
+      outputRange: [10, 0]
+    });
+    
+    const opacity = iconAnimation.interpolate({
+      inputRange: [0, 0.7, 1],
+      outputRange: [0, 0.7, 1]
+    });
+
+    // Add a scale effect that matches the FAB
+    const scale = iconAnimation.interpolate({
+      inputRange: [0, 0.8, 1],
+      outputRange: [0.8, 0.95, 1]
+    });
+
+    return (
+      <Animated.View 
+        style={[
+          styles.controlsContainer,
+          {
+            opacity,
+            transform: [
+              { translateX },
+              { translateY },
+              { scale }
+            ],
+            display: controls.visible ? 'flex' : 'none'
+          }
+        ]}
+      >
+        <TouchableOpacity 
+          style={styles.controlButton} 
+          onPress={resetLayout}
+          activeOpacity={0.7}
+        >
+          <Ionicons name="refresh" size={22} color="#FFFFFF" />
+          <Text style={styles.controlText}>Reset</Text>
         </TouchableOpacity>
-      )}
-    </Animated.View>
-  );
+        
+        {selectedNode && (
+          <TouchableOpacity 
+            style={styles.controlButton} 
+            onPress={() => centerOnNode(selectedNode.id)}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="locate" size={22} color="#FFFFFF" />
+            <Text style={styles.controlText}>Center</Text>
+          </TouchableOpacity>
+        )}
+      </Animated.View>
+    );
+  };
 
   const renderModal = () => (
     <Modal
@@ -608,15 +670,48 @@ const BibleGraph: React.FC<BibleGraphProps> = ({
     </Modal>
   );
 
-  const renderFAB = () => (
-    <TouchableOpacity 
-      style={styles.fab}
-      onPress={toggleControls}
-      activeOpacity={0.8}
-    >
-      <Ionicons name={controls.visible ? "close" : "menu"} size={24} color="#FFFFFF" />
-    </TouchableOpacity>
-  );
+  const renderFAB = () => {
+    // Create smoother, more modern rotation and transition effects
+    const rotation = iconAnimation.interpolate({
+      inputRange: [0, 1],
+      outputRange: ['0deg', '135deg'] // Use 135 degrees for a more natural close icon transition
+    });
+
+    // Add additional scaling effect for a more tactile feel
+    const scale = iconAnimation.interpolate({
+      inputRange: [0, 0.5, 1],
+      outputRange: [1, 0.9, 1]
+    });
+
+    return (
+      <TouchableOpacity 
+        style={[styles.fab, { zIndex: 1000 }]}
+        onPress={toggleControls}
+        activeOpacity={0.7} // Slightly more responsive feedback
+        hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+      >
+        <Animated.View 
+          style={{ 
+            transform: [
+              { rotate: rotation },
+              { scale }
+            ],
+            width: 24,
+            height: 24,
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
+          {/* Using a single icon type with rotation creates a cleaner transition */}
+          <Ionicons 
+            name="menu" 
+            size={24} 
+            color="#FFFFFF" 
+          />
+        </Animated.View>
+      </TouchableOpacity>
+    );
+  };
 
   const renderDragHint = () => {
     if (!showHint) return null;
@@ -726,32 +821,29 @@ const styles = StyleSheet.create({
     position: 'absolute',
     bottom: 80,
     right: 20,
-    backgroundColor: 'rgba(66, 133, 244, 0.9)',
-    borderRadius: 12,
-    padding: 10,
+    backgroundColor: 'rgba(66, 133, 244, 0.95)',
+    borderRadius: 16,
+    padding: 12,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
-    elevation: 5,
-  },
-  visible: {
-    opacity: 1,
-    transform: [{ translateY: 0 }],
-  },
-  hidden: {
-    opacity: 0,
-    transform: [{ translateY: 20 }],
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.3,
+    shadowRadius: 5,
+    elevation: 8,
+    zIndex: 999,
+    // Add matching border for design consistency
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
   },
   controlButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 8,
+    padding: 10,
     marginVertical: 4,
+    borderRadius: 8,
   },
   controlText: {
     color: '#FFFFFF',
-    marginLeft: 8,
+    marginLeft: 10,
     fontSize: 16,
     fontWeight: '500',
   },
@@ -766,10 +858,13 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
-    elevation: 5,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.3,
+    shadowRadius: 5,
+    elevation: 8,
+    // Add outer border for a refined look
+    borderWidth: 2,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
   },
   modalOverlay: {
     flex: 1,

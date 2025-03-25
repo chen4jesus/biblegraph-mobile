@@ -33,7 +33,7 @@
   },
   "notes": {
     "title": "我的笔记",
-    "searchNotes": "搜索笔记...",
+    "searchNotes": "搜索笔记... (例如：创世纪 1:1)",
     "noNotesFound": "未找到笔记",
     "noNotesYet": "暂无笔记",
     "addNote": "添加笔记",
@@ -107,6 +107,8 @@
     "retry": "重试",
     "zoomIn": "放大",
     "zoomOut": "缩小",
+    "refresh": "刷新",
+    "showLabels": "显示标签",
     "dragHint": "点击并拖动节点可以重新排列",
     "doubleTapToReset": "双击重置视图"
   },
