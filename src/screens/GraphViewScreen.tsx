@@ -14,10 +14,12 @@ import BibleGraph from '../components/BibleGraph';
 import { useBibleGraph } from '../hooks/useBibleGraph';
 import { Verse, Connection } from '../types/bible';
 import { RootStackParamList } from '../navigation/types';
+import { useTranslation } from 'react-i18next';
 
 type GraphViewScreenRouteProp = RouteProp<RootStackParamList, 'GraphView'>;
 
 const GraphViewScreen: React.FC = () => {
+  const { t } = useTranslation(['graph']);
   const navigation = useNavigation();
   const route = useRoute<GraphViewScreenRouteProp>();
   const initialVerseId = route.params?.verseId;
@@ -71,7 +73,7 @@ const GraphViewScreen: React.FC = () => {
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.title}>Bible Graph</Text>
+        <Text style={styles.title}>{t('graph:title')}</Text>
         {selectedVerse && (
           <Text style={styles.subtitle}>
             {selectedVerse.book} {selectedVerse.chapter}:{selectedVerse.verse}

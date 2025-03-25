@@ -9,22 +9,26 @@ import {
   Alert,
   SafeAreaView,
 } from 'react-native';
-import { useRoute, RouteProp } from '@react-navigation/native';
+import { useRoute, RouteProp, useNavigation } from '@react-navigation/native';
 import { RootStackParamList } from '../navigation/types';
 import { Verse, Note, Connection, ConnectionType } from '../types/bible';
 import { neo4jService } from '../services/neo4j';
 import { Ionicons } from '@expo/vector-icons';
 import { useTranslation } from 'react-i18next';
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
 type VerseDetailScreenRouteProp = RouteProp<RootStackParamList, 'VerseDetail'>;
+type VerseDetailNavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
 const VerseDetailScreen: React.FC = () => {
   const { t } = useTranslation(['verseDetail', 'common']);
   const route = useRoute<VerseDetailScreenRouteProp>();
+  const navigation = useNavigation<VerseDetailNavigationProp>();
   const [verse, setVerse] = useState<Verse | null>(null);
   const [notes, setNotes] = useState<Note[]>([]);
   const [connections, setConnections] = useState<Connection[]>([]);
   const [newNote, setNewNote] = useState('');
+  const [targetVerseRef, setTargetVerseRef] = useState('');
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
@@ -108,25 +112,99 @@ const VerseDetailScreen: React.FC = () => {
     }
   };
 
-  const handleAddConnection = async (targetVerseId: string, type: ConnectionType) => {
-    if (!verse) return;
+  const formatVerseReference = (reference: string): string => {
+    // Check if the reference is in a simple format like "John 3:16"
+    const simplePattern = /^([a-z]+)\s*(\d+)\s*:\s*(\d+)$/i;
+    const match = reference.match(simplePattern);
+    
+    if (match) {
+      const [, book, chapter, verse] = match;
+      return `${book}-${chapter}-${verse}`;
+    }
+    
+    // If not in the simple format, return as is (might be already in the right format)
+    return reference;
+  };
+
+  const handleAddConnection = async (type: ConnectionType) => {
+    if (!verse || !targetVerseRef.trim()) {
+      Alert.alert(
+        t('common:error'), 
+        t('verseDetail:enterValidReference')
+      );
+      return;
+    }
 
     try {
+      const formattedRef = formatVerseReference(targetVerseRef);
+      
+      // First check if the target verse exists
+      let targetVerse = await neo4jService.getVerse(formattedRef);
+      
+      // If not found by ID, try to parse it as a reference
+      if (!targetVerse) {
+        const parts = formattedRef.split('-');
+        if (parts.length >= 3) {
+          const book = parts[0];
+          const chapter = parseInt(parts[1]);
+          const verseNum = parseInt(parts[2]);
+          
+          if (book && !isNaN(chapter) && !isNaN(verseNum)) {
+            targetVerse = await neo4jService.getVerseByReference(book, chapter, verseNum);
+            
+            // Create the verse if it doesn't exist
+            if (!targetVerse) {
+              const mockVerse: Verse = {
+                id: formattedRef,
+                book,
+                chapter,
+                verse: verseNum,
+                text: 'Verse text will be loaded on demand.',
+                translation: 'ESV',
+                createdAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString()
+              };
+              
+              targetVerse = await neo4jService.createVerse(mockVerse);
+            }
+          }
+        }
+      }
+      
+      if (!targetVerse) {
+        Alert.alert(
+          t('common:error'), 
+          t('verseDetail:targetVerseNotFound')
+        );
+        return;
+      }
+      
       const connection: Connection = {
         id: Date.now().toString(),
         sourceVerseId: verse.id,
-        targetVerseId,
+        targetVerseId: targetVerse.id,
         type,
         description: '',
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };
+      
       await neo4jService.createConnection(connection);
       setConnections([...connections, connection]);
+      setTargetVerseRef(''); // Clear the input after successful connection
+      
+      Alert.alert(
+        t('common:success'), 
+        t('verseDetail:connectionAdded')
+      );
     } catch (error) {
       console.error('Error adding connection:', error);
       Alert.alert(t('common:error'), t('verseDetail:failedToAddConnection'));
     }
+  };
+
+  const navigateToConnectedVerse = (verseId: string) => {
+    navigation.navigate('VerseDetail', { verseId });
   };
 
   if (isLoading) {
@@ -192,9 +270,7 @@ const VerseDetailScreen: React.FC = () => {
               <TouchableOpacity
                 key={connection.id}
                 style={styles.connectionItem}
-                onPress={() => {
-                  // Navigate to connected verse
-                }}
+                onPress={() => navigateToConnectedVerse(connection.targetVerseId)}
               >
                 <Ionicons
                   name={
@@ -218,32 +294,27 @@ const VerseDetailScreen: React.FC = () => {
           <TextInput
             style={styles.connectionInput}
             placeholder={t('verseDetail:enterVerseReference')}
-            // Additional implementation details
+            value={targetVerseRef}
+            onChangeText={setTargetVerseRef}
           />
           <View style={styles.connectionTypeContainer}>
             <TouchableOpacity
               style={styles.connectionTypeButton}
-              onPress={() => {
-                // Add thematic connection
-              }}
+              onPress={() => handleAddConnection(ConnectionType.THEMATIC)}
             >
               <Ionicons name="link" size={20} color="#007AFF" />
               <Text style={styles.connectionTypeText}>{t('verseDetail:thematic')}</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.connectionTypeButton}
-              onPress={() => {
-                // Add cross-reference connection
-              }}
+              onPress={() => handleAddConnection(ConnectionType.CROSS_REFERENCE)}
             >
               <Ionicons name="git-compare" size={20} color="#007AFF" />
               <Text style={styles.connectionTypeText}>{t('verseDetail:crossReference')}</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.connectionTypeButton}
-              onPress={() => {
-                // Add prophecy connection
-              }}
+              onPress={() => handleAddConnection(ConnectionType.PROPHECY)}
             >
               <Ionicons name="star" size={20} color="#007AFF" />
               <Text style={styles.connectionTypeText}>{t('verseDetail:prophecy')}</Text>

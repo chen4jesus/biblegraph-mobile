@@ -2,6 +2,7 @@
   "common": {
     "loading": "Loading...",
     "error": "Error",
+    "success": "Success",
     "retry": "Retry",
     "cancel": "Cancel",
     "save": "Save",
@@ -60,7 +61,10 @@
     "addConnection": "Add Connection",
     "failedToAddNote": "Failed to add note",
     "failedToAddConnection": "Failed to add connection",
+    "connectionAdded": "Connection added successfully",
     "verseNotFound": "Verse not found",
+    "targetVerseNotFound": "Target verse not found",
+    "enterValidReference": "Please enter a valid verse reference",
     "addNoteHint": "Add a note...",
     "noConnections": "No connections for this verse",
     "enterVerseReference": "Enter verse reference (e.g., John 3:16)",

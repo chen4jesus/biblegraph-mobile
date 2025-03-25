@@ -2,6 +2,7 @@
   "common": {
     "loading": "加载中...",
     "error": "错误",
+    "success": "成功",
     "retry": "重试",
     "cancel": "取消",
     "save": "保存",
@@ -60,7 +61,10 @@
     "addConnection": "添加连接",
     "failedToAddNote": "添加笔记失败",
     "failedToAddConnection": "添加连接失败",
+    "connectionAdded": "成功添加连接",
     "verseNotFound": "未找到经文",
+    "targetVerseNotFound": "未找到目标经文",
+    "enterValidReference": "请输入有效的经文引用",
     "addNoteHint": "添加笔记...",
     "noConnections": "此经文暂无连接",
     "enterVerseReference": "输入经文引用 (例如: 约翰福音 3:16)",

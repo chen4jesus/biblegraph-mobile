@@ -14,6 +14,7 @@ import { RootStackParamList } from '../navigation/types';
 import { Note, Verse } from '../types/bible';
 import { neo4jService } from '../services/neo4j';
 import { Ionicons } from '@expo/vector-icons';
+import { useTranslation } from 'react-i18next';
 
 type NotesScreenNavigationProp = NativeStackNavigationProp<RootStackParamList, 'MainTabs'>;
 
@@ -22,6 +23,7 @@ interface NoteWithVerse extends Note {
 }
 
 const NotesScreen: React.FC = () => {
+  const { t } = useTranslation(['notes']);
   const navigation = useNavigation<NotesScreenNavigationProp>();
   const [notes, setNotes] = useState<NoteWithVerse[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
@@ -113,7 +115,7 @@ const NotesScreen: React.FC = () => {
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.title}>My Notes</Text>
+        <Text style={styles.title}>{t('notes:title')}</Text>
         <TouchableOpacity
           style={styles.searchButton}
           onPress={() => navigation.navigate('Search')}
