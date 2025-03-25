@@ -98,9 +98,17 @@
     "connectedBy": "被引用"
   },
   "graph": {
-    "title": "图谱视图",
-    "noVerseSelected": "未选择经文",
-    "selectVerse": "选择一节经文查看详情"
+    "title": "经文图谱",
+    "resetLayout": "重置布局",
+    "centerNode": "居中节点",
+    "noData": "暂无图谱数据",
+    "loading": "加载图谱数据中...",
+    "error": "加载图谱出错",
+    "retry": "重试",
+    "zoomIn": "放大",
+    "zoomOut": "缩小",
+    "dragHint": "点击并拖动节点可以重新排列",
+    "doubleTapToReset": "双击重置视图"
   },
   "settings": {
     "title": "设置",

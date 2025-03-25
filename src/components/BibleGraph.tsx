@@ -17,6 +17,8 @@ import Svg, { Line, Circle, Text as SvgText, Path } from 'react-native-svg';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { Verse, Connection, ConnectionType } from '../types/bible';
 import { Ionicons } from '@expo/vector-icons';
+import { useTranslation } from 'react-i18next';
+import { PinchGestureHandler, State, GestureEvent } from 'react-native-gesture-handler';
 
 interface Node {
   id: string;
@@ -58,6 +60,11 @@ const EDGE_COLORS = {
   [ConnectionType.PROPHECY]: '#FBBC05',
 };
 
+// Add ZOOM constants with the other constants
+const MIN_SCALE = 0.5;
+const MAX_SCALE = 2.5;
+const SCALE_STEP = 0.1;
+
 const BibleGraph: React.FC<BibleGraphProps> = ({
   verses,
   connections,
@@ -75,13 +82,33 @@ const BibleGraph: React.FC<BibleGraphProps> = ({
   const [modalVisible, setModalVisible] = useState(false);
   const [modalContent, setModalContent] = useState<{ title: string, content: string }>({ title: '', content: '' });
   const [controls, setControls] = useState<{ visible: boolean }>({ visible: false });
+  const [nodeDragPosition, setNodeDragPosition] = useState({ x: 0, y: 0 });
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+  // Store last tap timestamp for double-tap detection
+  const [lastTapTimestamp, setLastTapTimestamp] = useState(0);
 
   const pan = useRef(new Animated.ValueXY()).current;
   const scaleValue = useRef(new Animated.Value(1)).current;
+  const nodePan = useRef(new Animated.ValueXY()).current;
+  // Track base scale for pinch gesture
+  const [baseScale, setBaseScale] = useState(1);
 
+  const { t } = useTranslation();
+  const [showHint, setShowHint] = useState(true);
+  
   useEffect(() => {
     initializeGraph();
   }, [verses, connections]);
+
+  useEffect(() => {
+    if (showHint) {
+      const timer = setTimeout(() => {
+        setShowHint(false);
+      }, 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [showHint]);
 
   const initializeGraph = () => {
     // Create nodes with an improved layout algorithm
@@ -146,26 +173,98 @@ const BibleGraph: React.FC<BibleGraphProps> = ({
     setOffset({ x: offsetX, y: offsetY });
   };
 
+  // Handle zoom gestures
+  const onPinchGestureEvent = Animated.event(
+    [{ nativeEvent: { scale: scaleValue } }],
+    { useNativeDriver: false }
+  );
+
+  const onPinchHandlerStateChange = (event: GestureEvent) => {
+    if (event.nativeEvent.oldState === State.ACTIVE) {
+      // Type assertion for event.nativeEvent.scale
+      const gestureScale = event.nativeEvent.scale as number;
+      const newScale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, baseScale * gestureScale));
+      setScale(newScale);
+      setBaseScale(newScale);
+      scaleValue.setValue(1);
+    }
+  };
+
+  // Handle double tap to reset zoom and position
+  const handleDoubleTap = (x: number, y: number) => {
+    const now = Date.now();
+    const DOUBLE_TAP_DELAY = 300;
+    
+    if (now - lastTapTimestamp < DOUBLE_TAP_DELAY) {
+      // Double tap detected
+      resetView();
+    }
+    
+    setLastTapTimestamp(now);
+  };
+
+  const resetView = () => {
+    // Reset zoom and position with animation
+    Animated.parallel([
+      Animated.spring(pan, {
+        toValue: { x: 0, y: 0 },
+        useNativeDriver: false,
+        friction: 7,
+        tension: 40,
+      }),
+      Animated.timing(scaleValue, {
+        toValue: 1,
+        duration: 300,
+        useNativeDriver: false,
+      }),
+    ]).start(() => {
+      setScale(1);
+      setOffset({ x: 0, y: 0 });
+      setBaseScale(1);
+    });
+  };
+
   const panResponder = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
-      onMoveShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: (evt, gestureState) => {
+        return Math.abs(gestureState.dx) > 2 || Math.abs(gestureState.dy) > 2;
+      },
       onPanResponderGrant: (evt, gestureState) => {
-        // Check if we're touching a node
         const { locationX, locationY } = evt.nativeEvent;
+        
+        // Check for double tap
+        handleDoubleTap(locationX, locationY);
+        
         const touchedNodeId = findTouchedNode(locationX, locationY);
         
         if (touchedNodeId) {
-          setDraggingNode(touchedNodeId);
-          // Select the node when starting to drag
-          const touchedNode = nodes.find(n => n.id === touchedNodeId);
-          if (touchedNode) {
-            setSelectedNode(touchedNode);
+          const node = nodes.find(n => n.id === touchedNodeId);
+          if (node) {
+            setDraggingNode(touchedNodeId);
+            setSelectedNode(node);
+            setDragStart({ x: node.x, y: node.y });
+            
+            nodePan.setValue({ x: 0, y: 0 });
+            
+            // Enhanced visual feedback
+            Animated.parallel([
+              Animated.spring(scaleValue, {
+                toValue: 1.1,
+                friction: 7,
+                tension: 40,
+                useNativeDriver: false
+              }),
+              Animated.timing(new Animated.Value(0), {
+                toValue: 1,
+                duration: 300,
+                useNativeDriver: false
+              })
+            ]).start();
           }
           return;
         }
         
-        // If not touching a node, pan the entire graph
         pan.setOffset({
           x: (pan.x as any)._value,
           y: (pan.y as any)._value,
@@ -173,26 +272,56 @@ const BibleGraph: React.FC<BibleGraphProps> = ({
         pan.setValue({ x: 0, y: 0 });
       },
       onPanResponderMove: (evt, gestureState) => {
+        setIsDragging(true);
+        
         if (draggingNode) {
-          // Move the specific node
+          nodePan.setValue({ x: gestureState.dx, y: gestureState.dy });
+          
           setNodes(currentNodes => 
             currentNodes.map(node => 
               node.id === draggingNode 
-                ? { ...node, x: node.x + gestureState.dx, y: node.y + gestureState.dy } 
+                ? { 
+                    ...node, 
+                    x: dragStart.x + gestureState.dx, 
+                    y: dragStart.y + gestureState.dy 
+                  } 
                 : node
             )
           );
         } else {
-          // Pan the whole graph
           Animated.event(
             [null, { dx: pan.x, dy: pan.y }],
             { useNativeDriver: false }
           )(evt, gestureState);
         }
       },
-      onPanResponderRelease: () => {
+      onPanResponderRelease: (evt, gestureState) => {
         if (draggingNode) {
+          Animated.spring(scaleValue, {
+            toValue: 1,
+            friction: 5,
+            tension: 40,
+            useNativeDriver: false
+          }).start();
+          
+          Animated.spring(nodePan, {
+            toValue: { x: 0, y: 0 },
+            friction: 5,
+            tension: 40,
+            useNativeDriver: false
+          }).start();
+          
           setDraggingNode(null);
+          
+          const wasJustTap = Math.abs(gestureState.dx) < 5 && Math.abs(gestureState.dy) < 5;
+          if (wasJustTap && !isDragging) {
+            const node = nodes.find(n => n.id === draggingNode);
+            if (node) {
+              handleNodePress(node);
+            }
+          }
+          
+          setIsDragging(false);
         } else {
           pan.flattenOffset();
           setOffset({
@@ -204,9 +333,7 @@ const BibleGraph: React.FC<BibleGraphProps> = ({
     })
   ).current;
 
-  // Function to find if a touch is on a node
   const findTouchedNode = (x: number, y: number): string | null => {
-    // Adjust coordinates for current pan and scale
     const adjustedX = (x - offset.x) / scale;
     const adjustedY = (y - offset.y) / scale;
 
@@ -224,11 +351,9 @@ const BibleGraph: React.FC<BibleGraphProps> = ({
   };
 
   const handleNodePress = (node: Node) => {
-    // Check if it's a short tap (not a drag operation)
     if (!draggingNode) {
       setSelectedNode(prevSelected => prevSelected?.id === node.id ? null : node);
       
-      // Show verse details in modal
       setModalContent({
         title: `${node.verse.book} ${node.verse.chapter}:${node.verse.verse}`,
         content: node.verse.text,
@@ -251,9 +376,7 @@ const BibleGraph: React.FC<BibleGraphProps> = ({
     setControls(prev => ({ visible: !prev.visible }));
   };
 
-  // Modern curved edge rendering
   const renderEdge = (edge: Edge) => {
-    // For note connections, use a different visual style
     if (edge.type === ConnectionType.NOTE) {
       return renderNoteEdge(edge);
     }
@@ -268,19 +391,15 @@ const BibleGraph: React.FC<BibleGraphProps> = ({
     const angle = Math.atan2(dy, dx);
     const distance = Math.sqrt(dx * dx + dy * dy);
 
-    // Bezier curve parameters for a more aesthetic curve
     const midX = (sourceNode.x + targetNode.x) / 2;
     const midY = (sourceNode.y + targetNode.y) / 2;
-    const curveFactor = Math.min(distance * 0.2, 60); // Limit the curve height
+    const curveFactor = Math.min(distance * 0.2, 60);
     
-    // Perpendicular offset for the control point
     const cpX = midX - curveFactor * Math.sin(angle);
     const cpY = midY + curveFactor * Math.cos(angle);
 
-    // Create SVG path for curved edge
     const path = `M ${sourceNode.x} ${sourceNode.y} Q ${cpX} ${cpY} ${targetNode.x} ${targetNode.y}`;
     
-    // Determine if this edge is selected
     const isSelected = selectedEdge?.id === edge.id;
     const edgeColor = isSelected 
       ? NODE_SELECTED_COLOR 
@@ -321,9 +440,8 @@ const BibleGraph: React.FC<BibleGraphProps> = ({
     const verseNode = nodes.find(n => n.id === edge.source);
     if (!verseNode) return null;
 
-    // Position the note indicator near the verse node
-    const noteX = verseNode.x + 30; // Offset to the right
-    const noteY = verseNode.y - 25; // Offset upward
+    const noteX = verseNode.x + 30;
+    const noteY = verseNode.y - 25;
     const isSelected = selectedEdge?.id === edge.id;
     
     return (
@@ -334,7 +452,6 @@ const BibleGraph: React.FC<BibleGraphProps> = ({
         activeOpacity={0.7}
       >
         <Svg height="100%" width="100%">
-          {/* Dotted line connecting the note to the verse */}
           <Line
             x1={verseNode.x}
             y1={verseNode.y}
@@ -344,7 +461,6 @@ const BibleGraph: React.FC<BibleGraphProps> = ({
             strokeWidth={isSelected ? 2 : 1}
             strokeDasharray="3,3"
           />
-          {/* Note bubble with shadow effect */}
           <Circle
             cx={noteX}
             cy={noteY}
@@ -353,7 +469,6 @@ const BibleGraph: React.FC<BibleGraphProps> = ({
             stroke={isSelected ? NODE_SELECTED_COLOR : EDGE_COLORS[edge.type]}
             strokeWidth={isSelected ? 2 : 1}
           />
-          {/* Note icon */}
           <SvgText
             x={noteX}
             y={noteY + 1}
@@ -364,7 +479,6 @@ const BibleGraph: React.FC<BibleGraphProps> = ({
           >
             📝
           </SvgText>
-          {/* Only show preview text if labels are enabled */}
           {showLabels && edge.description && (
             <SvgText
               x={noteX}
@@ -385,6 +499,8 @@ const BibleGraph: React.FC<BibleGraphProps> = ({
     const isSelected = selectedNode?.id === node.id;
     const isDragging = draggingNode === node.id;
     
+    const nodeScale = isDragging ? 1.1 : 1;
+    
     return (
       <TouchableOpacity
         key={node.id}
@@ -397,12 +513,14 @@ const BibleGraph: React.FC<BibleGraphProps> = ({
             width: node.radius * 2,
             height: node.radius * 2,
             zIndex: isSelected || isDragging ? 10 : 1,
+            transform: [
+              { scale: nodeScale }
+            ],
           },
         ]}
         activeOpacity={0.7}
       >
         <Svg height="100%" width="100%">
-          {/* Shadow effect */}
           {(isSelected || isDragging) && (
             <Circle
               cx={node.radius}
@@ -412,22 +530,20 @@ const BibleGraph: React.FC<BibleGraphProps> = ({
               opacity={0.5}
             />
           )}
-          {/* Main circle */}
           <Circle
             cx={node.radius}
             cy={node.radius}
             r={node.radius - NODE_STROKE_WIDTH}
             fill={NODE_FILL_COLOR}
-            stroke={isSelected ? NODE_SELECTED_COLOR : NODE_STROKE_COLOR}
-            strokeWidth={isSelected ? NODE_STROKE_WIDTH + 1 : NODE_STROKE_WIDTH}
+            stroke={isDragging ? '#FBBC05' : isSelected ? NODE_SELECTED_COLOR : NODE_STROKE_COLOR}
+            strokeWidth={isSelected || isDragging ? NODE_STROKE_WIDTH + 1 : NODE_STROKE_WIDTH}
           />
-          {/* Text label */}
           <SvgText
             x={node.radius}
             y={node.radius}
             fill="#333333"
             fontSize="12"
-            fontWeight={isSelected ? "bold" : "normal"}
+            fontWeight={isSelected || isDragging ? "bold" : "normal"}
             textAnchor="middle"
             alignmentBaseline="middle"
           >
@@ -438,7 +554,6 @@ const BibleGraph: React.FC<BibleGraphProps> = ({
     );
   };
 
-  // Render controls overlay
   const renderControls = () => (
     <Animated.View style={[styles.controlsContainer, controls.visible ? styles.visible : styles.hidden]}>
       <TouchableOpacity style={styles.controlButton} onPress={resetLayout}>
@@ -455,7 +570,6 @@ const BibleGraph: React.FC<BibleGraphProps> = ({
     </Animated.View>
   );
 
-  // Render verse detail modal
   const renderModal = () => (
     <Modal
       animationType="fade"
@@ -494,7 +608,6 @@ const BibleGraph: React.FC<BibleGraphProps> = ({
     </Modal>
   );
 
-  // Floating action button for controls
   const renderFAB = () => (
     <TouchableOpacity 
       style={styles.fab}
@@ -505,28 +618,92 @@ const BibleGraph: React.FC<BibleGraphProps> = ({
     </TouchableOpacity>
   );
 
+  const renderDragHint = () => {
+    if (!showHint) return null;
+    
+    return (
+      <Animated.View style={styles.dragHint}>
+        <Ionicons name="finger-print" size={24} color="#4285F4" />
+        <View style={styles.dragHintTextContainer}>
+          <Text style={styles.dragHintText}>
+            {t('graph:dragHint')}
+          </Text>
+          <Text style={styles.dragHintSubtext}>
+            {t('graph:doubleTapToReset')}
+          </Text>
+        </View>
+        <TouchableOpacity 
+          onPress={() => setShowHint(false)}
+          style={styles.hintCloseButton}
+        >
+          <Ionicons name="close" size={18} color="#777" />
+        </TouchableOpacity>
+      </Animated.View>
+    );
+  };
+
+  // Add zoom controls
+  function renderZoomControls() {
+    return (
+      <View style={styles.zoomControls}>
+        <TouchableOpacity 
+          style={styles.zoomButton}
+          onPress={() => {
+            const newScale = Math.min(MAX_SCALE, scale + SCALE_STEP);
+            setScale(newScale);
+            setBaseScale(newScale);
+          }}
+          accessibilityLabel={t('graph:zoomIn')}
+        >
+          <Ionicons name="add" size={24} color="#4285F4" />
+        </TouchableOpacity>
+        <TouchableOpacity 
+          style={styles.zoomButton}
+          onPress={() => {
+            const newScale = Math.max(MIN_SCALE, scale - SCALE_STEP);
+            setScale(newScale);
+            setBaseScale(newScale);
+          }}
+          accessibilityLabel={t('graph:zoomOut')}
+        >
+          <Ionicons name="remove" size={24} color="#4285F4" />
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar translucent backgroundColor="transparent" barStyle="dark-content" />
       <GestureHandlerRootView style={styles.container}>
-        <Animated.View 
-          style={[
-            styles.graphContainer,
-            {
-              transform: [
-                { translateX: pan.x },
-                { translateY: pan.y },
-              ],
-            },
-          ]}
-          {...panResponder.panHandlers}
+        <PinchGestureHandler
+          onGestureEvent={onPinchGestureEvent}
+          onHandlerStateChange={onPinchHandlerStateChange}
         >
-          {edges.map(renderEdge)}
-          {nodes.map(renderNode)}
-        </Animated.View>
-        {renderControls()}
-        {renderFAB()}
-        {renderModal()}
+          <Animated.View style={styles.container}>
+            <Animated.View 
+              style={[
+                styles.graphContainer,
+                {
+                  transform: [
+                    { translateX: pan.x },
+                    { translateY: pan.y },
+                    { scale: scaleValue }
+                  ],
+                },
+              ]}
+              {...panResponder.panHandlers}
+            >
+              {edges.map(renderEdge)}
+              {nodes.map(renderNode)}
+            </Animated.View>
+            {renderControls()}
+            {renderFAB()}
+            {renderModal()}
+            {renderDragHint()}
+            {renderZoomControls()}
+          </Animated.View>
+        </PinchGestureHandler>
       </GestureHandlerRootView>
     </SafeAreaView>
   );
@@ -650,6 +827,60 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 14,
     fontWeight: '500',
+  },
+  dragHint: {
+    position: 'absolute',
+    top: 20,
+    left: 20,
+    right: 20,
+    backgroundColor: 'rgba(255, 255, 255, 0.9)',
+    borderRadius: 10,
+    padding: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+    zIndex: 100,
+  },
+  dragHintTextContainer: {
+    flex: 1,
+    marginLeft: 10,
+  },
+  dragHintText: {
+    color: '#333',
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  dragHintSubtext: {
+    color: '#666',
+    fontSize: 12,
+    marginTop: 2,
+  },
+  hintCloseButton: {
+    padding: 5,
+  },
+  zoomControls: {
+    position: 'absolute',
+    top: 20,
+    right: 20,
+    backgroundColor: 'rgba(255, 255, 255, 0.9)',
+    borderRadius: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  zoomButton: {
+    width: 40,
+    height: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
   },
 });
 

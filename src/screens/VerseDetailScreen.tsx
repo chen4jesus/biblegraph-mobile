@@ -421,7 +421,10 @@ const VerseDetailScreen: React.FC = () => {
       <View style={styles.tagsHeader}>
         <Text style={styles.tagsTitle}>{t('verseDetail:tags')}</Text>
         <TouchableOpacity
-          onPress={() => navigation.navigate('TagsManagement')}
+          onPress={() => {
+            // Use any to bypass TypeScript navigation typing issues
+            (navigation as any).navigate('TagsManagement');
+          }}
           style={styles.manageTagsButton}
         >
           <Text style={styles.manageTagsText}>{t('verseDetail:manageTags')}</Text>

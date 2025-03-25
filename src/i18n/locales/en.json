@@ -98,9 +98,17 @@
     "connectedBy": "Connected By"
   },
   "graph": {
-    "title": "Graph View",
-    "noVerseSelected": "No verse selected",
-    "selectVerse": "Select a verse to view details"
+    "title": "Bible Graph",
+    "resetLayout": "Reset Layout",
+    "centerNode": "Center on Node",
+    "noData": "No graph data available",
+    "loading": "Loading graph data...",
+    "error": "Error loading graph",
+    "retry": "Retry",
+    "zoomIn": "Zoom In",
+    "zoomOut": "Zoom Out",
+    "dragHint": "Tap and drag nodes to rearrange",
+    "doubleTapToReset": "Double tap to reset view"
   },
   "settings": {
     "title": "Settings",

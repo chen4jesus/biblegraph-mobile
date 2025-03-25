@@ -17,7 +17,7 @@ import { neo4jService } from '../services/neo4j';
 import { Ionicons } from '@expo/vector-icons';
 import { useTranslation } from 'react-i18next';
 
-type NotesScreenNavigationProp = NativeStackNavigationProp<RootStackParamList, 'MainTabs'>;
+type NotesScreenNavigationProp = NativeStackNavigationProp<RootStackParamList, 'Notes'>;
 
 interface NoteWithVerse extends Note {
   verse?: Verse;
@@ -88,12 +88,33 @@ const NotesScreen: React.FC = () => {
     // Filter by search query if present
     if (searchQuery.trim()) {
       const query = searchQuery.toLowerCase();
-      filtered = filtered.filter(
-        (note) =>
-          note.content.toLowerCase().includes(query) ||
-          note.verse?.text.toLowerCase().includes(query) ||
-          note.tags.some((tag) => tag.toLowerCase().includes(query))
-      );
+      
+      // Check if query looks like a verse reference (e.g., "Genesis 1:1")
+      const verseReferencePattern = /^([a-z0-9\s]+)\s*(\d+):(\d+)$/i;
+      const match = query.match(verseReferencePattern);
+      
+      if (match) {
+        // Extract book, chapter, and verse from the reference
+        const [, book, chapter, verse] = match;
+        const normalizedBook = book.trim().toLowerCase();
+        
+        // Filter notes that match this verse reference
+        filtered = filtered.filter(note => 
+          note.verse && 
+          note.verse.book.toLowerCase().includes(normalizedBook) &&
+          note.verse.chapter.toString() === chapter &&
+          note.verse.verse.toString() === verse
+        );
+      } else {
+        // Perform regular text search if not a verse reference
+        filtered = filtered.filter(
+          (note) =>
+            note.content.toLowerCase().includes(query) ||
+            note.verse?.text.toLowerCase().includes(query) ||
+            (note.verse && `${note.verse.book} ${note.verse.chapter}:${note.verse.verse}`.toLowerCase().includes(query)) ||
+            note.tags.some((tag) => tag.toLowerCase().includes(query))
+        );
+      }
     }
     
     setFilteredNotes(filtered);
@@ -148,7 +169,9 @@ const NotesScreen: React.FC = () => {
         <View style={styles.headerButtons}>
           <TouchableOpacity
             style={styles.headerButton}
-            onPress={() => navigation.navigate('TagsManagement')}
+            onPress={() => {
+              (navigation as any).navigate('TagsManagement');
+            }}
           >
             <Ionicons name="pricetags" size={24} color="#007AFF" />
           </TouchableOpacity>
@@ -165,7 +188,7 @@ const NotesScreen: React.FC = () => {
         <Ionicons name="search" size={20} color="#666" style={styles.searchIcon} />
         <TextInput
           style={styles.searchInput}
-          placeholder={t('notes:searchNotes')}
+          placeholder={t('notes:searchNotes') + ' (e.g. Genesis 1:1)'}
           value={searchQuery}
           onChangeText={setSearchQuery}
         />
