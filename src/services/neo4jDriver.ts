@@ -227,18 +227,33 @@ class Neo4jDriver {
         RETURN c, v1.id as sourceId, v.id as targetId
       `, { verseId });
       
-      return result.records.map(record => {
+      // Use a Map to deduplicate connections by source-target-type
+      const uniqueConnections = new Map<string, Connection>();
+      
+      result.records.forEach(record => {
         const connectionProps = record.get('c').properties;
-        return {
-          id: connectionProps.id.toString(),
-          sourceVerseId: record.get('sourceId'),
-          targetVerseId: record.get('targetId'),
-          type: connectionProps.type as ConnectionType,
-          description: connectionProps.description || '',
-          createdAt: connectionProps.createdAt || new Date().toISOString(),
-          updatedAt: connectionProps.updatedAt || new Date().toISOString(),
-        };
+        const sourceId = record.get('sourceId');
+        const targetId = record.get('targetId');
+        const type = connectionProps.type as ConnectionType;
+        
+        // Create a unique key based on source, target, and type
+        const uniqueKey = `${sourceId}-${targetId}-${type}`;
+        
+        // Only add if not already in the map
+        if (!uniqueConnections.has(uniqueKey)) {
+          uniqueConnections.set(uniqueKey, {
+            id: connectionProps.id.toString(),
+            sourceVerseId: sourceId,
+            targetVerseId: targetId,
+            type: type,
+            description: connectionProps.description || '',
+            createdAt: connectionProps.createdAt || new Date().toISOString(),
+            updatedAt: connectionProps.updatedAt || new Date().toISOString(),
+          });
+        }
       });
+      
+      return Array.from(uniqueConnections.values());
     } finally {
       await session.close();
     }
@@ -423,6 +438,9 @@ class Neo4jDriver {
         throw new Error(`Verse with id ${verseId} not found`);
       }
 
+      // Ensure tags is an array
+      const tagsArray = Array.isArray(tags) ? tags : [];
+
       const result = await session.run(`
         MATCH (v:Verse {id: $verseId})
         CREATE (n:Note {
@@ -437,7 +455,7 @@ class Neo4jDriver {
         id,
         verseId,
         content,
-        tags,
+        tags: tagsArray,
         now
       });
       
@@ -449,7 +467,7 @@ class Neo4jDriver {
       return {
         id: noteProps.id.toString(),
         content: noteProps.content.toString(),
-        tags,
+        tags: tagsArray,
         createdAt: noteProps.createdAt.toString(),
         updatedAt: noteProps.updatedAt.toString(),
         verseId
@@ -484,7 +502,7 @@ class Neo4jDriver {
       
       const params: Record<string, any> = {
         id: noteId,
-        content: updates.content,
+        content: updates.content || '',
         now
       };
       
@@ -500,15 +518,16 @@ class Neo4jDriver {
       
       const record = result.records[0];
       const noteProps = record.get('n').properties;
+      const verseId = record.get('verseId');
       const tags = record.get('tags') || [];
       
       return {
         id: noteProps.id.toString(),
-        verseId: record.get('verseId'),
+        verseId,
         content: noteProps.content,
         tags: Array.isArray(tags) ? tags : [],
         createdAt: noteProps.createdAt,
-        updatedAt: noteProps.updatedAt,
+        updatedAt: noteProps.updatedAt
       };
     } finally {
       await session.close();
@@ -518,13 +537,45 @@ class Neo4jDriver {
   public async deleteNote(noteId: string): Promise<boolean> {
     const session = this.getSession();
     try {
-      const result = await session.run(`
+      // First verify the note exists
+      const checkResult = await session.run(`
         MATCH (n:Note {id: $id})
-        DETACH DELETE n
-        RETURN count(n) as deleted
+        RETURN count(n) as noteExists
       `, { id: noteId });
       
-      return result.records[0].get('deleted') > 0;
+      if (checkResult.records[0].get('noteExists') === 0) {
+        console.log(`Note with id ${noteId} not found, nothing to delete`);
+        return false;
+      }
+      
+      // Then delete it with explicit transaction
+      const txc = session.beginTransaction();
+      try {
+        const deleteResult = await txc.run(`
+          MATCH (n:Note {id: $id})
+          DETACH DELETE n
+          RETURN count(n) as deleted
+        `, { id: noteId });
+        
+        const deleted = deleteResult.records[0].get('deleted') > 0;
+        
+        if (deleted) {
+          await txc.commit();
+          console.log(`Successfully deleted note ${noteId}`);
+          return true;
+        } else {
+          await txc.rollback();
+          console.error(`Failed to delete note ${noteId}`);
+          return false;
+        }
+      } catch (txError) {
+        await txc.rollback();
+        console.error(`Transaction error deleting note ${noteId}:`, txError);
+        throw txError;
+      }
+    } catch (error) {
+      console.error(`Error in deleteNote for ${noteId}:`, error);
+      return false;
     } finally {
       await session.close();
     }

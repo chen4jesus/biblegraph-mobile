@@ -8,7 +8,8 @@
     "save": "Save",
     "delete": "Delete",
     "edit": "Edit",
-    "search": "Search Bible verses..."
+    "search": "Search Bible verses...",
+    "all": "All"
   },
   "home": {
     "title": "Bible Graph",
@@ -22,7 +23,8 @@
     "notes": "My Notes",
     "profile": "Profile",
     "settings": "Settings",
-    "search": "Search"
+    "search": "Search",
+    "tagsManagement": "Manage Tags"
   },
   "verses": {
     "chapter": "Chapter",
@@ -37,7 +39,23 @@
     "addNote": "Add Note",
     "editNote": "Edit Note",
     "deleteNote": "Delete Note",
-    "noteContent": "Note content"
+    "noteContent": "Note content",
+    "manageTags": "Manage Tags"
+  },
+  "tags": {
+    "manageTags": "Manage Tags",
+    "searchTags": "Search tags...",
+    "addNewTag": "Add new tag...",
+    "noTagsFound": "No tags found",
+    "noTagsYet": "No tags yet",
+    "tagNameRequired": "Tag name is required",
+    "tagAlreadyExists": "Tag with this name already exists",
+    "confirmDeleteTitle": "Delete Tag",
+    "confirmDeleteMessage": "Are you sure you want to delete the tag '{tagName}'? It will be removed from all notes.",
+    "errorLoadingTags": "Error loading tags",
+    "errorUpdatingTag": "Error updating tag",
+    "errorDeletingTag": "Error deleting tag",
+    "tagCount": "{count} notes"
   },
   "connections": {
     "title": "Connections",
@@ -56,21 +74,28 @@
   "verseDetail": {
     "title": "Verse Detail",
     "notes": "Notes",
-    "connections": "Connections",
-    "addNote": "Add Note",
-    "addConnection": "Add Connection",
-    "failedToAddNote": "Failed to add note",
-    "failedToAddConnection": "Failed to add connection",
-    "connectionAdded": "Connection added successfully",
-    "verseNotFound": "Verse not found",
-    "targetVerseNotFound": "Target verse not found",
-    "enterValidReference": "Please enter a valid verse reference",
     "addNoteHint": "Add a note...",
-    "noConnections": "No connections for this verse",
-    "enterVerseReference": "Enter verse reference (e.g., John 3:16)",
+    "failedToAddNote": "Failed to add note",
+    "failedToUpdateNote": "Failed to update note",
+    "failedToDeleteNote": "Failed to delete note",
+    "connections": "Connections",
+    "noConnections": "No connections yet",
+    "addConnection": "Add Connection",
+    "enterVerseReference": "Enter verse reference (e.g. John 3:16)",
     "thematic": "Thematic",
     "crossReference": "Cross Reference",
-    "prophecy": "Prophecy"
+    "prophecy": "Prophecy",
+    "connectionAdded": "Connection added successfully",
+    "failedToAddConnection": "Failed to add connection",
+    "showLabels": "Show Labels",
+    "enterValidReference": "Please enter a valid verse reference",
+    "targetVerseNotFound": "Target verse not found",
+    "tags": "Tags",
+    "addTag": "Add a tag...",
+    "manageTags": "Manage Tags",
+    "verseNotFound": "Verse not found",
+    "connectsTo": "Connects To",
+    "connectedBy": "Connected By"
   },
   "graph": {
     "title": "Graph View",

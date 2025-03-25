@@ -57,8 +57,9 @@ export const useBibleGraph = ({
       const mergedVerses = mergeVerses(onlineVerses, offlineVerses);
       const mergedConnections = mergeConnections(onlineConnections, offlineConnections);
       
-      // Process notes and create note-to-verse connections
-      const mergedNotes = mergeNotes(onlineNotes, offlineNotes);
+      // Only use online notes - they're the source of truth for what's been deleted
+      // This prevents deleted notes from reappearing
+      const mergedNotes = onlineNotes;
       
       // Create virtual connections for notes
       const noteConnections: Connection[] = mergedNotes.map(note => ({
@@ -71,8 +72,20 @@ export const useBibleGraph = ({
         updatedAt: note.updatedAt,
       }));
 
-      // Combine regular connections with note connections
-      const allConnections = [...mergedConnections, ...noteConnections];
+      // Deduplicate connections by source-target-type combination
+      const uniqueConnectionsMap = new Map<string, Connection>();
+      
+      // Process merged regular connections
+      mergedConnections.forEach(connection => {
+        const uniqueKey = `${connection.sourceVerseId}-${connection.targetVerseId}-${connection.type}`;
+        if (!uniqueConnectionsMap.has(uniqueKey) || 
+            new Date(connection.updatedAt) > new Date(uniqueConnectionsMap.get(uniqueKey)!.updatedAt)) {
+          uniqueConnectionsMap.set(uniqueKey, connection);
+        }
+      });
+      
+      // Combine deduplicated connections with note connections
+      const allConnections = [...uniqueConnectionsMap.values(), ...noteConnections];
 
       setVerses(mergedVerses);
       setConnections(allConnections);
@@ -84,6 +97,9 @@ export const useBibleGraph = ({
           setSelectedVerse(initialVerse);
         }
       }
+
+      // Update local storage with latest notes to prevent future sync issues
+      await storageService.saveNotes(onlineNotes);
 
       // Sync data in the background
       syncService.syncData().catch(console.error);

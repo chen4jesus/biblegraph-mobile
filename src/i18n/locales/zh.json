@@ -8,7 +8,8 @@
     "save": "保存",
     "delete": "删除",
     "edit": "编辑",
-    "search": "搜索圣经经文..."
+    "search": "搜索圣经经文...",
+    "all": "全部"
   },
   "home": {
     "title": "圣经图谱",
@@ -22,7 +23,8 @@
     "notes": "我的笔记",
     "profile": "个人资料",
     "settings": "设置",
-    "search": "搜索"
+    "search": "搜索",
+    "tagsManagement": "管理标签"
   },
   "verses": {
     "chapter": "章",
@@ -37,7 +39,23 @@
     "addNote": "添加笔记",
     "editNote": "编辑笔记",
     "deleteNote": "删除笔记",
-    "noteContent": "笔记内容"
+    "noteContent": "笔记内容",
+    "manageTags": "管理标签"
+  },
+  "tags": {
+    "manageTags": "管理标签",
+    "searchTags": "搜索标签...",
+    "addNewTag": "添加新标签...",
+    "noTagsFound": "未找到标签",
+    "noTagsYet": "暂无标签",
+    "tagNameRequired": "标签名称不能为空",
+    "tagAlreadyExists": "已存在同名标签",
+    "confirmDeleteTitle": "删除标签",
+    "confirmDeleteMessage": "确定要删除标签 '{tagName}' 吗？它将从所有笔记中移除。",
+    "errorLoadingTags": "加载标签时出错",
+    "errorUpdatingTag": "更新标签时出错",
+    "errorDeletingTag": "删除标签时出错",
+    "tagCount": "{count} 条笔记"
   },
   "connections": {
     "title": "连接",
@@ -56,21 +74,28 @@
   "verseDetail": {
     "title": "经文详情",
     "notes": "笔记",
-    "connections": "连接",
-    "addNote": "添加笔记",
-    "addConnection": "添加连接",
-    "failedToAddNote": "添加笔记失败",
-    "failedToAddConnection": "添加连接失败",
-    "connectionAdded": "成功添加连接",
-    "verseNotFound": "未找到经文",
-    "targetVerseNotFound": "未找到目标经文",
-    "enterValidReference": "请输入有效的经文引用",
     "addNoteHint": "添加笔记...",
-    "noConnections": "此经文暂无连接",
-    "enterVerseReference": "输入经文引用 (例如: 约翰福音 3:16)",
-    "thematic": "主题性",
+    "failedToAddNote": "添加笔记失败",
+    "failedToUpdateNote": "更新笔记失败",
+    "failedToDeleteNote": "删除笔记失败",
+    "connections": "关联",
+    "noConnections": "暂无关联",
+    "addConnection": "添加关联",
+    "enterVerseReference": "输入经文引用（例如：约翰福音 3:16）",
+    "thematic": "主题",
     "crossReference": "交叉引用",
-    "prophecy": "预言"
+    "prophecy": "预言",
+    "connectionAdded": "成功添加关联",
+    "failedToAddConnection": "添加关联失败",
+    "showLabels": "显示标签",
+    "enterValidReference": "请输入有效的经文引用",
+    "targetVerseNotFound": "目标经文未找到",
+    "tags": "标签",
+    "addTag": "添加标签...",
+    "manageTags": "管理标签",
+    "verseNotFound": "经文未找到",
+    "connectsTo": "指向",
+    "connectedBy": "被引用"
   },
   "graph": {
     "title": "图谱视图",

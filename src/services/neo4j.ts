@@ -1,5 +1,6 @@
 import { Verse, Connection, Note, User } from '../types/bible';
 import { neo4jDatabaseService } from './neo4jDatabase';
+import { storageService } from './storage';
 
 class Neo4jService {
   private static instance: Neo4jService;
@@ -173,13 +174,22 @@ class Neo4jService {
 
   async updateNote(noteId: string, updates: Partial<Note>): Promise<Note> {
     try {
-      // Make sure tags is included in the updates if provided
-      if (updates.tags === undefined) {
+      // Make sure tags is included in the updates
+      // If tags is undefined or null, get the tags from the existing note
+      if (!updates.tags) {
         const existingNote = await this.getNote(noteId);
         if (existingNote) {
-          updates.tags = existingNote.tags;
+          updates.tags = existingNote.tags || [];
+        } else {
+          updates.tags = [];
         }
       }
+
+      // Ensure tags is always an array
+      if (!Array.isArray(updates.tags)) {
+        updates.tags = [];
+      }
+
       return await neo4jDatabaseService.updateNote(noteId, updates);
     } catch (error) {
       console.error(`Error updating note ${noteId}:`, error);
@@ -187,9 +197,25 @@ class Neo4jService {
     }
   }
 
-  async deleteNote(noteId: string): Promise<void> {
+  async deleteNote(noteId: string): Promise<boolean> {
     try {
-      await neo4jDatabaseService.deleteNote(noteId);
+      const success = await neo4jDatabaseService.deleteNote(noteId);
+      if (!success) {
+        console.warn(`Note deletion failed for ID: ${noteId}`);
+        return false;
+      }
+      
+      // Also delete from local storage to prevent resurrection
+      try {
+        const storedNotes = await storageService.getNotes();
+        const filteredNotes = storedNotes.filter(note => note.id !== noteId);
+        await storageService.saveNotes(filteredNotes);
+      } catch (storageError) {
+        console.warn('Failed to remove note from local storage:', storageError);
+        // Continue since the primary database deletion was successful
+      }
+      
+      return true;
     } catch (error) {
       console.error(`Error deleting note ${noteId}:`, error);
       throw error;

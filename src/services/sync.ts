@@ -56,21 +56,28 @@ class SyncService {
         storageService.getNotes(),
       ]);
 
-      // Merge notes, keeping the most recent version
-      const mergedNotes = this.mergeNotes(onlineNotes, offlineNotes);
+      // Instead of merging, prioritize online notes as they represent the current state
+      // This ensures deleted notes stay deleted
+      const onlineNoteIds = new Set(onlineNotes.map(note => note.id));
+      
+      // Only keep offline notes that don't exist online and are newer than the last sync
+      const lastSync = await storageService.getLastSync() || new Date(0);
+      const newOfflineNotes = offlineNotes.filter(note => 
+        !onlineNoteIds.has(note.id) && new Date(note.updatedAt) > lastSync
+      );
+      
+      // Combine online notes with new offline notes
+      const finalNotes = [...onlineNotes, ...newOfflineNotes];
 
-      // Save merged notes to both storage and server
-      await Promise.all([
-        storageService.saveNotes(mergedNotes),
-        ...mergedNotes.map(note => {
-          const existingNote = onlineNotes.find(n => n.id === note.id);
-          if (existingNote) {
-            return neo4jService.updateNote(note.id, { content: note.content });
-          } else {
-            return neo4jService.createNote(note.verseId, note.content);
-          }
-        }),
-      ]);
+      // Save final notes to local storage
+      await storageService.saveNotes(finalNotes);
+      
+      // Push new offline notes to server
+      await Promise.all(
+        newOfflineNotes.map(note => 
+          neo4jService.createNote(note.verseId, note.content, note.tags || [])
+        )
+      );
     } catch (error) {
       console.error('Error syncing notes:', error);
       throw error;
@@ -85,26 +92,55 @@ class SyncService {
         storageService.getConnections(),
       ]);
 
-      // Merge connections, keeping the most recent version
-      const mergedConnections = this.mergeConnections(onlineConnections, offlineConnections);
+      // Deduplicate connections by source-target-type instead of just by ID
+      const uniqueConnectionsMap = new Map<string, Connection>();
+      
+      // Process online connections first (they're the source of truth)
+      onlineConnections.forEach(connection => {
+        const uniqueKey = `${connection.sourceVerseId}-${connection.targetVerseId}-${connection.type}`;
+        uniqueConnectionsMap.set(uniqueKey, connection);
+      });
+      
+      // Add any offline connections that don't exist online or are newer
+      offlineConnections.forEach(connection => {
+        const uniqueKey = `${connection.sourceVerseId}-${connection.targetVerseId}-${connection.type}`;
+        const existingConnection = uniqueConnectionsMap.get(uniqueKey);
+        
+        if (!existingConnection || 
+            new Date(connection.updatedAt) > new Date(existingConnection.updatedAt)) {
+          uniqueConnectionsMap.set(uniqueKey, connection);
+        }
+      });
+      
+      const finalConnections = Array.from(uniqueConnectionsMap.values());
 
-      // Save merged connections to both storage and server
-      await Promise.all([
-        storageService.saveConnections(mergedConnections),
-        ...mergedConnections.map(connection => {
-          const existingConnection = onlineConnections.find(c => c.id === connection.id);
-          if (existingConnection) {
-            return neo4jService.updateConnection(connection.id, connection);
-          } else {
-            return neo4jService.createConnection({
-              sourceVerseId: connection.sourceVerseId,
-              targetVerseId: connection.targetVerseId,
-              type: connection.type,
-              description: connection.description,
-            });
+      // Save to local storage
+      await storageService.saveConnections(finalConnections);
+      
+      // Sync with server - update existing connections and create new ones
+      for (const connection of finalConnections) {
+        const existingOnlineConnection = onlineConnections.find(c => 
+          c.sourceVerseId === connection.sourceVerseId && 
+          c.targetVerseId === connection.targetVerseId && 
+          c.type === connection.type
+        );
+        
+        if (existingOnlineConnection) {
+          // If it exists online but has a different ID or is older, update it
+          if (existingOnlineConnection.id !== connection.id || 
+              new Date(existingOnlineConnection.updatedAt) < new Date(connection.updatedAt)) {
+            await neo4jService.updateConnection(existingOnlineConnection.id, connection);
           }
-        }),
-      ]);
+        } else {
+          // If it doesn't exist online, create it
+          await neo4jService.createConnection({
+            sourceVerseId: connection.sourceVerseId,
+            targetVerseId: connection.targetVerseId,
+            type: connection.type,
+            description: connection.description || '',
+          });
+        }
+      }
     } catch (error) {
       console.error('Error syncing connections:', error);
       throw error;

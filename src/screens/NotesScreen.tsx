@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   TextInput,
   SafeAreaView,
+  ScrollView,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -23,11 +24,13 @@ interface NoteWithVerse extends Note {
 }
 
 const NotesScreen: React.FC = () => {
-  const { t } = useTranslation(['notes']);
+  const { t } = useTranslation(['notes', 'common']);
   const navigation = useNavigation<NotesScreenNavigationProp>();
   const [notes, setNotes] = useState<NoteWithVerse[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [filteredNotes, setFilteredNotes] = useState<NoteWithVerse[]>([]);
+  const [selectedTag, setSelectedTag] = useState<string | null>(null);
+  const [allTags, setAllTags] = useState<string[]>([]);
 
   useEffect(() => {
     loadNotes();
@@ -35,7 +38,15 @@ const NotesScreen: React.FC = () => {
 
   useEffect(() => {
     filterNotes();
-  }, [searchQuery, notes]);
+  }, [searchQuery, notes, selectedTag]);
+
+  // Extract all unique tags from notes
+  useEffect(() => {
+    const uniqueTags = Array.from(
+      new Set(notes.flatMap(note => note.tags || []))
+    );
+    setAllTags(uniqueTags);
+  }, [notes]);
 
   const loadNotes = async () => {
     try {
@@ -65,19 +76,37 @@ const NotesScreen: React.FC = () => {
   };
 
   const filterNotes = () => {
-    if (!searchQuery.trim()) {
-      setFilteredNotes(notes);
-      return;
+    let filtered = notes;
+    
+    // Filter by tag if one is selected
+    if (selectedTag) {
+      filtered = filtered.filter(note => 
+        note.tags && note.tags.includes(selectedTag)
+      );
     }
-
-    const query = searchQuery.toLowerCase();
-    const filtered = notes.filter(
-      (note) =>
-        note.content.toLowerCase().includes(query) ||
-        note.verse?.text.toLowerCase().includes(query) ||
-        note.tags.some((tag) => tag.toLowerCase().includes(query))
-    );
+    
+    // Filter by search query if present
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase();
+      filtered = filtered.filter(
+        (note) =>
+          note.content.toLowerCase().includes(query) ||
+          note.verse?.text.toLowerCase().includes(query) ||
+          note.tags.some((tag) => tag.toLowerCase().includes(query))
+      );
+    }
+    
     setFilteredNotes(filtered);
+  };
+
+  const getTagColor = (tag: string) => {
+    // Generate a consistent color based on tag name
+    const tagColors = [
+      '#FF6B6B', '#4ECDC4', '#FFD166', '#06D6A0', '#118AB2', 
+      '#EF476F', '#FFC43D', '#1B9AAA', '#6F2DBD', '#84BC9C'
+    ];
+    const tagIndex = tag.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0) % tagColors.length;
+    return tagColors[tagIndex];
   };
 
   const renderNoteItem = ({ item }: { item: NoteWithVerse }) => (
@@ -116,19 +145,27 @@ const NotesScreen: React.FC = () => {
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.title}>{t('notes:title')}</Text>
-        <TouchableOpacity
-          style={styles.searchButton}
-          onPress={() => navigation.navigate('Search')}
-        >
-          <Ionicons name="search" size={24} color="#007AFF" />
-        </TouchableOpacity>
+        <View style={styles.headerButtons}>
+          <TouchableOpacity
+            style={styles.headerButton}
+            onPress={() => navigation.navigate('TagsManagement')}
+          >
+            <Ionicons name="pricetags" size={24} color="#007AFF" />
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.headerButton}
+            onPress={() => navigation.navigate('Search')}
+          >
+            <Ionicons name="search" size={24} color="#007AFF" />
+          </TouchableOpacity>
+        </View>
       </View>
 
       <View style={styles.searchContainer}>
         <Ionicons name="search" size={20} color="#666" style={styles.searchIcon} />
         <TextInput
           style={styles.searchInput}
-          placeholder="Search notes..."
+          placeholder={t('notes:searchNotes')}
           value={searchQuery}
           onChangeText={setSearchQuery}
         />
@@ -142,6 +179,49 @@ const NotesScreen: React.FC = () => {
         )}
       </View>
 
+      {allTags.length > 0 && (
+        <View style={styles.tagsFilterContainer}>
+          <ScrollView 
+            horizontal 
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.tagsScrollContent}
+          >
+            <TouchableOpacity
+              style={[
+                styles.tagFilterItem,
+                selectedTag === null && styles.tagFilterItemSelected
+              ]}
+              onPress={() => setSelectedTag(null)}
+            >
+              <Text style={[
+                styles.tagFilterText,
+                selectedTag === null && styles.tagFilterTextSelected
+              ]}>
+                {t('common:all')}
+              </Text>
+            </TouchableOpacity>
+            
+            {allTags.map(tag => (
+              <TouchableOpacity
+                key={tag}
+                style={[
+                  styles.tagFilterItem,
+                  { backgroundColor: selectedTag === tag ? getTagColor(tag) : '#f0f0f0' }
+                ]}
+                onPress={() => setSelectedTag(selectedTag === tag ? null : tag)}
+              >
+                <Text style={[
+                  styles.tagFilterText,
+                  { color: selectedTag === tag ? '#fff' : '#333' }
+                ]}>
+                  {tag}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </View>
+      )}
+
       <FlatList
         data={filteredNotes}
         renderItem={renderNoteItem}
@@ -150,7 +230,7 @@ const NotesScreen: React.FC = () => {
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
             <Text style={styles.emptyText}>
-              {searchQuery ? 'No notes found' : 'No notes yet'}
+              {searchQuery || selectedTag ? t('notes:noNotesFound') : t('notes:noNotesYet')}
             </Text>
           </View>
         }
@@ -177,8 +257,13 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#007AFF',
   },
-  searchButton: {
+  headerButtons: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  headerButton: {
     padding: 8,
+    marginLeft: 8,
   },
   searchContainer: {
     flexDirection: 'row',
@@ -260,6 +345,31 @@ const styles = StyleSheet.create({
   emptyText: {
     fontSize: 16,
     color: '#666',
+  },
+  tagsFilterContainer: {
+    padding: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
+  },
+  tagsScrollContent: {
+    paddingRight: 16,
+  },
+  tagFilterItem: {
+    backgroundColor: '#f0f0f0',
+    borderRadius: 16,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    marginRight: 8,
+  },
+  tagFilterItemSelected: {
+    backgroundColor: '#007AFF',
+  },
+  tagFilterText: {
+    fontSize: 14,
+    color: '#333',
+  },
+  tagFilterTextSelected: {
+    color: '#fff',
   },
 });
 

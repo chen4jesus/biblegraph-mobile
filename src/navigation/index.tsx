@@ -14,6 +14,7 @@ import SearchScreen from '../screens/SearchScreen';
 import VerseDetailScreen from '../screens/VerseDetailScreen';
 import GraphViewScreen from '../screens/GraphViewScreen';
 import SettingsScreen from '../screens/SettingsScreen';
+import TagsManagementScreen from '../screens/TagsManagementScreen';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 const Tab = createBottomTabNavigator<MainTabParamList>();
@@ -95,6 +96,11 @@ export const Navigation = () => {
           name="Settings" 
           component={SettingsScreen}
           options={{ title: 'Settings' }}
+        />
+        <Stack.Screen 
+          name="TagsManagement" 
+          component={TagsManagementScreen}
+          options={{ title: 'Manage Tags' }}
         />
       </Stack.Navigator>
     </NavigationContainer>

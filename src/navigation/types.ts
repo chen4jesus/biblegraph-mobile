@@ -2,7 +2,7 @@ export type RootStackParamList = {
   Login: undefined;
   SignUp: undefined;
   ForgotPassword: undefined;
-  MainTabs: undefined;
+  Main: undefined;
   Search: undefined;
   VerseDetail: { verseId: string };
   GraphView: { verseId?: string };
@@ -10,6 +10,7 @@ export type RootStackParamList = {
   Profile: undefined;
   Settings: undefined;
   LanguageSettings: undefined;
+  TagsManagement: undefined;
 };
 
 export type MainTabParamList = {
