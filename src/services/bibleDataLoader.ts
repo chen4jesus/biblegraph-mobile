@@ -1,114 +1,10 @@
 import { neo4jDriverService } from './neo4jDriver';
 import { Verse, Connection, ConnectionType } from '../types/bible';
 import { v4 as uuidv4 } from 'uuid';
-
-// Sample Bible verses 
-const sampleVerses: Omit<Verse, 'id' | 'createdAt' | 'updatedAt'>[] = [
-  {
-    book: 'Genesis',
-    chapter: 1,
-    verse: 1,
-    text: 'In the beginning God created the heavens and the earth.',
-    translation: 'NIV',
-  },
-  {
-    book: 'Genesis',
-    chapter: 1,
-    verse: 2,
-    text: 'Now the earth was formless and empty, darkness was over the surface of the deep, and the Spirit of God was hovering over the waters.',
-    translation: 'NIV',
-  },
-  {
-    book: 'John',
-    chapter: 1,
-    verse: 1,
-    text: 'In the beginning was the Word, and the Word was with God, and the Word was God.',
-    translation: 'NIV',
-  },
-  {
-    book: 'John',
-    chapter: 1,
-    verse: 2,
-    text: 'He was with God in the beginning.',
-    translation: 'NIV',
-  },
-  {
-    book: 'John',
-    chapter: 1,
-    verse: 3,
-    text: 'Through him all things were made; without him nothing was made that has been made.',
-    translation: 'NIV',
-  },
-  {
-    book: 'Romans',
-    chapter: 8,
-    verse: 28,
-    text: 'And we know that in all things God works for the good of those who love him, who have been called according to his purpose.',
-    translation: 'NIV',
-  },
-  {
-    book: 'Philippians',
-    chapter: 4,
-    verse: 13,
-    text: 'I can do all this through him who gives me strength.',
-    translation: 'NIV',
-  },
-  {
-    book: 'Psalm',
-    chapter: 23,
-    verse: 1,
-    text: 'The LORD is my shepherd, I lack nothing.',
-    translation: 'NIV',
-  },
-  {
-    book: 'John',
-    chapter: 3,
-    verse: 16,
-    text: 'For God so loved the world that he gave his one and only Son, that whoever believes in him shall not perish but have eternal life.',
-    translation: 'NIV',
-  },
-  {
-    book: 'Romans',
-    chapter: 3,
-    verse: 23,
-    text: 'For all have sinned and fall short of the glory of God.',
-    translation: 'NIV',
-  },
-];
-
-// Sample connections
-const createSampleConnections = (verseIds: string[]): Omit<Connection, 'id' | 'createdAt' | 'updatedAt'>[] => [
-  {
-    sourceVerseId: verseIds[0], // Genesis 1:1
-    targetVerseId: verseIds[2], // John 1:1
-    type: ConnectionType.CROSS_REFERENCE,
-    description: 'Both verses speak about "In the beginning"',
-  },
-  {
-    sourceVerseId: verseIds[2], // John 1:1
-    targetVerseId: verseIds[3], // John 1:2
-    type: ConnectionType.PARALLEL,
-    description: 'Continuing narrative',
-  },
-  {
-    sourceVerseId: verseIds[3], // John 1:2
-    targetVerseId: verseIds[4], // John 1:3
-    type: ConnectionType.PARALLEL,
-    description: 'Continuing narrative about the Word',
-  },
-  {
-    sourceVerseId: verseIds[0], // Genesis 1:1
-    targetVerseId: verseIds[4], // John 1:3
-    type: ConnectionType.THEME,
-    description: 'Creation theme',
-  },
-  {
-    sourceVerseId: verseIds[8], // John 3:16
-    targetVerseId: verseIds[9], // Romans 3:23
-    type: ConnectionType.THEME,
-    description: 'Salvation theme',
-  },
-];
+import { XMLParser } from 'fast-xml-parser';
+import * as FileSystem from 'expo-file-system';
+import { Platform } from 'react-native';
+import { Asset } from 'expo-asset';
 
 class BibleDataLoader {
   private static instance: BibleDataLoader;
@@ -122,7 +18,24 @@ class BibleDataLoader {
     return BibleDataLoader.instance;
   }
 
-  public async loadSampleData(): Promise<void> {
+  /**
+   * Checks if Bible data is already loaded in the database
+   */
+  public async isBibleLoaded(): Promise<boolean> {
+    try {
+      const verseCount = await this.getVerseCount();
+      // If we have verses, we consider the Bible as loaded
+      return verseCount > 0;
+    } catch (error) {
+      console.error("Error checking if Bible is loaded:", error);
+      return false;
+    }
+  }
+
+  /**
+   * Loads Bible data from the XML file into Neo4j
+   */
+  public async loadXmlData(): Promise<void> {
     try {
       // Connect to Neo4j
       await neo4jDriverService.connect();
@@ -134,30 +47,226 @@ class BibleDataLoader {
       const existingVerses = await this.getVerseCount();
       
       if (existingVerses > 0) {
-        console.log(`Database already contains ${existingVerses} verses, skipping sample data loading`);
+        console.log(`Database already contains ${existingVerses} verses, skipping XML data loading`);
         return;
       }
       
-      console.log('Loading sample Bible data into Neo4j database...');
+      console.log('Loading Bible data from XML into Neo4j database...');
       
-      // Create verses
-      const verseIds: string[] = [];
+      // Read the XML file
+      console.log('Reading XML file...');
+      const xmlContent = await this.readXmlFile();
+      console.log('XML file read successfully, parsing content...');
       
-      for (const verse of sampleVerses) {
-        const verseId = await this.createVerse(verse);
-        verseIds.push(verseId);
+      // Parse XML
+      const parser = new XMLParser({
+        ignoreAttributes: false,
+        attributeNamePrefix: '',
+        textNodeName: '_text'
+      });
+      
+      console.log('Parsing XML content...');
+      const parsedXml = parser.parse(xmlContent);
+      const bibleData = parsedXml.bible;
+      console.log('XML parsing complete, beginning database loading...');
+      
+      // Keep track of created verse IDs for creating connections later
+      const verseIdMap: Record<string, string> = {};
+      let totalBooks = 0;
+      let totalChapters = 0;
+      let totalVerses = 0;
+      
+      // Process books
+      if (bibleData.book && Array.isArray(bibleData.book)) {
+        totalBooks = bibleData.book.length;
+        console.log(`Found ${totalBooks} books in the Bible XML`);
+        
+        for (let bookIndex = 0; bookIndex < bibleData.book.length; bookIndex++) {
+          const book = bibleData.book[bookIndex];
+          const bookName = book.name;
+          const bookCode = book.code;
+          
+          // Process chapters
+          if (book.chapter && Array.isArray(book.chapter)) {
+            const bookChapters = book.chapter.length;
+            totalChapters += bookChapters;
+            
+            console.log(`Processing book ${bookIndex + 1}/${totalBooks}: ${bookName} (${bookChapters} chapters)`);
+            
+            for (let chapterIndex = 0; chapterIndex < book.chapter.length; chapterIndex++) {
+              const chapter = book.chapter[chapterIndex];
+              const chapterNumber = parseInt(chapter.number);
+              
+              // Process verses
+              if (chapter.verse && Array.isArray(chapter.verse)) {
+                const chapterVerses = chapter.verse.length;
+                
+                if (chapterIndex === 0 || chapterIndex === book.chapter.length - 1 || chapterIndex % 10 === 0) {
+                  console.log(`  - Chapter ${chapterNumber}: ${chapterVerses} verses`);
+                }
+                
+                for (const verse of chapter.verse) {
+                  const verseNumber = parseInt(verse.number);
+                  const verseText = verse._text || '';
+                  
+                  // Create verse in Neo4j
+                  const verseData = {
+                    book: bookName,
+                    chapter: chapterNumber,
+                    verse: verseNumber,
+                    text: verseText.trim(),
+                    translation: 'CUVS', // Chinese Union Version Simplified
+                  };
+                  
+                  const verseId = await this.createVerse(verseData);
+                  
+                  // Store verse ID for later connection creation
+                  const verseKey = `${bookCode}_${chapterNumber}_${verseNumber}`;
+                  verseIdMap[verseKey] = verseId;
+                  totalVerses++;
+                  
+                  // Log progress occasionally
+                  if (totalVerses % 500 === 0) {
+                    console.log(`Processed ${totalVerses} verses so far...`);
+                  }
+                }
+              }
+            }
+          }
+        }
       }
       
-      // Create connections
-      const sampleConnections = createSampleConnections(verseIds);
+      console.log(`Successfully loaded ${totalVerses} verses from ${totalChapters} chapters across ${totalBooks} books`);
       
-      for (const connection of sampleConnections) {
-        await this.createConnection(connection);
+      // Create basic connections - connect consecutive verses in each chapter
+      console.log('Creating basic verse connections...');
+      await this.createBasicConnections(verseIdMap);
+      
+      console.log('XML data loaded successfully!');
+    } catch (error: any) {
+      console.error('Error loading XML data:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Reads the XML file from the app bundle
+   */
+  private async readXmlFile(): Promise<string> {
+    try {
+      if (Platform.OS === 'web') {
+        // For web, we can use a different approach, like fetch
+        const response = await fetch('/assets/data/Bible_CUVS.xml');
+        return await response.text();
+      } else {
+        // For native platforms, use FileSystem
+        // Get the path to the XML file in the app's assets directory
+        const fileUri = `${FileSystem.documentDirectory}Bible_CUVS.xml`;
+        
+        // Check if the file is already copied to the document directory
+        const fileInfo = await FileSystem.getInfoAsync(fileUri);
+        
+        if (!fileInfo.exists) {
+          // Copy the file from assets to document directory if it doesn't exist
+          console.log('Copying Bible XML file to document directory...');
+          
+          // For Android/iOS, we need to copy the file from the asset bundle
+          const assetModule = require('../data/Bible_CUVS.xml');
+          const asset = Asset.fromModule(assetModule);
+          await asset.downloadAsync();
+          
+          if (!asset.localUri) {
+            throw new Error('Failed to get local URI for Bible XML file');
+          }
+          
+          // Copy the asset to the document directory
+          await FileSystem.copyAsync({
+            from: asset.localUri,
+            to: fileUri
+          });
+          
+          console.log('Bible XML file copied successfully');
+        }
+        
+        // Read the file from the document directory
+        const content = await FileSystem.readAsStringAsync(fileUri);
+        console.log(`Read XML file successfully, size: ${content.length} bytes`);
+        return content;
+      }
+    } catch (error: any) {
+      console.error('Error reading XML file:', error);
+      throw new Error(`Failed to read Bible XML file: ${error.message}`);
+    }
+  }
+
+  /**
+   * Creates basic connections between consecutive verses in the same chapter
+   */
+  private async createBasicConnections(verseIdMap: Record<string, string>): Promise<void> {
+    try {
+      // Group verse keys by book and chapter
+      const chapterVerses: Record<string, string[]> = {};
+      
+      console.log('Organizing verses by chapter for connection creation...');
+      
+      // Group verse keys
+      for (const verseKey of Object.keys(verseIdMap)) {
+        const [bookCode, chapter, verse] = verseKey.split('_');
+        const chapterKey = `${bookCode}_${chapter}`;
+        
+        if (!chapterVerses[chapterKey]) {
+          chapterVerses[chapterKey] = [];
+        }
+        
+        chapterVerses[chapterKey].push(verseKey);
       }
       
-      console.log('Sample data loaded successfully!');
-    } catch (error) {
-      console.error('Error loading sample data:', error);
+      const totalChapters = Object.keys(chapterVerses).length;
+      console.log(`Creating connections for ${totalChapters} chapters...`);
+      
+      // For each chapter, connect consecutive verses
+      let connectionCount = 0;
+      let chapterCount = 0;
+      
+      for (const chapterKey of Object.keys(chapterVerses)) {
+        chapterCount++;
+        const [bookCode, chapterNum] = chapterKey.split('_');
+        
+        const verses = chapterVerses[chapterKey]
+          .sort((a, b) => {
+            const verseA = parseInt(a.split('_')[2]);
+            const verseB = parseInt(b.split('_')[2]);
+            return verseA - verseB;
+          });
+        
+        if (chapterCount % 20 === 0 || chapterCount === 1 || chapterCount === totalChapters) {
+          console.log(`Creating connections for chapter ${chapterCount}/${totalChapters}: ${bookCode} ${chapterNum} (${verses.length} verses)`);
+        }
+        
+        // Connect consecutive verses
+        for (let i = 0; i < verses.length - 1; i++) {
+          const sourceVerseId = verseIdMap[verses[i]];
+          const targetVerseId = verseIdMap[verses[i + 1]];
+          
+          await this.createConnection({
+            sourceVerseId,
+            targetVerseId,
+            type: ConnectionType.PARALLEL,
+            description: 'Consecutive verses',
+          });
+          
+          connectionCount++;
+          
+          // Log progress occasionally
+          if (connectionCount % 1000 === 0) {
+            console.log(`Created ${connectionCount} connections (${Math.round(chapterCount/totalChapters*100)}% complete)...`);
+          }
+        }
+      }
+      
+      console.log(`Created ${connectionCount} consecutive verse connections across ${totalChapters} chapters`);
+    } catch (error: any) {
+      console.error('Error creating basic connections:', error);
       throw error;
     }
   }

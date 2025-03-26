@@ -22,20 +22,13 @@ export default function App() {
         const isLoaded = await bibleDataLoader.isBibleLoaded();
         
         if (!isLoaded) {
-          console.log('Bible data not loaded. Loading data...');
-          if (Platform.OS === 'web') {
-            // For web, always use sample data
-            await bibleDataLoader.loadSampleData();
-          } else {
-            // For native, try XML first then fallback to sample
-            try {
-              // Try to load data from XML file first
-              await bibleDataLoader.loadXmlData();
-            } catch (xmlError) {
-              console.warn('Error loading XML data, falling back to sample data:', xmlError);
-              // If XML loading fails, load sample data as fallback
-              await bibleDataLoader.loadSampleData();
-            }
+          console.log('Bible data not loaded. Loading XML data...');
+          try {
+            // Load data from XML file
+            await bibleDataLoader.loadXmlData();
+          } catch (xmlError) {
+            console.error('Error loading XML data:', xmlError);
+            setError(`Failed to load Bible data: ${xmlError instanceof Error ? xmlError.message : 'Unknown error'}`);
           }
         } else {
           console.log('Bible data already loaded in database. Skipping initialization.');
