@@ -1,0 +1,22 @@
+FROM node:18-alpine
+
+# Create app directory
+WORKDIR /app
+
+# Install system dependencies
+RUN apk add --no-cache git
+
+# Copy package files
+COPY package.json package-lock.json ./
+
+# Install app dependencies with more resilient approach
+RUN npm install --legacy-peer-deps || npm install --force
+
+# Copy the rest of the app
+COPY . .
+
+# Expose API port
+EXPOSE 3000
+
+# Start the API server
+CMD ["npm", "run", "api"] 
