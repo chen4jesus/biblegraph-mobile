@@ -2,6 +2,14 @@ import neo4j, { Driver, Session, Result } from 'neo4j-driver';
 import { Verse, Connection, Note, ConnectionType } from '../types/bible';
 import { v4 as uuidv4 } from 'uuid';
 
+// Type for creating a new connection
+interface ConnectionCreateInput {
+  sourceVerseId: string;
+  targetVerseId: string;
+  type: ConnectionType;
+  description: string;
+}
+
 class Neo4jDriver {
   private static instance: Neo4jDriver;
   private driver: Driver | null = null;
@@ -63,16 +71,47 @@ class Neo4jDriver {
   }
 
   // Verse methods
-  public async getVerses(): Promise<Verse[]> {
+  public async getVerses(signal?: AbortSignal, verseIds?: string[]): Promise<Verse[]> {
+    if (signal?.aborted) {
+      throw new DOMException('Aborted', 'AbortError');
+    }
+
     const session = this.getSession();
     try {
-      const result = await session.run(`
-        MATCH (v:Verse)
-        RETURN v
-        ORDER BY v.book, v.chapter, v.verse
-        LIMIT 100
-      `);
+      // Check if aborted before executing query
+      if (signal?.aborted) {
+        throw new DOMException('Aborted', 'AbortError');
+      }
+
+      let query: string;
+      let params: any = {};
       
+      if (verseIds && verseIds.length > 0) {
+        // If specific verse IDs are provided, get only those verses
+        query = `
+          MATCH (v:Verse)
+          WHERE v.id IN $verseIds
+          RETURN v
+          ORDER BY v.book, v.chapter, v.verse
+        `;
+        params = { verseIds };
+      } else {
+        // Fallback to original behavior if no IDs are specified
+        query = `
+          MATCH (v:Verse)
+          RETURN v
+          ORDER BY v.book, v.chapter, v.verse
+          LIMIT 10
+        `;
+      }
+
+      const result = await session.run(query, params);
+      
+      // Check if aborted after query
+      if (signal?.aborted) {
+        throw new DOMException('Aborted', 'AbortError');
+      }
+
       return result.records.map(record => {
         const verseProps = record.get('v').properties;
         return {
@@ -91,14 +130,28 @@ class Neo4jDriver {
     }
   }
 
-  public async getVerse(id: string): Promise<Verse | null> {
+  public async getVerse(id: string, signal?: AbortSignal): Promise<Verse | null> {
+    if (signal?.aborted) {
+      throw new DOMException('Aborted', 'AbortError');
+    }
+
     const session = this.getSession();
     try {
+      // Check if aborted before executing query
+      if (signal?.aborted) {
+        throw new DOMException('Aborted', 'AbortError');
+      }
+
       const result = await session.run(`
         MATCH (v:Verse {id: $id})
         RETURN v
       `, { id });
       
+      // Check if aborted after query
+      if (signal?.aborted) {
+        throw new DOMException('Aborted', 'AbortError');
+      }
+
       if (result.records.length === 0) {
         return null;
       }
@@ -192,15 +245,29 @@ class Neo4jDriver {
   }
 
   // Connection methods
-  public async getConnections(): Promise<Connection[]> {
+  public async getConnections(signal?: AbortSignal): Promise<Connection[]> {
+    if (signal?.aborted) {
+      throw new DOMException('Aborted', 'AbortError');
+    }
+
     const session = this.getSession();
     try {
+      // Check if aborted before executing query
+      if (signal?.aborted) {
+        throw new DOMException('Aborted', 'AbortError');
+      }
+
       const result = await session.run(`
         MATCH (v1:Verse)-[c:CONNECTS_TO]->(v2:Verse)
         RETURN c, v1.id as sourceId, v2.id as targetId
         LIMIT 100
       `);
       
+      // Check if aborted after query
+      if (signal?.aborted) {
+        throw new DOMException('Aborted', 'AbortError');
+      }
+
       return result.records.map(record => {
         const connectionProps = record.get('c').properties;
         return {
@@ -218,9 +285,18 @@ class Neo4jDriver {
     }
   }
 
-  public async getConnectionsForVerse(verseId: string): Promise<Connection[]> {
+  public async getConnectionsForVerse(verseId: string, signal?: AbortSignal): Promise<Connection[]> {
+    if (signal?.aborted) {
+      throw new DOMException('Aborted', 'AbortError');
+    }
+
     const session = this.getSession();
     try {
+      // Check if aborted before executing query
+      if (signal?.aborted) {
+        throw new DOMException('Aborted', 'AbortError');
+      }
+
       const result = await session.run(`
         MATCH (v:Verse {id: $verseId})-[c:CONNECTS_TO]->(v2:Verse)
         RETURN c, v.id as sourceId, v2.id as targetId
@@ -229,6 +305,11 @@ class Neo4jDriver {
         RETURN c, v1.id as sourceId, v.id as targetId
         LIMIT 100
       `, { verseId });
+      
+      // Check if aborted after query
+      if (signal?.aborted) {
+        throw new DOMException('Aborted', 'AbortError');
+      }
       
       // Use a Map to deduplicate connections by source-target-type
       const uniqueConnections = new Map<string, Connection>();
@@ -265,15 +346,55 @@ class Neo4jDriver {
     }
   }
 
-  public async createConnection(connection: Omit<Connection, 'id' | 'createdAt' | 'updatedAt'>): Promise<Connection> {
+  public async createConnection(connection: ConnectionCreateInput): Promise<Connection> {
     const session = this.getSession();
     const now = new Date().toISOString();
     const id = uuidv4();
     
     try {
+      // First verify both verses exist
+      const versesResult = await session.run(`
+        MATCH (source:Verse {id: $sourceId})
+        MATCH (target:Verse {id: $targetId}) 
+        RETURN source, target
+      `, { 
+        sourceId: connection.sourceVerseId,
+        targetId: connection.targetVerseId
+      });
+
+      if (versesResult.records.length === 0) {
+        throw new Error(`One or both verses not found: ${connection.sourceVerseId} -> ${connection.targetVerseId}`);
+      }
+      
+      // Check if connection already exists
+      const existingResult = await session.run(`
+        MATCH (v1:Verse {id: $sourceId})-[c:CONNECTS_TO]->(v2:Verse {id: $targetId})
+        WHERE c.type = $type
+        RETURN c
+      `, {
+        sourceId: connection.sourceVerseId,
+        targetId: connection.targetVerseId,
+        type: connection.type
+      });
+      
+      // If connection already exists, return it
+      if (existingResult.records.length > 0) {
+        const existingProps = existingResult.records[0].get('c').properties;
+        return {
+          id: existingProps.id.toString(),
+          sourceVerseId: connection.sourceVerseId,
+          targetVerseId: connection.targetVerseId,
+          type: connection.type,
+          description: existingProps.description,
+          createdAt: existingProps.createdAt,
+          updatedAt: existingProps.updatedAt,
+        };
+      }
+      
+      // Create new connection
       const result = await session.run(`
-        MATCH (v1:Verse {id: $sourceVerseId})
-        MATCH (v2:Verse {id: $targetVerseId})
+        MATCH (v1:Verse {id: $sourceId})
+        MATCH (v2:Verse {id: $targetId})
         CREATE (v1)-[c:CONNECTS_TO {
           id: $id,
           type: $type,
@@ -284,15 +405,15 @@ class Neo4jDriver {
         RETURN c, v1.id as sourceId, v2.id as targetId
       `, {
         id,
-        sourceVerseId: connection.sourceVerseId,
-        targetVerseId: connection.targetVerseId,
+        sourceId: connection.sourceVerseId,
+        targetId: connection.targetVerseId,
         type: connection.type,
         description: connection.description,
         now
       });
       
       if (result.records.length === 0) {
-        throw new Error('Failed to create connection');
+        throw new Error(`Failed to create connection between ${connection.sourceVerseId} and ${connection.targetVerseId}`);
       }
       
       const record = result.records[0];
@@ -307,6 +428,9 @@ class Neo4jDriver {
         createdAt: connectionProps.createdAt,
         updatedAt: connectionProps.updatedAt,
       };
+    } catch (error) {
+      console.error(`Error creating connection from ${connection.sourceVerseId} to ${connection.targetVerseId}:`, error);
+      throw error;
     } finally {
       await session.close();
     }
@@ -374,9 +498,18 @@ class Neo4jDriver {
   }
 
   // Note methods
-  public async getNotes(): Promise<Note[]> {
+  public async getNotes(signal?: AbortSignal): Promise<Note[]> {
+    if (signal?.aborted) {
+      throw new DOMException('Aborted', 'AbortError');
+    }
+
     const session = this.getSession();
     try {
+      // Check if aborted before executing query
+      if (signal?.aborted) {
+        throw new DOMException('Aborted', 'AbortError');
+      }
+
       const result = await session.run(`
         MATCH (n:Note)-[:ABOUT]->(v:Verse)
         RETURN n, v.id as verseId, 
@@ -385,6 +518,11 @@ class Neo4jDriver {
         LIMIT 100
       `);
       
+      // Check if aborted after query
+      if (signal?.aborted) {
+        throw new DOMException('Aborted', 'AbortError');
+      }
+
       return result.records.map(record => {
         const noteProps = record.get('n').properties;
         const tags = record.get('tags') || [];
@@ -644,6 +782,43 @@ class Neo4jDriver {
         RETURN v
       `, { 
         book, 
+        chapter, 
+        verse 
+      });
+      
+      if (result.records.length === 0) {
+        // If no exact match, try a more flexible search
+        return this.findVerseWithFlexibleBookName(book, chapter, verse);
+      }
+      
+      const verseProps = result.records[0].get('v').properties;
+      return {
+        id: verseProps.id.toString(),
+        book: verseProps.book,
+        chapter: parseInt(verseProps.chapter.toString()),
+        verse: parseInt(verseProps.verse.toString()),
+        text: verseProps.text,
+        translation: verseProps.translation || 'NIV',
+        createdAt: verseProps.createdAt || new Date().toISOString(),
+        updatedAt: verseProps.updatedAt || new Date().toISOString(),
+      };
+    } finally {
+      session.close();
+    }
+  }
+
+  // New method to find a verse with more flexible book name matching
+  private async findVerseWithFlexibleBookName(bookName: string, chapter: number, verse: number): Promise<Verse | null> {
+    console.log(`Trying flexible search for: ${bookName} ${chapter}:${verse}`);
+    const session = this.getSession();
+    try {
+      // Try case-insensitive match
+      const result = await session.run(`
+        MATCH (v:Verse)
+        WHERE toLower(v.book) = toLower($book) AND v.chapter = $chapter AND v.verse = $verse
+        RETURN v
+      `, { 
+        book: bookName, 
         chapter, 
         verse 
       });

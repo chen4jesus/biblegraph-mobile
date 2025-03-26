@@ -53,19 +53,27 @@ class Neo4jService {
   }
 
   // Bible verse methods
-  async getVerses(): Promise<Verse[]> {
+  async getVerses(signal?: AbortSignal): Promise<Verse[]> {
     try {
-      return await neo4jDatabaseService.getVerses();
+      return await neo4jDatabaseService.getVerses(signal);
     } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') {
+        console.log('Verse fetch aborted');
+        return [];
+      }
       console.error('Error fetching verses:', error);
       return [];
     }
   }
 
-  async getVerse(id: string): Promise<Verse | null> {
+  async getVerse(id: string, signal?: AbortSignal): Promise<Verse | null> {
     try {
-      return await neo4jDatabaseService.getVerse(id);
+      return await neo4jDatabaseService.getVerse(id, signal);
     } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') {
+        console.log(`Verse ${id} fetch aborted`);
+        return null;
+      }
       console.error(`Error fetching verse ${id}:`, error);
       return null;
     }
@@ -99,19 +107,27 @@ class Neo4jService {
   }
 
   // Connection methods
-  async getConnections(): Promise<Connection[]> {
+  async getConnections(signal?: AbortSignal): Promise<Connection[]> {
     try {
-      return await neo4jDatabaseService.getConnections();
+      return await neo4jDatabaseService.getConnections(signal);
     } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') {
+        console.log('Connections fetch aborted');
+        return [];
+      }
       console.error('Error fetching connections:', error);
       return [];
     }
   }
 
-  async getConnectionsForVerse(verseId: string): Promise<Connection[]> {
+  async getConnectionsForVerse(verseId: string, signal?: AbortSignal): Promise<Connection[]> {
     try {
-      return await neo4jDatabaseService.getConnectionsForVerse(verseId);
+      return await neo4jDatabaseService.getConnectionsForVerse(verseId, signal);
     } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') {
+        console.log(`Connections for verse ${verseId} fetch aborted`);
+        return [];
+      }
       console.error(`Error fetching connections for verse ${verseId}:`, error);
       return [];
     }
@@ -145,10 +161,14 @@ class Neo4jService {
   }
 
   // Note methods
-  async getNotes(): Promise<Note[]> {
+  async getNotes(signal?: AbortSignal): Promise<Note[]> {
     try {
-      return await neo4jDatabaseService.getNotes();
+      return await neo4jDatabaseService.getNotes(signal);
     } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') {
+        console.log('Notes fetch aborted');
+        return [];
+      }
       console.error('Error fetching notes:', error);
       return [];
     }

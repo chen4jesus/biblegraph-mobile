@@ -24,7 +24,8 @@
     "profile": "个人资料",
     "settings": "设置",
     "search": "搜索",
-    "tagsManagement": "管理标签"
+    "tagsManagement": "管理标签",
+    "bible": "圣经"
   },
   "verses": {
     "chapter": "章",

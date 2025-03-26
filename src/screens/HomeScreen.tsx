@@ -7,6 +7,7 @@ import {
   FlatList,
   SafeAreaView,
   ActivityIndicator,
+  Alert,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -16,17 +17,19 @@ import { Verse } from '../types/bible';
 import { neo4jService } from '../services/neo4j';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTranslation } from 'react-i18next';
+import BibleSelectorModal from '../components/BibleSelectorModal';
 
 // Storage key for recent verses
 const RECENT_VERSES_KEY = '@biblegraph:recent_verses';
 
-type HomeScreenNavigationProp = NativeStackNavigationProp<RootStackParamList, 'MainTabs'>;
+type HomeScreenNavigationProp = NativeStackNavigationProp<RootStackParamList, 'Main'>;
 
 const HomeScreen: React.FC = () => {
   const { t } = useTranslation(['home', 'navigation', 'common']);
   const navigation = useNavigation<HomeScreenNavigationProp>();
   const [recentVerses, setRecentVerses] = useState<Verse[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [isBibleSelectorVisible, setIsBibleSelectorVisible] = useState<boolean>(false);
 
   useEffect(() => {
     loadRecentVerses();
@@ -91,6 +94,112 @@ const HomeScreen: React.FC = () => {
     }
   };
 
+  const handleVerseSelection = async (book: string, chapter: number, verse: number) => {
+    try {
+      setIsLoading(true);
+      // Try to get the verse from the database
+      const selectedVerse = await neo4jService.getVerseByReference(book, chapter, verse);
+      
+      if (selectedVerse) {
+        // Navigate to verse detail screen
+        navigation.navigate('VerseDetail', { verseId: selectedVerse.id });
+        // Update recent verses
+        updateRecentVerses(selectedVerse);
+      } else {
+        // Show error feedback
+        Alert.alert(
+          '未找到经文',
+          `未找到 ${book} ${chapter}:${verse}`,
+          [{ text: '确定', style: 'default' }]
+        );
+      }
+    } catch (error) {
+      console.error('获取经文时出错:', error);
+      Alert.alert(
+        '错误',
+        '获取经文时出错，请重试',
+        [{ text: '确定', style: 'default' }]
+      );
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleViewGraphWithVerses = async (selections: Array<{book: string, chapter: number, verse: number, chineseBook?: string}>) => {
+    setIsLoading(true);
+    console.log('Selected verses:', selections);
+    
+    try {
+      const verseIds: string[] = [];
+      
+      // Fetch all the verse IDs
+      for (const selection of selections) {
+        console.log(`Fetching verse: ${selection.book} ${selection.chapter}:${selection.verse}`);
+        
+        // Try with English name first
+        let verse = await neo4jService.getVerseByReference(
+          selection.book,
+          selection.chapter,
+          selection.verse
+        );
+        
+        // If not found and we have Chinese name, try with that
+        if (!verse && selection.chineseBook) {
+          console.log(`Trying with Chinese name: ${selection.chineseBook}`);
+          verse = await neo4jService.getVerseByReference(
+            selection.chineseBook,
+            selection.chapter,
+            selection.verse
+          );
+        }
+        
+        // If still not found, try fallback approaches
+        if (!verse) {
+          // Try lowercase book name
+          console.log(`Trying lowercase: ${selection.book.toLowerCase()}`);
+          verse = await neo4jService.getVerseByReference(
+            selection.book.toLowerCase(),
+            selection.chapter,
+            selection.verse
+          );
+        }
+        
+        if (verse) {
+          console.log(`Found verse ID: ${verse.id}`);
+          verseIds.push(verse.id);
+          // Also update recent verses for each found verse
+          updateRecentVerses(verse);
+        } else {
+          console.warn(`Verse not found: ${selection.book} ${selection.chapter}:${selection.verse}`);
+        }
+      }
+      
+      console.log(`Total verse IDs found: ${verseIds.length}`);
+      
+      if (verseIds.length > 0) {
+        // Navigate to graph view with all the verse IDs
+        console.log('Navigating to GraphView with verse IDs:', verseIds);
+        navigation.navigate('GraphView', { verseIds: verseIds });
+      } else {
+        console.warn('No verse IDs found for selections');
+        Alert.alert(
+          '未找到经文',
+          '未能找到选定的经文，请重试',
+          [{ text: '确定', style: 'default' }]
+        );
+      }
+    } catch (error) {
+      console.error('Error preparing graph view:', error);
+      Alert.alert(
+        '错误',
+        '准备图表时出错，请重试',
+        [{ text: '确定', style: 'default' }]
+      );
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const renderVerseCard = ({ item }: { item: Verse }) => (
     <TouchableOpacity
       style={styles.verseCard}
@@ -149,6 +258,13 @@ const HomeScreen: React.FC = () => {
       <View style={styles.quickActions}>
         <TouchableOpacity
           style={styles.actionButton}
+          onPress={() => setIsBibleSelectorVisible(true)}
+        >
+          <Ionicons name="book" size={24} color="#007AFF" />
+          <Text style={styles.actionText}>{t('navigation:bible')}</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.actionButton}
           onPress={() => navigation.navigate('GraphView', {})}
         >
           <Ionicons name="git-network" size={24} color="#007AFF" />
@@ -158,7 +274,7 @@ const HomeScreen: React.FC = () => {
           style={styles.actionButton}
           onPress={() => navigation.navigate('Notes')}
         >
-          <Ionicons name="book" size={24} color="#007AFF" />
+          <Ionicons name="document-text" size={24} color="#007AFF" />
           <Text style={styles.actionText}>{t('navigation:notes')}</Text>
         </TouchableOpacity>
       </View>
@@ -188,6 +304,13 @@ const HomeScreen: React.FC = () => {
           </View>
         )}
       </View>
+
+      <BibleSelectorModal
+        isVisible={isBibleSelectorVisible}
+        onClose={() => setIsBibleSelectorVisible(false)}
+        onSelect={handleVerseSelection}
+        onViewGraph={handleViewGraphWithVerses}
+      />
     </SafeAreaView>
   );
 };
@@ -225,7 +348,7 @@ const styles = StyleSheet.create({
     padding: 12,
     backgroundColor: '#f0f8ff',
     borderRadius: 12,
-    width: '45%',
+    width: '30%',
   },
   actionText: {
     marginTop: 4,

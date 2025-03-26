@@ -136,14 +136,14 @@ class Neo4jDatabaseService {
   }
 
   // Verse methods
-  public async getVerses(): Promise<Verse[]> {
+  public async getVerses(signal?: AbortSignal): Promise<Verse[]> {
     await this.ensureInitialized();
-    return neo4jDriverService.getVerses();
+    return neo4jDriverService.getVerses(signal);
   }
 
-  public async getVerse(id: string): Promise<Verse | null> {
+  public async getVerse(id: string, signal?: AbortSignal): Promise<Verse | null> {
     await this.ensureInitialized();
-    return neo4jDriverService.getVerse(id);
+    return neo4jDriverService.getVerse(id, signal);
   }
 
   public async getVerseByReference(book: string, chapter: number, verse: number): Promise<Verse | null> {
@@ -162,14 +162,14 @@ class Neo4jDatabaseService {
   }
 
   // Connection methods
-  public async getConnections(): Promise<Connection[]> {
+  public async getConnections(signal?: AbortSignal): Promise<Connection[]> {
     await this.ensureInitialized();
-    return neo4jDriverService.getConnections();
+    return neo4jDriverService.getConnections(signal);
   }
 
-  public async getConnectionsForVerse(verseId: string): Promise<Connection[]> {
+  public async getConnectionsForVerse(verseId: string, signal?: AbortSignal): Promise<Connection[]> {
     await this.ensureInitialized();
-    return neo4jDriverService.getConnectionsForVerse(verseId);
+    return neo4jDriverService.getConnectionsForVerse(verseId, signal);
   }
 
   public async createConnection(connection: Omit<Connection, 'id' | 'createdAt' | 'updatedAt'>): Promise<Connection> {
@@ -188,9 +188,9 @@ class Neo4jDatabaseService {
   }
 
   // Note methods
-  public async getNotes(): Promise<Note[]> {
+  public async getNotes(signal?: AbortSignal): Promise<Note[]> {
     await this.ensureInitialized();
-    return neo4jDriverService.getNotes();
+    return neo4jDriverService.getNotes(signal);
   }
 
   public async getNotesForVerse(verseId: string): Promise<Note[]> {

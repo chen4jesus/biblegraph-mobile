@@ -5,7 +5,7 @@ export type RootStackParamList = {
   Main: undefined;
   Search: undefined;
   VerseDetail: { verseId: string };
-  GraphView: { verseId?: string };
+  GraphView: { verseId?: string; verseIds?: string[] };
   Notes: undefined;
   Profile: undefined;
   Settings: undefined;

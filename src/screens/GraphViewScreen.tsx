@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   StyleSheet,
@@ -7,25 +7,118 @@ import {
   TouchableOpacity,
   Switch,
   SafeAreaView,
+  Alert,
+  ToastAndroid,
+  Platform,
 } from 'react-native';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import BibleGraph from '../components/BibleGraph';
 import { useBibleGraph } from '../hooks/useBibleGraph';
 import { Verse, Connection } from '../types/bible';
 import { RootStackParamList } from '../navigation/types';
 import { useTranslation } from 'react-i18next';
+import { neo4jService } from '../services/neo4j';
+import { syncService } from '../services/sync';
 
 type GraphViewScreenRouteProp = RouteProp<RootStackParamList, 'GraphView'>;
+type GraphViewNavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
 const GraphViewScreen: React.FC = () => {
   const { t } = useTranslation(['graph']);
-  const navigation = useNavigation();
+  const navigation = useNavigation<GraphViewNavigationProp>();
   const route = useRoute<GraphViewScreenRouteProp>();
   const initialVerseId = route.params?.verseId;
+  const initialVerseIds = route.params?.verseIds || [];
   
   const [showControls, setShowControls] = useState(true);
   const [showLabels, setShowLabels] = useState(true);
+  const [loadingInitialVerses, setLoadingInitialVerses] = useState(false);
+  const [initialVerses, setInitialVerses] = useState<Verse[]>([]);
+  const [connectionErrors, setConnectionErrors] = useState(false);
+  const errorShownRef = useRef(false);
+  
+  // Create a state to hold the verse IDs for the useBibleGraph hook
+  const [bibleGraphVerseIds, setBibleGraphVerseIds] = useState<string[]>(initialVerseIds);
+  // Use a ref to track if initialVerses has been processed
+  const initialVersesProcessedRef = useRef(false);
+  
+  // Update the bibleGraphVerseIds whenever initialVerses changes
+  useEffect(() => {
+    if (initialVerses.length > 0 && !initialVersesProcessedRef.current) {
+      const newIds = initialVerses.map(v => v.id);
+      console.log('Updating bibleGraphVerseIds with:', newIds);
+      setBibleGraphVerseIds(newIds);
+      initialVersesProcessedRef.current = true;
+    }
+  }, [initialVerses]);
+  
+  // Reset the processed flag when initialVerseIds changes
+  useEffect(() => {
+    initialVersesProcessedRef.current = false;
+  }, [initialVerseIds]);
+  
+  // Load initial verses if verseIds is provided
+  useEffect(() => {
+    console.log('GraphViewScreen - initialVerseIds changed:', initialVerseIds);
+    
+    // Skip empty or already processed verse IDs
+    if (!initialVerseIds || initialVerseIds.length === 0) {
+      return;
+    }
+    
+    // Compare with current initialVerses to avoid redundant loading
+    const currentIds = new Set(initialVerses.map(v => v.id));
+    const hasAllIds = initialVerseIds.every(id => currentIds.has(id));
+    
+    if (hasAllIds) {
+      console.log('All verse IDs already loaded, skipping fetch');
+      return;
+    }
+    
+    const loadVerses = async () => {
+      setLoadingInitialVerses(true);
+      try {
+        const verses: Verse[] = [];
+        
+        for (const id of initialVerseIds) {
+          const verse = await neo4jService.getVerse(id);
+          if (verse) {
+            verses.push(verse);
+          }
+        }
+        
+        console.log(`Loaded ${verses.length} verses from ${initialVerseIds.length} IDs`);
+        if (verses.length > 0) {
+          setInitialVerses(verses);
+        }
+      } catch (error) {
+        console.error('Error loading initial verses:', error);
+        showNotification('加载所选经文时出错');
+      } finally {
+        setLoadingInitialVerses(false);
+      }
+    };
+    
+    loadVerses();
+  }, [initialVerseIds, initialVerses]);
+  
+  // Helper function to show notifications cross-platform
+  const showNotification = (message: string, title?: string) => {
+    if (Platform.OS === 'android') {
+      ToastAndroid.show(message, ToastAndroid.SHORT);
+    } else {
+      // Use Alert for iOS
+      setTimeout(() => {
+        Alert.alert(
+          title || '提示',
+          message,
+          [{ text: '确定', style: 'default' }]
+        );
+      }, 500);
+    }
+  };
   
   const {
     verses,
@@ -38,18 +131,53 @@ const GraphViewScreen: React.FC = () => {
     handleConnectionPress,
     refreshGraph,
   } = useBibleGraph({
-    initialVerseId,
+    initialVerseId: initialVerseId || (initialVerses.length > 0 ? initialVerses[0].id : undefined),
+    initialVerseIds: bibleGraphVerseIds,
     onVersePress: (verse) => {
       // Navigate to verse detail when a verse is pressed
       navigation.navigate('VerseDetail', { verseId: verse.id });
     },
+    onConnectionError: () => {
+      setConnectionErrors(true);
+      // Show toast/alert only once
+      if (!errorShownRef.current) {
+        errorShownRef.current = true;
+        showNotification('部分连接加载失败，显示部分图形', '警告');
+      }
+    }
   });
 
   const handleRefresh = async () => {
+    setConnectionErrors(false);
+    errorShownRef.current = false;
     await refreshGraph();
   };
 
-  if (loading) {
+  const handleResetSync = () => {
+    Alert.alert(
+      '重置同步状态',
+      '这将重置同步状态，可能有助于解决连接问题。是否继续？',
+      [
+        {
+          text: '取消',
+          style: 'cancel',
+        },
+        {
+          text: '重置',
+          onPress: async () => {
+            syncService.resetSyncState();
+            setConnectionErrors(false);
+            errorShownRef.current = false;
+            await refreshGraph();
+            showNotification('同步状态已重置', '成功');
+          },
+          style: 'destructive',
+        },
+      ]
+    );
+  };
+
+  if (loading || loadingInitialVerses) {
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color="#007AFF" />
@@ -63,9 +191,14 @@ const GraphViewScreen: React.FC = () => {
       <View style={styles.errorContainer}>
         <Ionicons name="alert-circle-outline" size={48} color="#FF3B30" />
         <Text style={styles.errorText}>Error: {error}</Text>
-        <TouchableOpacity style={styles.retryButton} onPress={handleRefresh}>
-          <Text style={styles.retryButtonText}>{t('graph:retry')}</Text>
-        </TouchableOpacity>
+        <View style={styles.errorButtonContainer}>
+          <TouchableOpacity style={styles.retryButton} onPress={handleRefresh}>
+            <Text style={styles.retryButtonText}>{t('graph:retry')}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.resetSyncButton} onPress={handleResetSync}>
+            <Text style={styles.resetButtonText}>重置同步</Text>
+          </TouchableOpacity>
+        </View>
       </View>
     );
   }
@@ -79,15 +212,35 @@ const GraphViewScreen: React.FC = () => {
             {selectedVerse.book} {selectedVerse.chapter}:{selectedVerse.verse}
           </Text>
         )}
+        {!selectedVerse && initialVerses.length > 0 && (
+          <Text style={styles.subtitle}>
+            {`已选择 ${initialVerses.length} 个经文`}
+          </Text>
+        )}
+        {connectionErrors && (
+          <View style={styles.errorBanner}>
+            <Text style={styles.errorSubtitle}>
+              警告: 部分连接加载失败
+            </Text>
+            <TouchableOpacity onPress={handleResetSync} style={styles.resetButton}>
+              <Text style={styles.resetButtonText}>重置同步</Text>
+            </TouchableOpacity>
+          </View>
+        )}
       </View>
       
       {verses.length === 0 || connections.length === 0 ? (
         <View style={styles.emptyContainer}>
           <Ionicons name="map-outline" size={64} color="#8E8E93" />
           <Text style={styles.emptyText}>{t('graph:noData')}</Text>
-          <TouchableOpacity style={styles.button} onPress={handleRefresh}>
-            <Text style={styles.buttonText}>{t('graph:refresh')}</Text>
-          </TouchableOpacity>
+          <View style={styles.buttonContainer}>
+            <TouchableOpacity style={styles.button} onPress={handleRefresh}>
+              <Text style={styles.buttonText}>{t('graph:refresh')}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.resetSyncButton} onPress={handleResetSync}>
+              <Text style={styles.resetButtonText}>重置同步</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       ) : (
         <View style={styles.graphContainer}>
@@ -186,13 +339,20 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#666',
     textAlign: 'center',
+    marginBottom: 20,
+  },
+  errorButtonContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    width: '100%',
+    marginTop: 10,
   },
   retryButton: {
-    marginTop: 20,
     paddingVertical: 10,
     paddingHorizontal: 20,
     backgroundColor: '#007AFF',
     borderRadius: 8,
+    marginHorizontal: 5,
   },
   retryButtonText: {
     color: '#fff',
@@ -211,11 +371,17 @@ const styles = StyleSheet.create({
     color: '#666',
     marginBottom: 16,
   },
+  buttonContainer: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   button: {
     paddingVertical: 10,
     paddingHorizontal: 20,
     backgroundColor: '#007AFF',
     borderRadius: 8,
+    marginHorizontal: 5,
   },
   buttonText: {
     color: '#fff',
@@ -274,6 +440,41 @@ const styles = StyleSheet.create({
   connectionDescription: {
     fontSize: 14,
     color: '#333',
+  },
+  errorBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#FFE8E6',
+    padding: 8,
+    marginTop: 8,
+    borderRadius: 4,
+    borderLeftWidth: 4,
+    borderLeftColor: '#FF3B30',
+  },
+  errorSubtitle: {
+    fontSize: 12,
+    color: '#FF3B30',
+    fontWeight: '500',
+  },
+  resetButton: {
+    backgroundColor: '#FF3B30',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 4,
+    marginLeft: 8,
+  },
+  resetSyncButton: {
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    backgroundColor: '#FF3B30',
+    borderRadius: 8,
+    marginHorizontal: 5,
+  },
+  resetButtonText: {
+    color: 'white',
+    fontSize: 12,
+    fontWeight: 'bold',
   },
 });
 
