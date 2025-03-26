@@ -70,6 +70,7 @@ class Neo4jDriver {
         MATCH (v:Verse)
         RETURN v
         ORDER BY v.book, v.chapter, v.verse
+        LIMIT 100
       `);
       
       return result.records.map(record => {
@@ -197,6 +198,7 @@ class Neo4jDriver {
       const result = await session.run(`
         MATCH (v1:Verse)-[c:CONNECTS_TO]->(v2:Verse)
         RETURN c, v1.id as sourceId, v2.id as targetId
+        LIMIT 100
       `);
       
       return result.records.map(record => {
@@ -225,12 +227,16 @@ class Neo4jDriver {
         UNION
         MATCH (v1:Verse)-[c:CONNECTS_TO]->(v:Verse {id: $verseId})
         RETURN c, v1.id as sourceId, v.id as targetId
+        LIMIT 100
       `, { verseId });
       
       // Use a Map to deduplicate connections by source-target-type
       const uniqueConnections = new Map<string, Connection>();
       
-      result.records.forEach(record => {
+      // Add a limit check to prevent too many records
+      const recordsToProcess = result.records.slice(0, 100);
+      
+      recordsToProcess.forEach(record => {
         const connectionProps = record.get('c').properties;
         const sourceId = record.get('sourceId');
         const targetId = record.get('targetId');
@@ -376,6 +382,7 @@ class Neo4jDriver {
         RETURN n, v.id as verseId, 
                CASE WHEN n.tags IS NOT NULL THEN n.tags ELSE [] END as tags
         ORDER BY n.updatedAt DESC
+        LIMIT 100
       `);
       
       return result.records.map(record => {
@@ -403,6 +410,7 @@ class Neo4jDriver {
         RETURN n, 
                CASE WHEN n.tags IS NOT NULL THEN n.tags ELSE [] END as tags
         ORDER BY n.updatedAt DESC
+        LIMIT 100
       `, { verseId });
       
       return result.records.map(record => {

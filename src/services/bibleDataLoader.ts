@@ -76,12 +76,17 @@ class BibleDataLoader {
       let totalChapters = 0;
       let totalVerses = 0;
       
+      // Set limits for loading to prevent overloading
+      const MAX_VERSES_TO_LOAD = 5000;
+      const MAX_CONNECTIONS_TO_CREATE = 5000;
+      let shouldStopLoadingVerses = false;
+      
       // Process books
       if (bibleData.book && Array.isArray(bibleData.book)) {
         totalBooks = bibleData.book.length;
         console.log(`Found ${totalBooks} books in the Bible XML`);
         
-        for (let bookIndex = 0; bookIndex < bibleData.book.length; bookIndex++) {
+        for (let bookIndex = 0; bookIndex < bibleData.book.length && !shouldStopLoadingVerses; bookIndex++) {
           const book = bibleData.book[bookIndex];
           const bookName = book.name;
           const bookCode = book.code;
@@ -93,7 +98,7 @@ class BibleDataLoader {
             
             console.log(`Processing book ${bookIndex + 1}/${totalBooks}: ${bookName} (${bookChapters} chapters)`);
             
-            for (let chapterIndex = 0; chapterIndex < book.chapter.length; chapterIndex++) {
+            for (let chapterIndex = 0; chapterIndex < book.chapter.length && !shouldStopLoadingVerses; chapterIndex++) {
               const chapter = book.chapter[chapterIndex];
               const chapterNumber = parseInt(chapter.number);
               
@@ -106,6 +111,12 @@ class BibleDataLoader {
                 }
                 
                 for (const verse of chapter.verse) {
+                  if (totalVerses >= MAX_VERSES_TO_LOAD) {
+                    console.log(`Reached maximum verse limit of ${MAX_VERSES_TO_LOAD}. Stopping verse loading.`);
+                    shouldStopLoadingVerses = true;
+                    break;
+                  }
+                  
                   const verseNumber = parseInt(verse.number);
                   const verseText = verse._text || '';
                   
@@ -140,7 +151,7 @@ class BibleDataLoader {
       
       // Create basic connections - connect consecutive verses in each chapter
       console.log('Creating basic verse connections...');
-      await this.createBasicConnections(verseIdMap);
+      await this.createBasicConnections(verseIdMap, MAX_CONNECTIONS_TO_CREATE);
       
       console.log('XML data loaded successfully!');
     } catch (error: any) {
@@ -202,7 +213,7 @@ class BibleDataLoader {
   /**
    * Creates basic connections between consecutive verses in the same chapter
    */
-  private async createBasicConnections(verseIdMap: Record<string, string>): Promise<void> {
+  private async createBasicConnections(verseIdMap: Record<string, string>, maxConnections: number = 5000): Promise<void> {
     try {
       // Group verse keys by book and chapter
       const chapterVerses: Record<string, string[]> = {};
@@ -227,8 +238,13 @@ class BibleDataLoader {
       // For each chapter, connect consecutive verses
       let connectionCount = 0;
       let chapterCount = 0;
+      let shouldStopCreatingConnections = false;
       
       for (const chapterKey of Object.keys(chapterVerses)) {
+        if (shouldStopCreatingConnections) {
+          break;
+        }
+        
         chapterCount++;
         const [bookCode, chapterNum] = chapterKey.split('_');
         
@@ -245,6 +261,12 @@ class BibleDataLoader {
         
         // Connect consecutive verses
         for (let i = 0; i < verses.length - 1; i++) {
+          if (connectionCount >= maxConnections) {
+            console.log(`Reached maximum connection limit of ${maxConnections}. Stopping connection creation.`);
+            shouldStopCreatingConnections = true;
+            break;
+          }
+          
           const sourceVerseId = verseIdMap[verses[i]];
           const targetVerseId = verseIdMap[verses[i + 1]];
           
@@ -264,7 +286,7 @@ class BibleDataLoader {
         }
       }
       
-      console.log(`Created ${connectionCount} consecutive verse connections across ${totalChapters} chapters`);
+      console.log(`Created ${connectionCount} consecutive verse connections across ${chapterCount} chapters`);
     } catch (error: any) {
       console.error('Error creating basic connections:', error);
       throw error;
