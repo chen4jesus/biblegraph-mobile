@@ -33,7 +33,7 @@
   },
   "notes": {
     "title": "My Notes",
-    "searchNotes": "Search notes... (e.g. Genesis 1:1)",
+    "searchNotes": "Search notes...",
     "noNotesFound": "No notes found",
     "noNotesYet": "No notes yet",
     "addNote": "Add Note",
@@ -107,8 +107,6 @@
     "retry": "Retry",
     "zoomIn": "Zoom In",
     "zoomOut": "Zoom Out",
-    "refresh": "Refresh",
-    "showLabels": "Show Labels",
     "dragHint": "Tap and drag nodes to rearrange",
     "doubleTapToReset": "Double tap to reset view"
   },
