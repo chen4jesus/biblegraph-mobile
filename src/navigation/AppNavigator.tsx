@@ -8,6 +8,8 @@ import LoadingScreen from '../components/LoadingScreen';
 import { Ionicons } from '@expo/vector-icons';
 import { useTranslation } from 'react-i18next';
 import { useFocusEffect } from '@react-navigation/native';
+import { WebViewProvider } from '../contexts/WebViewContext';
+import { GlobalWebViewManager } from '../contexts/WebViewManager';
 
 // Auth Screens
 import LoginScreen from '../screens/LoginScreen';
@@ -111,77 +113,87 @@ const AppNavigator: React.FC = () => {
   }
 
   return (
-    <NavigationContainer>
-      <Stack.Navigator
-        initialRouteName={isAuthenticated ? 'MainTabs' : 'Login'}
-        screenOptions={{
-          headerShown: false,
-        }}
-      >
-        {/* Auth Stack */}
-        {!isAuthenticated && (
-          <>
-            <Stack.Screen 
-              name="Login" 
-              component={LoginScreen}
-              options={{ title: t('auth:login') }} 
-            />
-            <Stack.Screen 
-              name="SignUp" 
-              component={SignUpScreen}
-              options={{ title: t('auth:signup') }} 
-            />
-            <Stack.Screen 
-              name="ForgotPassword" 
-              component={ForgotPasswordScreen}
-              options={{ title: t('auth:forgotPassword') }} 
-            />
-          </>
-        )}
+    <WebViewProvider>
+      <NavigationContainer>
+        <Stack.Navigator
+          initialRouteName={isAuthenticated ? 'MainTabs' : 'Login'}
+          screenOptions={{
+            headerShown: false,
+          }}
+        >
+          {/* Auth Stack */}
+          {!isAuthenticated && (
+            <>
+              <Stack.Screen 
+                name="Login" 
+                component={LoginScreen}
+                options={{ title: t('auth:login') }} 
+              />
+              <Stack.Screen 
+                name="SignUp" 
+                component={SignUpScreen}
+                options={{ title: t('auth:signup') }} 
+              />
+              <Stack.Screen 
+                name="ForgotPassword" 
+                component={ForgotPasswordScreen}
+                options={{ title: t('auth:forgotPassword') }} 
+              />
+            </>
+          )}
 
-        {/* Main Stack */}
-        {isAuthenticated && (
-          <>
-            <Stack.Screen name="MainTabs" component={MainTabs} />
-            <Stack.Screen 
-              name="Search" 
-              component={SearchScreen}
-              options={{ title: t('search') }} 
-            />
-            <Stack.Screen 
-              name="VerseDetail" 
-              component={VerseDetailScreen} 
-              options={{ title: t('verseDetail:title') }}
-            />
-            <Stack.Screen 
-              name="GraphView" 
-              component={GraphViewScreen}
-              options={{ title: t('graph') }} 
-            />
-            <Stack.Screen 
-              name="GroupDetail" 
-              component={GroupDetailScreen}
-              options={{ title: t('group:detail') }} 
-            />
-            <Stack.Screen 
-              name="TagsManagement" 
-              component={TagsManagementScreen}
-              options={{ title: t('tags:title') }} 
-            />
-            <Stack.Screen 
-              name="Settings" 
-              component={SettingsScreen}
-              options={{ title: t('settings') }} 
-            />
-            <Stack.Screen 
-              name="LanguageSettings" 
-              component={LanguageSettingsScreen}
-              options={{ title: t('settings:language') }} 
-            />
-          </>
-        )}
-      </Stack.Navigator>
-    </NavigationContainer>
+          {/* Main Stack */}
+          {isAuthenticated && (
+            <>
+              <Stack.Screen name="MainTabs" component={MainTabs} />
+              <Stack.Screen 
+                name="Search" 
+                component={SearchScreen}
+                options={{ title: t('search') }} 
+              />
+              <Stack.Screen 
+                name="VerseDetail" 
+                component={VerseDetailScreen} 
+                options={{ title: t('verseDetail:title') }}
+              />
+              <Stack.Screen 
+                name="GraphView" 
+                component={GraphViewScreen}
+                options={{ title: t('graph') }} 
+              />
+              <Stack.Screen 
+                name="GroupDetail" 
+                component={GroupDetailScreen}
+                options={{ title: t('group:detail') }} 
+              />
+              <Stack.Screen 
+                name="TagsManagement" 
+                component={TagsManagementScreen}
+                options={{ 
+                  title: t('tags:title'),
+                  presentation: 'transparentModal',
+                  animation: 'slide_from_right',
+                  headerShown: false
+                }} 
+              />
+              <Stack.Screen 
+                name="Settings" 
+                component={SettingsScreen}
+                options={{ title: t('settings') }} 
+              />
+              <Stack.Screen 
+                name="LanguageSettings" 
+                component={LanguageSettingsScreen}
+                options={{ title: t('settings:language') }} 
+              />
+            </>
+          )}
+        </Stack.Navigator>
+        
+        {/* Global WebView Manager - always visible across screens */}
+        <GlobalWebViewManager />
+      </NavigationContainer>
+    </WebViewProvider>
   );
 };
 

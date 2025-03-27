@@ -21,6 +21,7 @@
     "d3": "^7.9.0",
     "expo": "~52.0.40",
     "expo-asset": "^11.0.5",
+    "expo-blur": "^14.0.3",
     "expo-file-system": "^18.0.12",
     "expo-status-bar": "~2.0.1",
     "fast-xml-parser": "^5.0.9",

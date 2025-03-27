@@ -1,5 +1,5 @@
 import neo4j, { Driver, Session, Result } from 'neo4j-driver';
-import { Verse, Connection, Note, ConnectionType, VerseGroup, GroupConnection, NodeType } from '../types/bible';
+import { Verse, Connection, Note, ConnectionType, VerseGroup, GroupConnection, NodeType, Tag } from '../types/bible';
 import { v4 as uuidv4 } from 'uuid';
 
 // Type for creating a new connection
@@ -545,6 +545,37 @@ class Neo4jDriver {
   }
 
   // Note methods
+  public async getNote(noteId: string): Promise<Note | null> {
+    const session = this.getSession();
+    try {
+      const result = await session.run(`
+        MATCH (n:Note {id: $id})-[:ABOUT]->(v:Verse)
+        OPTIONAL MATCH (n)-[:HAS_TAG]->(t:Tag)
+        RETURN n, v.id as verseId, collect(t.name) as tagNames
+      `, { id: noteId });
+      
+      if (result.records.length === 0) {
+        return null;
+      }
+      
+      const record = result.records[0];
+      const noteProps = record.get('n').properties;
+      const verseId = record.get('verseId');
+      const tagNames = record.get('tagNames');
+      
+      return {
+        id: noteProps.id.toString(),
+        verseId,
+        content: noteProps.content,
+        tags: tagNames, // This will be an array from collect()
+        createdAt: noteProps.createdAt,
+        updatedAt: noteProps.updatedAt
+      };
+    } finally {
+      await session.close();
+    }
+  }
+
   public async getNotes(skip: number = 0, limit: number = 20): Promise<Note[]> {
     const session = this.getSession();
     try {
@@ -554,8 +585,9 @@ class Neo4jDriver {
       
       const result = await session.run(`
         MATCH (n:Note)-[:ABOUT]->(v:Verse)
-        RETURN n, v.id as verseId, 
-               CASE WHEN n.tags IS NOT NULL THEN n.tags ELSE [] END as tags
+        OPTIONAL MATCH (n)-[:HAS_TAG]->(t:Tag)
+        WITH n, v, collect(t.name) as tagNames
+        RETURN n, v.id as verseId, tagNames
         ORDER BY n.updatedAt DESC
         SKIP toInteger($skipInt)
         LIMIT toInteger($limitInt)
@@ -563,13 +595,12 @@ class Neo4jDriver {
       
       return result.records.map(record => {
         const noteProps = record.get('n').properties;
-        const tags = record.get('tags') || [];
+        const tagNames = record.get('tagNames') || []; // Ensure tags is an array
         return {
           id: noteProps.id.toString(),
           verseId: record.get('verseId'),
           content: noteProps.content,
-          // Ensure tags is always an array of strings
-          tags: Array.isArray(tags) ? tags.map(tag => tag.toString()) : [],
+          tags: tagNames, // This will be an array from collect()
           createdAt: noteProps.createdAt,
           updatedAt: noteProps.updatedAt,
         };
@@ -586,8 +617,9 @@ class Neo4jDriver {
       
       const result = await session.run(`
         MATCH (n:Note)-[:ABOUT]->(v:Verse {id: $verseId})
-        RETURN n, 
-               CASE WHEN n.tags IS NOT NULL THEN n.tags ELSE [] END as tags
+        OPTIONAL MATCH (n)-[:HAS_TAG]->(t:Tag)
+        WITH n, collect(t.name) as tagNames
+        RETURN n, tagNames
         ORDER BY n.updatedAt DESC
         LIMIT toInteger($limit)
       `, { 
@@ -597,13 +629,12 @@ class Neo4jDriver {
       
       return result.records.map(record => {
         const noteProps = record.get('n').properties;
-        const tags = record.get('tags') || [];
+        const tagNames = record.get('tagNames') || []; // Ensure tags is an array
         return {
           id: noteProps.id.toString(),
           verseId: verseId,
           content: noteProps.content,
-          // Ensure tags is always an array of strings
-          tags: Array.isArray(tags) ? tags.map(tag => tag.toString()) : [],
+          tags: tagNames, // This will be an array from collect()
           createdAt: noteProps.createdAt,
           updatedAt: noteProps.updatedAt,
         };
@@ -633,43 +664,85 @@ class Neo4jDriver {
       const tagsArray = Array.isArray(tags) 
         ? tags.filter(tag => tag && typeof tag === 'string').map(tag => tag.trim())
         : [];
-
-      const result = await session.run(`
-        MATCH (v:Verse {id: $verseId})
-        CREATE (n:Note {
-          id: $id,
-          content: $content,
-          tags: $tags,
-          createdAt: $now,
-          updatedAt: $now
-        })-[:ABOUT]->(v)
-        RETURN n
-      `, {
-        id,
-        verseId,
-        content,
-        tags: tagsArray,
-        now
-      });
       
-      if (result.records.length === 0) {
-        throw new Error('Failed to create note');
+      // Use a transaction to create the note and its tag relationships
+      const txc = session.beginTransaction();
+      
+      try {
+        // Create the note
+        const createResult = await txc.run(`
+          MATCH (v:Verse {id: $verseId})
+          CREATE (n:Note {
+            id: $id,
+            content: $content,
+            createdAt: $now,
+            updatedAt: $now
+          })-[:ABOUT]->(v)
+          RETURN n
+        `, {
+          id,
+          verseId,
+          content,
+          now
+        });
+        
+        if (createResult.records.length === 0) {
+          await txc.rollback();
+          throw new Error('Failed to create note');
+        }
+        
+        // If we have tags, create relationships to them
+        if (tagsArray.length > 0) {
+          // For each tag name, either find or create the tag node
+          for (const tagName of tagsArray) {
+            // Use MERGE with ON CREATE to only set properties if the tag is new
+            await txc.run(`
+              MERGE (t:Tag {name: $tagName})
+              ON CREATE SET 
+                t.id = $tagId, 
+                t.color = $color, 
+                t.createdAt = $now, 
+                t.updatedAt = $now
+              WITH t
+              MATCH (n:Note {id: $noteId})
+              MERGE (n)-[:HAS_TAG]->(t)
+            `, {
+              tagName,
+              tagId: uuidv4(),
+              color: this.getRandomTagColor(),
+              now,
+              noteId: id
+            });
+          }
+        }
+        
+        await txc.commit();
+        
+        // Return the complete note with tags
+        const noteResult = await session.run(`
+          MATCH (n:Note {id: $id})
+          OPTIONAL MATCH (n)-[:HAS_TAG]->(t:Tag)
+          RETURN n, collect(t.name) as tagNames
+        `, { id });
+        
+        const noteProps = noteResult.records[0].get('n').properties;
+        const noteTags = noteResult.records[0].get('tagNames');
+        
+        return {
+          id: noteProps.id.toString(),
+          content: noteProps.content,
+          tags: noteTags,
+          createdAt: noteProps.createdAt,
+          updatedAt: noteProps.updatedAt,
+          verseId
+        };
+      } catch (txError) {
+        await txc.rollback();
+        console.error('Transaction error creating note:', txError);
+        throw txError;
       }
-      
-      const noteProps = result.records[0].get('n').properties;
-      return {
-        id: noteProps.id.toString(),
-        content: noteProps.content.toString(),
-        tags: tagsArray,
-        createdAt: noteProps.createdAt.toString(),
-        updatedAt: noteProps.updatedAt.toString(),
-        verseId
-      };
-    } catch (error) {
-      console.error('Error creating note:', error);
-      throw error;
     } finally {
-      session.close();
+      await session.close();
     }
   }
 
@@ -678,54 +751,89 @@ class Neo4jDriver {
     const now = new Date().toISOString();
     
     try {
-      let query = `
-        MATCH (n:Note {id: $id})-[:ABOUT]->(v:Verse)
-        SET n.content = $content, n.updatedAt = $now
-      `;
+      // Use a transaction to update the note and its tag relationships
+      const txc = session.beginTransaction();
       
-      // Add tags to the update if provided
-      if (updates.tags) {
-        query += `, n.tags = $tags`;
+      try {
+        // Update the note content if provided
+        if (updates.content !== undefined) {
+          await txc.run(`
+            MATCH (n:Note {id: $id})
+            SET n.content = $content, n.updatedAt = $now
+          `, {
+            id: noteId,
+            content: updates.content,
+            now
+          });
+        }
+        
+        // Update tags if provided
+        if (updates.tags !== undefined) {
+          // Ensure tags is a proper string array
+          const tagsArray = Array.isArray(updates.tags) 
+            ? updates.tags.filter(tag => tag && typeof tag === 'string').map(tag => tag.trim())
+            : [];
+          
+          // First, remove all existing tag relationships
+          await txc.run(`
+            MATCH (n:Note {id: $id})-[r:HAS_TAG]->()
+            DELETE r
+          `, { id: noteId });
+          
+          // Then create new relationships for each tag
+          for (const tagName of tagsArray) {
+            // Use MERGE with ON CREATE to only set properties if the tag is new
+            await txc.run(`
+              MERGE (t:Tag {name: $tagName})
+              ON CREATE SET 
+                t.id = $tagId, 
+                t.color = $color, 
+                t.createdAt = $now, 
+                t.updatedAt = $now
+              WITH t
+              MATCH (n:Note {id: $noteId})
+              MERGE (n)-[:HAS_TAG]->(t)
+            `, {
+              tagName,
+              tagId: uuidv4(),
+              color: this.getRandomTagColor(),
+              now,
+              noteId
+            });
+          }
+        }
+        
+        await txc.commit();
+        
+        // Fetch the updated note with its tags
+        const result = await session.run(`
+          MATCH (n:Note {id: $id})-[:ABOUT]->(v:Verse)
+          OPTIONAL MATCH (n)-[:HAS_TAG]->(t:Tag)
+          RETURN n, v.id as verseId, collect(t.name) as tagNames
+        `, { id: noteId });
+        
+        if (result.records.length === 0) {
+          throw new Error(`Note with id ${noteId} not found`);
+        }
+        
+        const record = result.records[0];
+        const noteProps = record.get('n').properties;
+        const verseId = record.get('verseId');
+        const tagNames = record.get('tagNames');
+        
+        return {
+          id: noteProps.id.toString(),
+          verseId,
+          content: noteProps.content,
+          tags: tagNames,
+          createdAt: noteProps.createdAt,
+          updatedAt: noteProps.updatedAt
+        };
+      } catch (txError) {
+        await txc.rollback();
+        console.error('Transaction error updating note:', txError);
+        throw txError;
       }
-      
-      query += `
-        RETURN n, v.id as verseId,
-               CASE WHEN n.tags IS NOT NULL THEN n.tags ELSE [] END as tags
-      `;
-      
-      const params: Record<string, any> = {
-        id: noteId,
-        content: updates.content || '',
-        now
-      };
-      
-      if (updates.tags) {
-        // Ensure tags is a proper string array before updating
-        params.tags = Array.isArray(updates.tags) 
-          ? updates.tags.filter(tag => tag && typeof tag === 'string').map(tag => tag.trim())
-          : [];
-      }
-      
-      const result = await session.run(query, params);
-      
-      if (result.records.length === 0) {
-        throw new Error(`Note with id ${noteId} not found`);
-      }
-      
-      const record = result.records[0];
-      const noteProps = record.get('n').properties;
-      const verseId = record.get('verseId');
-      const tags = record.get('tags') || [];
-      
-      return {
-        id: noteProps.id.toString(),
-        verseId,
-        content: noteProps.content,
-        // Ensure tags is returned as an array of strings
-        tags: Array.isArray(tags) ? tags.map(tag => tag.toString()) : [],
-        createdAt: noteProps.createdAt,
-        updatedAt: noteProps.updatedAt
-      };
     } finally {
       await session.close();
     }
@@ -793,6 +901,8 @@ class Neo4jDriver {
       await session.run('CREATE CONSTRAINT note_id IF NOT EXISTS FOR (n:Note) REQUIRE n.id IS UNIQUE');
       await session.run('CREATE CONSTRAINT group_id IF NOT EXISTS FOR (g:VerseGroup) REQUIRE g.id IS UNIQUE');
       await session.run('CREATE CONSTRAINT group_connection_id IF NOT EXISTS FOR (gc:GroupConnection) REQUIRE gc.id IS UNIQUE');
+      await session.run('CREATE CONSTRAINT tag_id IF NOT EXISTS FOR (t:Tag) REQUIRE t.id IS UNIQUE');
+      await session.run('CREATE CONSTRAINT tag_name IF NOT EXISTS FOR (t:Tag) REQUIRE t.name IS UNIQUE');
       
       console.debug('Neo4j database indexes and constraints created');
     } catch (error) {
@@ -1442,6 +1552,219 @@ class Neo4jDriver {
     } finally {
       await session.close();
     }
+  }
+
+  // Tag methods
+  public async getTags(): Promise<Tag[]> {
+    const session = this.getSession();
+    try {
+      const result = await session.run(`
+        MATCH (t:Tag)
+        RETURN t
+        ORDER BY t.name
+      `);
+      
+      return result.records.map(record => {
+        const tagProps = record.get('t').properties;
+        return {
+          id: tagProps.id.toString(),
+          name: tagProps.name,
+          color: tagProps.color,
+          createdAt: tagProps.createdAt,
+          updatedAt: tagProps.updatedAt,
+        };
+      });
+    } finally {
+      await session.close();
+    }
+  }
+
+  public async getTagsWithCount(): Promise<(Tag & { count: number })[]> {
+    const session = this.getSession();
+    try {
+      const result = await session.run(`
+        MATCH (t:Tag)
+        OPTIONAL MATCH (t)<-[:HAS_TAG]-(n)
+        WITH t, count(n) as usageCount
+        RETURN t, usageCount
+        ORDER BY usageCount DESC, t.name
+      `);
+      
+      return result.records.map(record => {
+        const tagProps = record.get('t').properties;
+        const count = record.get('usageCount').toNumber();
+        return {
+          id: tagProps.id.toString(),
+          name: tagProps.name,
+          color: tagProps.color,
+          createdAt: tagProps.createdAt,
+          updatedAt: tagProps.updatedAt,
+          count,
+        };
+      });
+    } finally {
+      await session.close();
+    }
+  }
+
+  public async createTag(name: string, color: string): Promise<Tag> {
+    if (!name || !name.trim()) {
+      throw new Error('Tag name is required');
+    }
+    
+    const session = this.getSession();
+    const now = new Date().toISOString();
+    const id = uuidv4();
+    
+    try {
+      // Check if tag with same name already exists (case insensitive)
+      const existingTagResult = await session.run(`
+        MATCH (t:Tag)
+        WHERE toLower(t.name) = toLower($name)
+        RETURN t
+      `, { name: name.trim() });
+      
+      if (existingTagResult.records.length > 0) {
+        throw new Error(`Tag with name "${name}" already exists`);
+      }
+      
+      const result = await session.run(`
+        CREATE (t:Tag {
+          id: $id,
+          name: $name,
+          color: $color,
+          createdAt: $now,
+          updatedAt: $now
+        })
+        RETURN t
+      `, {
+        id,
+        name: name.trim(),
+        color,
+        now
+      });
+      
+      const tagProps = result.records[0].get('t').properties;
+      return {
+        id: tagProps.id.toString(),
+        name: tagProps.name,
+        color: tagProps.color,
+        createdAt: tagProps.createdAt,
+        updatedAt: tagProps.updatedAt,
+      };
+    } finally {
+      await session.close();
+    }
+  }
+
+  public async updateTag(tagId: string, updates: Partial<Tag>): Promise<Tag> {
+    const session = this.getSession();
+    const now = new Date().toISOString();
+    
+    try {
+      let updateProps = '';
+      const params: Record<string, any> = { id: tagId, now };
+      
+      if (updates.name) {
+        // Check if the new name conflicts with an existing tag
+        if (updates.name.trim()) {
+          const existingTagResult = await session.run(`
+            MATCH (t:Tag)
+            WHERE t.id <> $id AND toLower(t.name) = toLower($name)
+            RETURN t
+          `, { id: tagId, name: updates.name.trim() });
+          
+          if (existingTagResult.records.length > 0) {
+            throw new Error(`Tag with name "${updates.name}" already exists`);
+          }
+          
+          updateProps += 'n.name = $name, ';
+          params.name = updates.name.trim();
+        }
+      }
+      
+      if (updates.color) {
+        updateProps += 'n.color = $color, ';
+        params.color = updates.color;
+      }
+      
+      // If no valid updates, return early
+      if (!updateProps) {
+        throw new Error('No valid updates provided');
+      }
+      
+      const query = `
+        MATCH (n:Tag {id: $id})
+        SET ${updateProps} n.updatedAt = $now
+        RETURN n
+      `;
+      
+      const result = await session.run(query, params);
+      
+      if (result.records.length === 0) {
+        throw new Error(`Tag with ID ${tagId} not found`);
+      }
+      
+      const tagProps = result.records[0].get('n').properties;
+      return {
+        id: tagProps.id.toString(),
+        name: tagProps.name,
+        color: tagProps.color,
+        createdAt: tagProps.createdAt,
+        updatedAt: tagProps.updatedAt,
+      };
+    } finally {
+      await session.close();
+    }
+  }
+
+  public async deleteTag(tagId: string): Promise<boolean> {
+    const session = this.getSession();
+    try {
+      // Use a transaction to handle both checking and deletion
+      const txc = session.beginTransaction();
+      
+      try {
+        // First detach all relationships
+        await txc.run(`
+          MATCH (t:Tag {id: $id})
+          OPTIONAL MATCH (t)<-[r:HAS_TAG]-()
+          DELETE r
+        `, { id: tagId });
+        
+        // Then delete the tag
+        const result = await txc.run(`
+          MATCH (t:Tag {id: $id})
+          DELETE t
+          RETURN count(t) as deleted
+        `, { id: tagId });
+        
+        const deleted = result.records[0].get('deleted').toNumber() > 0;
+        
+        if (deleted) {
+          await txc.commit();
+          return true;
+        } else {
+          await txc.rollback();
+          return false;
+        }
+      } catch (txError) {
+        await txc.rollback();
+        console.error('Transaction error deleting tag:', txError);
+        throw txError;
+      }
+    } finally {
+      await session.close();
+    }
+  }
+
+  // Helper method to generate a random tag color
+  private getRandomTagColor(): string {
+    const colors = [
+      '#FF6B6B', '#4ECDC4', '#FFD166', '#06D6A0', '#118AB2', 
+      '#EF476F', '#FFC43D', '#1B9AAA', '#6F2DBD', '#84BC9C'
+    ];
+    return colors[Math.floor(Math.random() * colors.length)];
   }
 }
 

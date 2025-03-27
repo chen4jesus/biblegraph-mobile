@@ -1,5 +1,5 @@
 import { neo4jDriverService } from './neo4jDriver';
-import { Verse, Connection, Note, ConnectionType, User, VerseGroup, GroupConnection, NodeType } from '../types/bible';
+import { Verse, Connection, Note, ConnectionType, User, VerseGroup, GroupConnection, NodeType, Tag } from '../types/bible';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // Token storage key
@@ -202,6 +202,32 @@ class Neo4jDatabaseService {
   public async deleteNote(noteId: string): Promise<boolean> {
     await this.ensureInitialized();
     return neo4jDriverService.deleteNote(noteId);
+  }
+
+  // Tag methods
+  public async getTags(): Promise<Tag[]> {
+    await this.ensureInitialized();
+    return neo4jDriverService.getTags();
+  }
+
+  public async getTagsWithCount(): Promise<(Tag & { count: number })[]> {
+    await this.ensureInitialized();
+    return neo4jDriverService.getTagsWithCount();
+  }
+
+  public async createTag(name: string, color: string): Promise<Tag> {
+    await this.ensureInitialized();
+    return neo4jDriverService.createTag(name, color);
+  }
+
+  public async updateTag(tagId: string, updates: Partial<Tag>): Promise<Tag> {
+    await this.ensureInitialized();
+    return neo4jDriverService.updateTag(tagId, updates);
+  }
+
+  public async deleteTag(tagId: string): Promise<boolean> {
+    await this.ensureInitialized();
+    return neo4jDriverService.deleteTag(tagId);
   }
 
   // Helper methods

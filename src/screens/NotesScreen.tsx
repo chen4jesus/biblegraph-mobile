@@ -46,7 +46,7 @@ const NotesScreen = forwardRef<NotesScreenRef, {}>((props, ref) => {
   const [notes, setNotes] = useState<NoteWithVerse[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [filteredNotes, setFilteredNotes] = useState<NoteWithVerse[]>([]);
-  const [selectedTag, setSelectedTag] = useState<string | null>(null);
+  const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [allTags, setAllTags] = useState<string[]>([]);
   const [expandedNotes, setExpandedNotes] = useState<Record<string, boolean>>({});
   const [webViewUrl, setWebViewUrl] = useState<string>('');
@@ -64,13 +64,19 @@ const NotesScreen = forwardRef<NotesScreenRef, {}>((props, ref) => {
   // Animation value for the highlight effect
   const highlightAnimation = useRef(new Animated.Value(0)).current;
 
+  const [tagColors, setTagColors] = useState<Record<string, string>>({});
+
+  // Keep the previous selectedTag for backward compatibility during refactoring
+  const selectedTag = selectedTags.length === 1 ? selectedTags[0] : null;
+
   useEffect(() => {
     loadNotes();
+    loadTagColors();
   }, []);
 
   useEffect(() => {
     filterNotes();
-  }, [searchQuery, notes, selectedTag]);
+  }, [searchQuery, notes, selectedTags]);
 
   // Extract all unique tags from notes
   useEffect(() => {
@@ -160,11 +166,11 @@ const NotesScreen = forwardRef<NotesScreenRef, {}>((props, ref) => {
   };
 
   const loadMoreNotes = useCallback(() => {
-    if (!isLoadingMore && hasMoreData && !searchQuery && !selectedTag) {
+    if (!isLoadingMore && hasMoreData && !searchQuery && selectedTags.length === 0) {
       setIsLoadingMore(true);
       loadNotes(false);
     }
-  }, [isLoadingMore, hasMoreData, searchQuery, selectedTag]);
+  }, [isLoadingMore, hasMoreData, searchQuery, selectedTags]);
 
   const handleRefresh = useCallback(() => {
     setIsRefreshing(true);
@@ -174,11 +180,18 @@ const NotesScreen = forwardRef<NotesScreenRef, {}>((props, ref) => {
   const filterNotes = () => {
     let filtered = notes;
     
-    // Filter by tag if one is selected
-    if (selectedTag) {
-      filtered = filtered.filter(note => 
-        note.tags && note.tags.includes(selectedTag)
-      );
+    // Filter by tags if any are selected (AND logic - note must have ALL selected tags)
+    if (selectedTags.length > 0) {
+      filtered = filtered.filter(note => {
+        // If note has no tags, it can't match our filter
+        if (!note.tags || note.tags.length === 0) {
+          return false;
+        }
+        
+        // Now we know note.tags exists and is non-empty
+        const noteTags = note.tags as string[];
+        return selectedTags.every(tag => noteTags.includes(tag));
+      });
     }
     
     // Filter by search query if present
@@ -216,14 +229,34 @@ const NotesScreen = forwardRef<NotesScreenRef, {}>((props, ref) => {
     setFilteredNotes(filtered);
   };
 
+  const loadTagColors = async () => {
+    try {
+      const tags = await neo4jService.getTags();
+      const colorMap: Record<string, string> = {};
+      
+      tags.forEach(tag => {
+        colorMap[tag.name] = tag.color;
+      });
+      
+      setTagColors(colorMap);
+    } catch (error) {
+      console.error('Error loading tag colors:', error);
+    }
+  };
+
   const getTagColor = (tag: string) => {
-    // Generate a consistent color based on tag name
-    const tagColors = [
+    // First check if we have the color in our tagColors state
+    if (tagColors[tag]) {
+      return tagColors[tag];
+    }
+    
+    // Fallback to generating a color if not found in database
+    const tagColorOptions = [
       '#FF6B6B', '#4ECDC4', '#FFD166', '#06D6A0', '#118AB2', 
       '#EF476F', '#FFC43D', '#1B9AAA', '#6F2DBD', '#84BC9C'
     ];
-    const tagIndex = tag.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0) % tagColors.length;
-    return tagColors[tagIndex];
+    const tagIndex = tag.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0) % tagColorOptions.length;
+    return tagColorOptions[tagIndex];
   };
 
   const toggleNoteExpansion = (noteId: string) => {
@@ -431,15 +464,7 @@ const NotesScreen = forwardRef<NotesScreenRef, {}>((props, ref) => {
           </View>
         )}
         
-        {item.tags && item.tags.length > 0 && (
-          <View style={styles.tagsContainer}>
-            {item.tags.map((tag) => (
-              <View key={tag} style={[styles.tag, {backgroundColor: getTagColor(tag)}]}>
-                <Text style={[styles.tagText, {color: '#fff'}]}>{tag}</Text>
-              </View>
-            ))}
-          </View>
-        )}
+        {item.tags && item.tags.length > 0 && renderTagsForNote(item.tags)}
       </Animated.View>
     );
   };
@@ -572,6 +597,52 @@ const NotesScreen = forwardRef<NotesScreenRef, {}>((props, ref) => {
     });
   }, [navigation, updateSingleNote]);
 
+  // Add a function to toggle a tag in the selected tags array
+  const toggleTagSelection = (tag: string) => {
+    setSelectedTags(prev => {
+      if (prev.includes(tag)) {
+        return prev.filter(t => t !== tag);
+      } else {
+        return [...prev, tag];
+      }
+    });
+  };
+
+  // Add a function to handle tag click from note items
+  const handleTagClick = (tag: string) => {
+    // If holding Ctrl/Cmd key (simulated in mobile by long press), add to selection
+    // Otherwise replace selection with this tag
+    toggleTagSelection(tag);
+    
+    // Scroll to top after filtering
+    if (flatListRef.current) {
+      flatListRef.current.scrollToOffset({ offset: 0, animated: true });
+    }
+  };
+
+  // Add a flatlist ref for scrolling
+  const flatListRef = useRef<FlatList>(null);
+
+  // Update tag rendering in note item to make them clickable
+  const renderTagsForNote = (tags: string[]) => (
+    <View style={styles.tagsContainer}>
+      {tags.map((tag) => (
+        <TouchableOpacity 
+          key={tag} 
+          style={[
+            styles.tag, 
+            {backgroundColor: getTagColor(tag)},
+            // Highlight if this tag is in the selected tags
+            selectedTags.includes(tag) && styles.tagSelected
+          ]}
+          onPress={() => handleTagClick(tag)}
+        >
+          <Text style={[styles.tagText, {color: '#fff'}]}>{tag}</Text>
+        </TouchableOpacity>
+      ))}
+    </View>
+  );
+
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
@@ -614,6 +685,17 @@ const NotesScreen = forwardRef<NotesScreenRef, {}>((props, ref) => {
 
       {allTags.length > 0 && (
         <View style={styles.tagsFilterContainer}>
+          <View style={styles.tagsFilterHeader}>
+            <Text style={styles.tagsFilterTitle}>{t('notes:filterByTags')}</Text>
+            {selectedTags.length > 0 && (
+              <TouchableOpacity
+                style={styles.clearTagsButton}
+                onPress={() => setSelectedTags([])}
+              >
+                <Text style={styles.clearTagsButtonText}>{t('notes:clearAll')}</Text>
+              </TouchableOpacity>
+            )}
+          </View>
           <ScrollView 
             horizontal 
             showsHorizontalScrollIndicator={false}
@@ -622,13 +704,13 @@ const NotesScreen = forwardRef<NotesScreenRef, {}>((props, ref) => {
             <TouchableOpacity
               style={[
                 styles.tagFilterItem,
-                selectedTag === null && styles.tagFilterItemSelected
+                selectedTags.length === 0 && styles.tagFilterItemSelected
               ]}
-              onPress={() => setSelectedTag(null)}
+              onPress={() => setSelectedTags([])}
             >
               <Text style={[
                 styles.tagFilterText,
-                selectedTag === null && styles.tagFilterTextSelected
+                selectedTags.length === 0 && styles.tagFilterTextSelected
               ]}>
                 {t('common:all')}
               </Text>
@@ -639,13 +721,17 @@ const NotesScreen = forwardRef<NotesScreenRef, {}>((props, ref) => {
                 key={tag}
                 style={[
                   styles.tagFilterItem,
-                  { backgroundColor: selectedTag === tag ? getTagColor(tag) : '#f0f0f0' }
+                  { 
+                    backgroundColor: selectedTags.includes(tag) 
+                      ? getTagColor(tag) 
+                      : '#f0f0f0' 
+                  }
                 ]}
-                onPress={() => setSelectedTag(selectedTag === tag ? null : tag)}
+                onPress={() => toggleTagSelection(tag)}
               >
                 <Text style={[
                   styles.tagFilterText,
-                  { color: selectedTag === tag ? '#fff' : '#333' }
+                  { color: selectedTags.includes(tag) ? '#fff' : '#333' }
                 ]}>
                   {tag}
                 </Text>
@@ -656,6 +742,7 @@ const NotesScreen = forwardRef<NotesScreenRef, {}>((props, ref) => {
       )}
 
       <FlatList
+        ref={flatListRef}
         data={filteredNotes}
         renderItem={renderItem}
         keyExtractor={(item) => item.id}
@@ -663,7 +750,9 @@ const NotesScreen = forwardRef<NotesScreenRef, {}>((props, ref) => {
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
             <Text style={styles.emptyText}>
-              {searchQuery || selectedTag ? t('notes:noNotesFound') : t('notes:noNotesYet')}
+              {searchQuery || selectedTags.length > 0 
+                ? t('notes:noNotesFound') 
+                : t('notes:noNotesYet')}
             </Text>
           </View>
         }
@@ -878,6 +967,34 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#007AFF',
     marginLeft: 4,
+  },
+  tagsFilterHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  tagsFilterTitle: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#666',
+  },
+  clearTagsButton: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  clearTagsButtonText: {
+    fontSize: 12,
+    color: '#007AFF',
+  },
+  tagSelected: {
+    borderWidth: 2,
+    borderColor: '#fff',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.2,
+    shadowRadius: 1.5,
+    elevation: 2,
   },
 });
 

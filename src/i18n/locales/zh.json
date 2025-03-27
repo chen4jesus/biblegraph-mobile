@@ -63,7 +63,10 @@
     "noteContent": "笔记内容",
     "manageTags": "管理标签",
     "readMore": "阅读更多",
-    "showLess": "收起"
+    "showLess": "收起",
+    "filterByTags": "按标签过滤",
+    "clearAll": "清除所有",
+    "searchPlaceholder": "搜索笔记..."
   },
   "tags": {
     "manageTags": "管理标签",
@@ -78,7 +81,13 @@
     "errorLoadingTags": "加载标签时出错",
     "errorUpdatingTag": "更新标签时出错",
     "errorDeletingTag": "删除标签时出错",
-    "tagCount": "{count} 条笔记"
+    "tagCount": "{count} 条笔记",
+    "newTagPlaceholder": "输入新标签...",
+    "searchPlaceholder": "搜索标签...",
+    "selectTags": "选择标签",
+    "noTagsSelected": "未选择标签",
+    "createTag": "创建标签",
+    "addTag": "添加标签"
   },
   "connections": {
     "title": "连接",

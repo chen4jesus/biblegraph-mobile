@@ -45,7 +45,10 @@
     "noteContent": "Note content",
     "manageTags": "Manage Tags",
     "readMore": "Read more",
-    "showLess": "Show less"
+    "showLess": "Show less",
+    "filterByTags": "Filter by tags",
+    "clearAll": "Clear all",
+    "searchPlaceholder": "Search notes..."
   },
   "tags": {
     "manageTags": "Manage Tags",
@@ -60,7 +63,14 @@
     "errorLoadingTags": "Error loading tags",
     "errorUpdatingTag": "Error updating tag",
     "errorDeletingTag": "Error deleting tag",
-    "tagCount": "{count} notes"
+    "tagCount": "{count} notes",
+    "newTagPlaceholder": "Enter a new tag...",
+    "searchPlaceholder": "Search tags...",
+    "selectTags": "Select Tags",
+    "noTagsSelected": "No tags selected",
+    "createTag": "Create Tag",
+    "addTag": "Add Tag"
+
   },
   "connections": {
     "title": "Connections",

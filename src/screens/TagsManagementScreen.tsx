@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useLayoutEffect } from 'react';
 import {
   View,
   Text,
@@ -8,16 +8,25 @@ import {
   TextInput,
   SafeAreaView,
   Alert,
+  Animated,
+  Dimensions,
+  Easing,
+  Platform,
+  StatusBar,
+  BackHandler,
+  Pressable,
 } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/types';
-import { Note } from '../types/bible';
+import { Note, Tag } from '../types/bible';
 import { neo4jService } from '../services/neo4j';
 import { Ionicons } from '@expo/vector-icons';
 import { useTranslation } from 'react-i18next';
+import { BlurView } from 'expo-blur';
 
 type TagsManagementScreenNavigationProp = NativeStackNavigationProp<RootStackParamList>;
+type TagsManagementScreenRouteProp = RouteProp<RootStackParamList, 'TagsManagement'>;
 
 // Tag colors for random assignment
 const TAG_COLORS = [
@@ -25,131 +34,185 @@ const TAG_COLORS = [
   '#EF476F', '#FFC43D', '#1B9AAA', '#6F2DBD', '#84BC9C'
 ];
 
-interface TagWithCount {
-  name: string;
+interface TagWithCount extends Tag {
   count: number;
-  color: string;
 }
+
+const SCREEN_WIDTH = Dimensions.get('window').width;
+const MODAL_WIDTH = SCREEN_WIDTH; // Use full width for the modal
 
 const TagsManagementScreen: React.FC = () => {
   const { t } = useTranslation(['tags', 'common']);
   const navigation = useNavigation<TagsManagementScreenNavigationProp>();
+  const route = useRoute<TagsManagementScreenRouteProp>();
   const [tags, setTags] = useState<TagWithCount[]>([]);
-  const [notes, setNotes] = useState<Note[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [newTagName, setNewTagName] = useState('');
   const [editingTag, setEditingTag] = useState<string | null>(null);
   const [editedTagName, setEditedTagName] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+
+  // Animation values
+  const slideAnim = useRef(new Animated.Value(SCREEN_WIDTH)).current;
+  const [isVisible, setIsVisible] = useState(true);
+
+  useLayoutEffect(() => {
+    // Ensure proper modal presentation
+    navigation.setOptions({
+      presentation: 'transparentModal',
+      headerShown: false,
+      animation: 'slide_from_right',
+    });
+  }, [navigation]);
 
   useEffect(() => {
-    loadData();
+    // Set initial position off-screen to the right
+    slideAnim.setValue(SCREEN_WIDTH);
+    
+    // Start animation after a short delay to ensure proper rendering
+    setTimeout(() => {
+      Animated.timing(slideAnim, {
+        toValue: 0,
+        duration: 300,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }).start();
+      
+      // Load data after animation starts
+      loadData();
+    }, 50);
+
+    // Add hardware back button handler
+    const backHandler = BackHandler.addEventListener(
+      'hardwareBackPress',
+      handleBackPress
+    );
+
+    return () => {
+      backHandler.remove();
+    };
   }, []);
+
+  // Handle animation and navigation on back press
+  const handleBackPress = () => {
+    if (isVisible) {
+      closeModal();
+      return true; // Prevent default behavior
+    }
+    return false;
+  };
+
+  // Add navigation handler to support returning to NoteEditorModal
+  useEffect(() => {
+    const unsubscribe = navigation.addListener('beforeRemove', (e) => {
+      // If we're visible and it's a user-initiated back action, animate first
+      if (isVisible && !e.data.action.source) {
+        e.preventDefault();
+        animateOut();
+      }
+      // Otherwise just let the navigation happen
+    });
+
+    return unsubscribe;
+  }, [navigation, isVisible]);
+
+  const animateIn = () => {
+    setTimeout(() => {
+      Animated.timing(slideAnim, {
+        toValue: 0, // Slide to fully cover the screen
+        duration: 300,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }).start();
+    }, 100);
+  };
+
+  const animateOut = () => {
+    // Set isVisible to false immediately to prevent any unwanted interactions
+    setIsVisible(false);
+    
+    Animated.timing(slideAnim, {
+      toValue: SCREEN_WIDTH, // Slide completely off-screen
+      duration: 250,
+      easing: Easing.in(Easing.cubic),
+      useNativeDriver: true,
+    }).start(() => {
+      navigation.goBack();
+    });
+  };
+
+  const closeModal = () => {
+    // First set visibility to false to prevent further interactions
+    setIsVisible(false);
+    
+    // Then animate out
+    Animated.timing(slideAnim, {
+      toValue: SCREEN_WIDTH,
+      duration: 250,
+      easing: Easing.in(Easing.cubic),
+      useNativeDriver: true,
+    }).start(() => {
+      // Once animation completes, actually close the modal
+      navigation.goBack();
+    });
+  };
 
   const loadData = async () => {
     try {
-      // Fetch all notes
-      const fetchedNotes = await neo4jService.getNotes();
-      setNotes(fetchedNotes);
-      
-      // Extract and count tags
-      const tagCounts: Record<string, number> = {};
-      const tagColors: Record<string, string> = {};
-      
-      fetchedNotes.forEach(note => {
-        if (note.tags && Array.isArray(note.tags)) {
-          note.tags.forEach(tag => {
-            tagCounts[tag] = (tagCounts[tag] || 0) + 1;
-            
-            // Assign a color if it doesn't have one yet
-            if (!tagColors[tag]) {
-              const tagIndex = tag.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0) % TAG_COLORS.length;
-              tagColors[tag] = TAG_COLORS[tagIndex];
-            }
-          });
-        }
-      });
-      
-      // Convert to array of TagWithCount objects
-      const tagsArray: TagWithCount[] = Object.entries(tagCounts).map(([name, count]) => ({
-        name,
-        count,
-        color: tagColors[name]
-      }));
-      
-      // Sort by count (most used first)
-      tagsArray.sort((a, b) => b.count - a.count);
-      
-      setTags(tagsArray);
+      setIsLoading(true);
+      // Fetch tags with their usage counts
+      const fetchedTags = await neo4jService.getTagsWithCount();
+      setTags(fetchedTags);
     } catch (error) {
       console.error('Error loading tags:', error);
       Alert.alert(t('common:error'), t('tags:errorLoadingTags'));
+    } finally {
+      setIsLoading(false);
     }
   };
 
-  const addNewTag = () => {
+  const createTag = async () => {
     if (!newTagName.trim()) return;
     
-    // Check if tag already exists
-    if (tags.some(tag => tag.name.toLowerCase() === newTagName.trim().toLowerCase())) {
-      Alert.alert(t('common:error'), t('tags:tagAlreadyExists'));
-      return;
+    try {
+      setIsLoading(true);
+      const color = generateRandomColor();
+      
+      // Call the service with proper parameters
+      const newTag = await neo4jService.createTag(newTagName.trim(), color);
+      
+      // Add the new tag to local state with count=0 for new tags
+      setTags(prevTags => [...prevTags, {...newTag, count: 0}]);
+      
+      // Clear input
+      setNewTagName('');
+      
+      // Show success message
+      Alert.alert(t('common:success'), t('tags:createSuccess'));
+    } catch (error) {
+      console.error('Error creating tag:', error);
+      Alert.alert(t('common:error'), t('tags:createError'));
+    } finally {
+      setIsLoading(false);
     }
-    
-    // Generate color for new tag
-    const tagIndex = newTagName.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0) % TAG_COLORS.length;
-    
-    // Add new tag with count 0
-    setTags([...tags, { 
-      name: newTagName.trim(), 
-      count: 0,
-      color: TAG_COLORS[tagIndex]
-    }]);
-    setNewTagName('');
   };
 
-  const startEditTag = (tagName: string) => {
-    setEditingTag(tagName);
-    setEditedTagName(tagName);
+  const startEditTag = (tag: TagWithCount) => {
+    setEditingTag(tag.id);
+    setEditedTagName(tag.name);
   };
 
-  const saveEditedTag = async (oldTagName: string) => {
+  const saveEditedTag = async (tag: TagWithCount) => {
     if (!editedTagName.trim()) {
       Alert.alert(t('common:error'), t('tags:tagNameRequired'));
       return;
     }
     
-    // Check if new name already exists (excluding the current tag)
-    if (tags.some(tag => 
-      tag.name !== oldTagName && 
-      tag.name.toLowerCase() === editedTagName.trim().toLowerCase()
-    )) {
-      Alert.alert(t('common:error'), t('tags:tagAlreadyExists'));
-      return;
-    }
-    
     try {
-      // Update tag name in all notes
-      const notesToUpdate = notes.filter(note => 
-        note.tags && note.tags.includes(oldTagName)
-      );
-      
-      for (const note of notesToUpdate) {
-        const updatedTags = note.tags.map(tag => 
-          tag === oldTagName ? editedTagName.trim() : tag
-        );
-        
-        await neo4jService.updateNote(note.id, {
-          ...note,
-          tags: updatedTags
-        });
-      }
-      
-      // Update local state
-      setTags(tags.map(tag => 
-        tag.name === oldTagName 
-          ? { ...tag, name: editedTagName.trim() } 
-          : tag
-      ));
+      // Update tag in database
+      await neo4jService.updateTag(tag.id, {
+        name: editedTagName.trim(),
+      });
       
       // Reload data to ensure consistency
       await loadData();
@@ -162,248 +225,264 @@ const TagsManagementScreen: React.FC = () => {
     }
   };
 
-  const deleteTag = async (tagName: string) => {
+  const deleteTag = async (tagId: string) => {
     try {
-      // Confirm deletion
-      Alert.alert(
-        t('tags:confirmDeleteTitle'),
-        t('tags:confirmDeleteMessage', { tagName }),
-        [
-          { text: t('common:cancel'), style: 'cancel' },
-          { 
-            text: t('common:delete'), 
-            style: 'destructive',
-            onPress: async () => {
-              // Remove tag from all notes
-              const notesToUpdate = notes.filter(note => 
-                note.tags && note.tags.includes(tagName)
-              );
-              
-              for (const note of notesToUpdate) {
-                const updatedTags = note.tags.filter(tag => tag !== tagName);
-                
-                await neo4jService.updateNote(note.id, {
-                  ...note,
-                  tags: updatedTags
-                });
-              }
-              
-              // Update local state
-              setTags(tags.filter(tag => tag.name !== tagName));
-              
-              // Reload data to ensure consistency
-              await loadData();
-            } 
-          }
-        ]
-      );
+      setIsLoading(true);
+      await neo4jService.deleteTag(tagId);
+      // Remove the tag from local state
+      setTags(prevTags => prevTags.filter(tag => tag.id !== tagId));
+      Alert.alert(t('common:success'), t('tags:deleteSuccess'));
     } catch (error) {
       console.error('Error deleting tag:', error);
-      Alert.alert(t('common:error'), t('tags:errorDeletingTag'));
+      Alert.alert(t('common:error'), t('tags:deleteError'));
+    } finally {
+      setIsLoading(false);
     }
   };
 
-  const filteredTags = searchQuery.trim() 
-    ? tags.filter(tag => tag.name.toLowerCase().includes(searchQuery.toLowerCase()))
-    : tags;
+  const filteredTags = useMemo(() => {
+    if (!searchQuery.trim()) return tags;
+    return tags.filter(tag => 
+      tag.name.toLowerCase().includes(searchQuery.toLowerCase())
+    );
+  }, [tags, searchQuery]);
 
-  const renderTagItem = ({ item }: { item: TagWithCount }) => (
+  const renderTagItem = ({ item }: { item: Tag }) => (
     <View style={styles.tagItem}>
-      {editingTag === item.name ? (
-        <View style={styles.tagEditContainer}>
-          <TextInput
-            style={styles.tagEditInput}
-            value={editedTagName}
-            onChangeText={setEditedTagName}
-            autoFocus
-          />
-          <View style={styles.tagEditActions}>
-            <TouchableOpacity
-              style={styles.tagEditButton}
-              onPress={() => saveEditedTag(item.name)}
-            >
-              <Ionicons name="checkmark" size={18} color="#007AFF" />
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.tagEditButton}
-              onPress={() => setEditingTag(null)}
-            >
-              <Ionicons name="close" size={18} color="#FF3B30" />
-            </TouchableOpacity>
-          </View>
-        </View>
-      ) : (
-        <View style={styles.tagContent}>
-          <View style={[styles.tagColorIndicator, { backgroundColor: item.color }]} />
-          <Text style={styles.tagName}>{item.name}</Text>
-          <Text style={styles.tagCount}>{t('tags:tagCount', { count: item.count })}</Text>
-          <View style={styles.tagActions}>
-            <TouchableOpacity
-              style={styles.tagAction}
-              onPress={() => startEditTag(item.name)}
-            >
-              <Ionicons name="pencil" size={18} color="#007AFF" />
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.tagAction}
-              onPress={() => deleteTag(item.name)}
-            >
-              <Ionicons name="trash" size={18} color="#FF3B30" />
-            </TouchableOpacity>
-          </View>
-        </View>
-      )}
+      <View style={[styles.tagColorIndicator, { backgroundColor: item.color }]} />
+      <Text style={styles.tagName}>{item.name}</Text>
+      <TouchableOpacity
+        onPress={() => deleteTag(item.id)}
+        style={{ padding: 8 }}
+      >
+        <Ionicons name="trash-outline" size={20} color="#EF4444" />
+      </TouchableOpacity>
     </View>
   );
 
+  // Handle random color generation
+  const generateRandomColor = () => {
+    const colors = [
+      '#EF4444', '#F59E0B', '#10B981', '#3B82F6', '#8B5CF6', 
+      '#EC4899', '#06B6D4', '#84CC16', '#6366F1', '#F97316',
+      '#14B8A6', '#8B5CF6', '#22D3EE', '#F43F5E', '#64748B'
+    ];
+    return colors[Math.floor(Math.random() * colors.length)];
+  };
+
   return (
-    <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.title}>{t('tags:manageTags')}</Text>
-      </View>
-
-      <View style={styles.searchContainer}>
-        <Ionicons name="search" size={20} color="#666" style={styles.searchIcon} />
-        <TextInput
-          style={styles.searchInput}
-          placeholder={t('tags:searchTags')}
-          value={searchQuery}
-          onChangeText={setSearchQuery}
-        />
-        {searchQuery.length > 0 && (
-          <TouchableOpacity
-            style={styles.clearButton}
-            onPress={() => setSearchQuery('')}
-          >
-            <Ionicons name="close-circle" size={20} color="#666" />
-          </TouchableOpacity>
-        )}
-      </View>
-
-      <View style={styles.addTagContainer}>
-        <TextInput
-          style={styles.addTagInput}
-          placeholder={t('tags:addNewTag')}
-          value={newTagName}
-          onChangeText={setNewTagName}
-          onSubmitEditing={addNewTag}
-          returnKeyType="done"
-        />
-        <TouchableOpacity
-          style={styles.addTagButton}
-          onPress={addNewTag}
-        >
-          <Ionicons name="add-circle" size={24} color="#007AFF" />
-        </TouchableOpacity>
-      </View>
-
-      <FlatList
-        data={filteredTags}
-        renderItem={renderTagItem}
-        keyExtractor={(item) => item.name}
-        contentContainerStyle={styles.tagsList}
-        ListEmptyComponent={
-          <View style={styles.emptyContainer}>
-            <Text style={styles.emptyText}>
-              {searchQuery ? t('tags:noTagsFound') : t('tags:noTagsYet')}
-            </Text>
-          </View>
-        }
+    <View style={styles.container}>
+      <Pressable 
+        style={styles.overlay} 
+        onPress={animateOut}
       />
-    </SafeAreaView>
+      
+      <Animated.View 
+        style={[
+          styles.modalContainer,
+          {
+            width: MODAL_WIDTH,
+            transform: [{ translateX: slideAnim }],
+          }
+        ]}
+      >
+        <View style={styles.header}>
+          <Text style={styles.headerTitle}>{t('tags:manageTags')}</Text>
+          <TouchableOpacity onPress={animateOut} style={styles.closeButton}>
+            <Text style={styles.closeButtonText}>×</Text>
+          </TouchableOpacity>
+        </View>
+        
+        <View style={styles.searchContainer}>
+          <TextInput
+            style={styles.searchInput}
+            placeholder={t('tags:searchPlaceholder')}
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            clearButtonMode="while-editing"
+          />
+        </View>
+        
+        <FlatList
+          data={filteredTags}
+          renderItem={renderTagItem}
+          keyExtractor={(item) => item.id}
+          contentContainerStyle={styles.tagList}
+          refreshing={isLoading}
+          onRefresh={loadData}
+          ListEmptyComponent={
+            <Text style={styles.emptyText}>
+              {searchQuery.trim() 
+                ? t('tags:noSearchResults') 
+                : t('tags:noTags')}
+            </Text>
+          }
+        />
+        
+        <View style={styles.addTagContainer}>
+          <TextInput
+            style={styles.addTagInput}
+            value={newTagName}
+            onChangeText={setNewTagName}
+            placeholder={t('tags:newTagPlaceholder')}
+            returnKeyType="done"
+            onSubmitEditing={createTag}
+          />
+          <TouchableOpacity
+            style={[
+              styles.addTagButton,
+              (!newTagName.trim() || isLoading) && styles.disabledButton,
+            ]}
+            onPress={createTag}
+            disabled={!newTagName.trim() || isLoading}
+          >
+            <Text style={styles.buttonText}>{t('tags:addTag')}</Text>
+          </TouchableOpacity>
+        </View>
+      </Animated.View>
+    </View>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#fff',
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 99999, // Extremely high z-index, higher than anything else
+    elevation: 100, // Very high elevation for Android
+  },
+  overlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.5)', // Semi-transparent overlay
+    zIndex: 99998, // Just below the container but higher than everything else
+  },
+  blurView: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 100000, // Very high z-index
+  },
+  modalContainer: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: '#FFFFFF',
+    shadowColor: '#000',
+    shadowOffset: {
+      width: -3,
+      height: 0,
+    },
+    shadowOpacity: 0.2,
+    shadowRadius: 5,
+    elevation: 101, // Higher than the container
+    zIndex: 100001, // Higher than blurView
+    borderLeftWidth: 1,
+    borderLeftColor: 'rgba(0,0,0,0.1)',
+  },
+  safeArea: {
+    flex: 1,
   },
   header: {
-    padding: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#eee',
-  },
-  title: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#007AFF',
-  },
-  searchContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 12,
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: '#eee',
+    borderBottomColor: '#E5E7EB',
+    backgroundColor: '#FFFFFF',
+  },
+  headerTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#111827',
+  },
+  closeButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F3F4F6',
+  },
+  closeButtonText: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#4B5563',
+    lineHeight: 28,
+  },
+  searchContainer: {
+    padding: 16,
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
   },
   searchIcon: {
     marginRight: 8,
   },
   searchInput: {
-    flex: 1,
-    fontSize: 16,
-    color: '#333',
-  },
-  clearButton: {
-    padding: 4,
-  },
-  addTagContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#eee',
-  },
-  addTagInput: {
-    flex: 1,
-    fontSize: 16,
-    color: '#333',
-    padding: 8,
+    height: 40,
     borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 8,
+    borderColor: '#D1D5DB',
+    borderRadius: 6,
+    paddingHorizontal: 12,
+    fontSize: 16,
   },
-  addTagButton: {
-    marginLeft: 8,
-    padding: 4,
-  },
-  tagsList: {
+  tagList: {
+    flex: 1,
     padding: 16,
   },
   tagItem: {
-    backgroundColor: '#f8f8f8',
-    borderRadius: 8,
-    padding: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
     marginBottom: 8,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 2,
   },
   tagContent: {
     flexDirection: 'row',
     alignItems: 'center',
   },
   tagColorIndicator: {
-    width: 16,
-    height: 16,
-    borderRadius: 8,
-    marginRight: 8,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    marginRight: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(0,0,0,0.1)',
   },
   tagName: {
     flex: 1,
     fontSize: 16,
+    fontWeight: '500',
+    color: '#111827',
   },
   tagCount: {
+    marginRight: 12,
     fontSize: 14,
-    color: '#666',
-    backgroundColor: '#eee',
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 12,
-    marginRight: 8,
+    color: '#6B7280',
   },
   tagActions: {
     flexDirection: 'row',
   },
   tagAction: {
-    padding: 6,
+    padding: 8,
     marginLeft: 4,
   },
   tagEditContainer: {
@@ -412,28 +491,63 @@ const styles = StyleSheet.create({
   },
   tagEditInput: {
     flex: 1,
-    fontSize: 16,
-    padding: 8,
+    height: 40,
     borderWidth: 1,
-    borderColor: '#007AFF',
-    borderRadius: 8,
+    borderColor: '#D1D5DB',
+    borderRadius: 6,
+    paddingHorizontal: 12,
+    marginRight: 8,
+    fontSize: 16,
   },
   tagEditActions: {
     flexDirection: 'row',
-    marginLeft: 8,
   },
   tagEditButton: {
-    padding: 6,
+    padding: 8,
     marginLeft: 4,
   },
-  emptyContainer: {
-    padding: 24,
+  addTagContainer: {
+    flexDirection: 'row',
     alignItems: 'center',
+    padding: 16,
+    paddingBottom: Platform.OS === 'ios' ? 32 : 16, // Extra padding for iOS
+    borderTopWidth: 1,
+    borderTopColor: '#E5E7EB',
+    backgroundColor: '#FFFFFF',
+  },
+  addTagInput: {
+    flex: 1,
+    height: 44,
+    borderWidth: 1,
+    borderColor: '#D1D5DB',
+    borderRadius: 6,
+    paddingHorizontal: 12,
+    marginRight: 12,
+    fontSize: 16,
+    backgroundColor: '#F9FAFB',
+  },
+  addTagButton: {
+    backgroundColor: '#3B82F6',
+    borderRadius: 6,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    minWidth: 100,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  disabledButton: {
+    opacity: 0.5,
+  },
+  buttonText: {
+    color: '#FFFFFF',
+    fontWeight: '600',
+    fontSize: 14,
   },
   emptyText: {
-    fontSize: 16,
-    color: '#666',
     textAlign: 'center',
+    padding: 24,
+    color: '#6B7280',
+    fontSize: 16,
   },
 });
 

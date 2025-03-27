@@ -1,4 +1,4 @@
-import { Verse, Connection, Note, User } from '../types/bible';
+import { Verse, Connection, Note, User, Tag } from '../types/bible';
 import { neo4jDatabaseService } from './neo4jDatabase';
 import { storageService } from './storage';
 import { 
@@ -249,7 +249,7 @@ class Neo4jService {
       return true;
     } catch (error) {
       console.error(`Error deleting note ${noteId}:`, error);
-      throw error;
+      return false;
     }
   }
 
@@ -394,6 +394,52 @@ class Neo4jService {
 
   async getGroupConnectionsByVerseId(verseId: string): Promise<GroupConnection[]> {
     return await neo4jDatabaseService.getGroupConnectionsByVerseId(verseId);
+  }
+
+  // Tag methods
+  async getTags(): Promise<Tag[]> {
+    try {
+      return await neo4jDatabaseService.getTags();
+    } catch (error) {
+      console.error('Error fetching tags:', error);
+      return [];
+    }
+  }
+
+  async getTagsWithCount(): Promise<(Tag & { count: number })[]> {
+    try {
+      return await neo4jDatabaseService.getTagsWithCount();
+    } catch (error) {
+      console.error('Error fetching tags with count:', error);
+      return [];
+    }
+  }
+
+  async createTag(name: string, color: string): Promise<Tag> {
+    try {
+      return await neo4jDatabaseService.createTag(name, color);
+    } catch (error) {
+      console.error('Error creating tag:', error);
+      throw error;
+    }
+  }
+
+  async updateTag(tagId: string, updates: Partial<Tag>): Promise<Tag> {
+    try {
+      return await neo4jDatabaseService.updateTag(tagId, updates);
+    } catch (error) {
+      console.error(`Error updating tag ${tagId}:`, error);
+      throw error;
+    }
+  }
+
+  async deleteTag(tagId: string): Promise<boolean> {
+    try {
+      return await neo4jDatabaseService.deleteTag(tagId);
+    } catch (error) {
+      console.error(`Error deleting tag ${tagId}:`, error);
+      return false;
+    }
   }
 }
 

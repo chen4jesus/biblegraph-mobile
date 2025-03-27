@@ -13,7 +13,13 @@ export type RootStackParamList = {
   Profile: undefined;
   Settings: undefined;
   LanguageSettings: undefined;
-  TagsManagement: undefined;
+  TagsManagement: {
+    onReturn?: () => void;
+    noteId?: string;
+    noteContent?: string;
+    noteTags?: string[];
+    slideAnimation?: boolean;
+  };
   ConnectionDetail: { connectionId: string };
   BibleSelector: {
     onVersesSelected?: (verses: Verse[]) => void;

@@ -17,7 +17,7 @@ import {
 } from 'react-native';
 import { useRoute, RouteProp, useNavigation } from '@react-navigation/native';
 import { RootStackParamList } from '../navigation/types';
-import { Verse, Note, Connection, ConnectionType, VerseGroup, GroupConnection, NodeType } from '../types/bible';
+import { Verse, Note, Connection, ConnectionType, VerseGroup, GroupConnection, NodeType, Tag } from '../types/bible';
 import { neo4jService } from '../services/neo4j';
 import { Ionicons } from '@expo/vector-icons';
 import { useTranslation } from 'react-i18next';
@@ -75,6 +75,7 @@ const VerseDetailScreen: React.FC = () => {
   const [editedNoteContent, setEditedNoteContent] = useState('');
   const [editedNoteTags, setEditedNoteTags] = useState<string[]>([]);
   const [allTags, setAllTags] = useState<string[]>([]);
+  const [tagColors, setTagColors] = useState<Record<string, string>>({});
   const [activeTab, setActiveTab] = useState<'notes' | 'connections'>(
     route.params.activeTab || 'notes'
   );
@@ -95,6 +96,7 @@ const VerseDetailScreen: React.FC = () => {
   useEffect(() => {
     loadVerseDetails();
     loadLabelPreference();
+    loadTagColors();
     
     // Update active tab if provided in route params
     if (route.params.activeTab) {
@@ -127,6 +129,21 @@ const VerseDetailScreen: React.FC = () => {
       await AsyncStorage.setItem(SHOW_LABELS_KEY, value.toString());
     } catch (error) {
       console.error('Error saving label preference:', error);
+    }
+  };
+
+  const loadTagColors = async () => {
+    try {
+      const tags = await neo4jService.getTags();
+      const colorMap: Record<string, string> = {};
+      
+      tags.forEach(tag => {
+        colorMap[tag.name] = tag.color;
+      });
+      
+      setTagColors(colorMap);
+    } catch (error) {
+      console.error('Error loading tag colors:', error);
     }
   };
 
@@ -527,7 +544,12 @@ const VerseDetailScreen: React.FC = () => {
   };
 
   const getTagColor = (tag: string) => {
-    // Generate a consistent color based on tag name
+    // First check if we have the color in our tagColors state
+    if (tagColors[tag]) {
+      return tagColors[tag];
+    }
+    
+    // Fallback to generating a color if not found in database
     const tagIndex = tag.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0) % TAG_COLORS.length;
     return TAG_COLORS[tagIndex];
   };
@@ -1357,10 +1379,18 @@ const VerseDetailScreen: React.FC = () => {
     <SafeAreaView style={styles.container}>
       {/* Fixed Header Section */}
       <View style={styles.fixedHeaderContainer}>
-        <View style={styles.verseContainer}>
+        <View style={styles.verseHeader}>
+          <TouchableOpacity
+            style={styles.homeButton}
+            onPress={() => navigation.navigate('MainTabs')}
+          >
+            <Ionicons name="home" size={24} color="#007AFF" />
+          </TouchableOpacity>
           <Text style={styles.reference}>
             {verse.book} {verse.chapter}:{verse.verse}
           </Text>
+        </View>
+        <View style={styles.verseContent}>
           <Text style={styles.text}>{verse.text}</Text>
           <Text style={styles.translation}>{verse.translation}</Text>
         </View>
@@ -1483,12 +1513,8 @@ const VerseDetailScreen: React.FC = () => {
       <NoteEditorModal
         visible={noteModalVisible}
         note={currentNote}
-        onClose={() => {
-          setNoteModalVisible(false);
-          setCurrentNote(null);
-        }}
+        onClose={() => setNoteModalVisible(false)}
         onSave={handleSaveNoteFromModal}
-        availableTags={allTags}
       />
 
       {/* Add WebView Modal */}
@@ -1538,6 +1564,20 @@ const styles = StyleSheet.create({
     padding: 16,
     borderBottomWidth: 1,
     borderBottomColor: '#eee',
+  },
+  verseHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingTop: 16,
+  },
+  verseContent: {
+    paddingHorizontal: 16,
+    paddingBottom: 16,
+  },
+  homeButton: {
+    marginRight: 12,
+    padding: 4,
   },
   reference: {
     fontSize: 18,
