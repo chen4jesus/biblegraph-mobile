@@ -17,6 +17,7 @@ import {
 import { WebView } from 'react-native-webview';
 import { Ionicons } from '@expo/vector-icons';
 import { useTranslation } from 'react-i18next';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 interface WebViewModalProps {
   visible: boolean;
@@ -41,6 +42,7 @@ const WebViewModal: React.FC<WebViewModalProps> = ({
   autoMinimizeOnNavigate = false
 }) => {
   const { t } = useTranslation(['common']);
+  const insets = useSafeAreaInsets(); // Get safe area insets
   const [isMinimized, setIsMinimized] = React.useState(false);
   const [isLoading, setIsLoading] = React.useState(true);
   const [urlError, setUrlError] = React.useState<string | null>(null);
@@ -49,6 +51,8 @@ const WebViewModal: React.FC<WebViewModalProps> = ({
   const [showLoadingTimeout, setShowLoadingTimeout] = React.useState(false);
   const [pageTitle, setPageTitle] = React.useState(url); // Track page title
   const [cspError, setCspError] = React.useState(false);
+  const [stableRenderKey] = React.useState(() => `webview-${id}-${Date.now()}`); // Stable key for WebView
+  const [windowDimensions, setWindowDimensions] = React.useState(Dimensions.get('window'));
   
   const loadingTimeoutRef = React.useRef<NodeJS.Timeout | null>(null);
   const webViewRef = React.useRef<WebView>(null);
@@ -336,16 +340,101 @@ const WebViewModal: React.FC<WebViewModalProps> = ({
   // Check if we're on web platform for sizing
   const isWeb = isWebPlatform();
 
-  // For full mode: Use Modal with properly styled content
-  const renderFullScreenModal = () => {
-    if (isWebPlatform()) {
-      // For web, add some styles directly to ensure proper modal behavior
-      if (typeof document !== 'undefined') {
-        const modalStyles = document.getElementById('webview-modal-fullscreen-styles');
-        if (!modalStyles) {
-          const style = document.createElement('style');
-          style.id = 'webview-modal-fullscreen-styles';
-          style.innerHTML = `
+  // Enhanced close handler that ensures proper cleanup
+  const createCloseHandler = (onClose: () => void) => {
+    return () => {
+      // Only run cleanup in browser context
+      if (isWebPlatform() && typeof document !== 'undefined') {
+        try {
+          // Reset body overflow first
+          if (document.body) {
+            document.body.style.overflow = 'auto';
+          }
+          
+          // Safe style element removal
+          const styleIds = [
+            'webview-modal-styles',
+            'webview-modal-fullscreen-styles'
+          ];
+          
+          styleIds.forEach(id => {
+            const element = document.getElementById(id);
+            if (element && element.parentNode) {
+              try {
+                element.parentNode.removeChild(element);
+              } catch (err) {
+                console.warn(`Failed to remove style element ${id}:`, err);
+              }
+            }
+          });
+        } catch (e) {
+          console.warn('Error during DOM cleanup:', e);
+        }
+      }
+      
+      // Reset minimized state
+      setIsMinimized(false);
+      
+      // Call the original onClose callback after cleanup is done
+      onClose();
+    };
+  };
+
+  // For web platform, inject CSS with safer DOM handling
+  React.useEffect(() => {
+    let mountedStyles: HTMLElement[] = [];
+    
+    if (isWebPlatform() && typeof document !== 'undefined') {
+      try {
+        // Add styles only if not already present
+        const mainStyleId = 'webview-modal-styles';
+        let mainStyle = document.getElementById(mainStyleId);
+        
+        if (!mainStyle) {
+          mainStyle = document.createElement('style');
+          mainStyle.id = mainStyleId;
+          mainStyle.textContent = `
+            .webview-modal-full {
+              position: fixed;
+              top: 0;
+              left: 0;
+              width: 100%;
+              height: 100%;
+              z-index: 1000;
+              background: white;
+            }
+            .webview-minimized {
+              position: fixed;
+              bottom: 0;
+              right: 0;
+              width: auto;
+              z-index: 1000;
+            }
+            .webview-content-hidden {
+              position: fixed;
+              left: -9999px;
+              top: -9999px;
+              width: 1px;
+              height: 1px;
+              overflow: hidden;
+              opacity: 0.01;
+              pointer-events: none;
+              z-index: -1;
+            }
+          `;
+          
+          document.head.appendChild(mainStyle);
+          mountedStyles.push(mainStyle);
+        }
+        
+        // Add fullscreen styles if needed
+        const fullscreenStyleId = 'webview-modal-fullscreen-styles';
+        let fullscreenStyle = document.getElementById(fullscreenStyleId);
+        
+        if (!fullscreenStyle) {
+          fullscreenStyle = document.createElement('style');
+          fullscreenStyle.id = fullscreenStyleId;
+          fullscreenStyle.textContent = `
             .webview-modal-full {
               position: fixed !important;
               top: 0 !important;
@@ -360,20 +449,131 @@ const WebViewModal: React.FC<WebViewModalProps> = ({
               flex-direction: column !important;
             }
           `;
-          document.head.appendChild(style);
+          
+          document.head.appendChild(fullscreenStyle);
+          mountedStyles.push(fullscreenStyle);
+        }
+        
+        // Only try to update if visible
+        if (visible && isMinimized) {
+          // Update bottom position for minimized view
+          try {
+            const bottomPosition = getBottomPosition();
+            const minimizedRules = Array.from(document.styleSheets)
+              .flatMap(sheet => {
+                try {
+                  return Array.from(sheet.cssRules);
+                } catch (e) {
+                  return [];
+                }
+              })
+              .filter(rule => 
+                rule.type === CSSRule.STYLE_RULE && 
+                (rule as CSSStyleRule).selectorText === '.webview-minimized'
+              ) as CSSStyleRule[];
+              
+            for (const rule of minimizedRules) {
+              rule.style.bottom = `${bottomPosition}px`;
+              rule.style.zIndex = '999999';
+            }
+          } catch (err) {
+            console.warn('Failed to update dynamic styles:', err);
+          }
+        }
+      } catch (err) {
+        console.warn('Error setting up WebView styles:', err);
+      }
+    }
+    
+    // Return cleanup function
+    return () => {
+      // Clean up any DOM elements we created
+      if (isWebPlatform() && typeof document !== 'undefined') {
+        try {
+          // Instead of removing directly, use a flag to track removal state
+          for (const element of mountedStyles) {
+            if (element && element.parentNode && 
+                // Only remove if component is unmounting or modal is hidden
+                (!visible || element.getAttribute('data-removing') !== 'true')) {
+              
+              // Mark as being removed to prevent duplicate removal
+              element.setAttribute('data-removing', 'true');
+              
+              try {
+                element.parentNode.removeChild(element);
+              } catch (err) {
+                console.warn('Failed to remove style element:', err);
+              }
+            }
+          }
+          
+          // Reset body overflow
+          if (document.body) {
+            document.body.style.overflow = 'auto';
+          }
+        } catch (err) {
+          console.warn('Error during cleanup:', err);
         }
       }
+    };
+  }, [visible, isMinimized]);
+
+  // Calculate bottom position based on screen size and insets
+  const getBottomPosition = () => {
+    // Base position above most navigation bars
+    let bottomPosition = 70;
+    
+    // Add safe area insets for iOS notches and Android navigation bars
+    if (insets && insets.bottom > 0) {
+      bottomPosition += insets.bottom;
+    }
+    
+    // For smaller screens, reduce the bottom margin
+    if (windowDimensions.height < 600) {
+      bottomPosition = Math.max(50, bottomPosition - 20);
+    }
+    
+    return bottomPosition;
+  };
+  
+  // Track window dimensions for responsive layout
+  React.useEffect(() => {
+    const updateDimensions = () => {
+      setWindowDimensions(Dimensions.get('window'));
+    };
+    
+    // Set up event listeners for dimension changes
+    const dimensionsListener = Dimensions.addEventListener('change', updateDimensions);
+    
+    // Web-specific window resize listener
+    if (isWebPlatform() && typeof window !== 'undefined') {
+      window.addEventListener('resize', updateDimensions);
+    }
+    
+    return () => {
+      // Clean up event listeners
+      dimensionsListener.remove();
       
+      if (isWebPlatform() && typeof window !== 'undefined') {
+        window.removeEventListener('resize', updateDimensions);
+      }
+    };
+  }, []);
+
+  // For full mode with proper close handler
+  const renderFullScreenModalWithCloseHandler = (closeHandler: () => void) => {
+    if (isWebPlatform()) {
       // Web-specific rendering
       return (
         <Modal
           visible={visible}
           transparent={false}
           animationType="fade"
-          onRequestClose={onClose}
+          onRequestClose={closeHandler}
+          key={`modal-${id}`}
         >
           {/* Use div for web to apply className */}
-          <div className="webview-modal-full">
+          <div className="webview-modal-full" id={`modal-full-${id}`}>
             <View style={styles.fullContainerWebRoot}>
               <View style={styles.header}>
                 {/* Header content */}
@@ -391,7 +591,12 @@ const WebViewModal: React.FC<WebViewModalProps> = ({
                   <TouchableOpacity style={styles.headerButton} onPress={openInBrowser}>
                     <Ionicons name="open-outline" size={20} color="#555" />
                   </TouchableOpacity>
-                  <TouchableOpacity style={styles.headerButton} onPress={onClose}>
+                  <TouchableOpacity 
+                    style={[styles.headerButton, styles.closeButton]} 
+                    onPress={closeHandler}
+                    activeOpacity={0.6}
+                    hitSlop={{ top: 10, right: 10, bottom: 10, left: 10 }}
+                  >
                     <Ionicons name="close-outline" size={20} color="#555" />
                   </TouchableOpacity>
                 </View>
@@ -405,8 +610,9 @@ const WebViewModal: React.FC<WebViewModalProps> = ({
                   </View>
                 )}
                 
-                <div style={{ width: '100%', height: '100%', overflow: 'hidden' }}>
+                <div style={{ width: '100%', height: '100%', overflow: 'hidden' }} id={`iframe-container-${id}`}>
                   <iframe 
+                    key={stableRenderKey}
                     src={validUrl}
                     style={{ 
                       width: '100%', 
@@ -420,7 +626,7 @@ const WebViewModal: React.FC<WebViewModalProps> = ({
                         
                         // Try to extract title from iframe
                         try {
-                          const iframe = document.querySelector('iframe');
+                          const iframe = document.querySelector(`#iframe-container-${id} iframe`) as HTMLIFrameElement;
                           if (iframe && iframe.contentDocument && iframe.contentDocument.title) {
                             setPageTitle(iframe.contentDocument.title);
                           }
@@ -430,7 +636,8 @@ const WebViewModal: React.FC<WebViewModalProps> = ({
                       }, 500);
                     }}
                     sandbox="allow-same-origin allow-scripts allow-popups allow-forms allow-downloads"
-                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; microphone; camera; display-capture; web-share"
+                    allowFullScreen
                     referrerPolicy="no-referrer"
                   />
                 </div>
@@ -447,7 +654,8 @@ const WebViewModal: React.FC<WebViewModalProps> = ({
         visible={visible}
         transparent={false}
         animationType="fade"
-        onRequestClose={onClose}
+        onRequestClose={closeHandler}
+        key={`modal-${id}`}
       >
         <View style={styles.fullContainer}>
           <View style={styles.header}>
@@ -465,7 +673,12 @@ const WebViewModal: React.FC<WebViewModalProps> = ({
               <TouchableOpacity style={styles.headerButton} onPress={openInBrowser}>
                 <Ionicons name="open-outline" size={20} color="#555" />
               </TouchableOpacity>
-              <TouchableOpacity style={styles.headerButton} onPress={onClose}>
+              <TouchableOpacity 
+                style={[styles.headerButton, styles.closeButton]} 
+                onPress={closeHandler}
+                activeOpacity={0.6}
+                hitSlop={{ top: 10, right: 10, bottom: 10, left: 10 }}
+              >
                 <Ionicons name="close-outline" size={20} color="#555" />
               </TouchableOpacity>
             </View>
@@ -481,12 +694,15 @@ const WebViewModal: React.FC<WebViewModalProps> = ({
             
             <WebView
               ref={webViewRef}
-              key={`webview-${renderKey}`}
+              key={stableRenderKey}
               source={{ uri: validUrl }}
               style={styles.webView}
               originWhitelist={['*']}
               javaScriptEnabled={true}
               domStorageEnabled={true}
+              mediaPlaybackRequiresUserAction={false}
+              allowsInlineMediaPlayback={true}
+              androidLayerType="hardware"
               injectedJavaScript={injectedJavaScript}
               onMessage={handleWebViewMessage}
               onLoadStart={() => setIsLoading(true)}
@@ -502,48 +718,36 @@ const WebViewModal: React.FC<WebViewModalProps> = ({
       </Modal>
     );
   };
-
-  // Use different rendering approach based on minimized state
-  const renderContent = () => {
-    if (isMinimized && isWebPlatform()) {
-      // For web minimized mode: Use a positioned div rather than Modal
-      // Add custom CSS styling for web platform
-      if (Platform.OS === 'web') {
-        // Add CSS class for fixed positioning on web
-        const styleElement = document.getElementById('webview-modal-styles');
-        if (!styleElement) {
-          const style = document.createElement('style');
-          style.id = 'webview-modal-styles';
-          style.innerHTML = `
-            .webview-minimized {
-              position: fixed !important;
-              z-index: 9999 !important;
-              pointer-events: auto !important;
-              background-color: white !important;
-              border-radius: 20px !important;
-              box-shadow: 0px 2px 10px rgba(0, 0, 0, 0.2) !important;
-              display: flex !important;
-              flex-direction: row !important;
-              align-items: center !important;
-              justify-content: space-between !important;
-              bottom: 20px !important;
-              right: 20px !important;
-              width: 220px !important;
-              height: 40px !important;
-            }
-          `;
-          document.head.appendChild(style);
-        }
-        
-        // Use div for web platform to enable fixed positioning and className
-        return (
-          <div className="webview-minimized">
+  
+  // Implement the minimized WebView for web platform
+  const renderMinimizedWebView = () => {
+    const handleClose = createCloseHandler(onClose);
+    
+    if (Platform.OS === 'web') {
+      // Use div for web platform to enable fixed positioning and className
+      return (
+        <React.Fragment key={`minimized-webview-${id}`}>
+          {/* Invisible WebView container to keep audio playing */}
+          <div className="webview-content-hidden" id={`hidden-container-${id}`}>
+            <iframe 
+              key={stableRenderKey}
+              src={validUrl}
+              style={{ width: '100%', height: '100%', border: 'none' }}
+              sandbox="allow-same-origin allow-scripts allow-popups allow-forms allow-downloads"
+              allow="autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; microphone; camera; display-capture; web-share"
+              allowFullScreen
+              referrerPolicy="no-referrer"
+            />
+          </div>
+          
+          {/* Visible minimized container */}
+          <div className="webview-minimized" id={`minimized-container-${id}`}>
             <Animated.View
               {...panResponder.panHandlers}
               style={[
                 styles.modalContainer,
                 styles.minimizedContainer,
-                { borderRadius: 0, position: 'relative' },
+                { borderRadius: 0, position: 'relative', bottom: 0 },
                 animatedStyle
               ]}
             >
@@ -558,22 +762,53 @@ const WebViewModal: React.FC<WebViewModalProps> = ({
                 <TouchableOpacity style={styles.headerButton} onPress={openInBrowser}>
                   <Ionicons name="open-outline" size={20} color="#555" />
                 </TouchableOpacity>
-                <TouchableOpacity style={styles.headerButton} onPress={onClose}>
+                <TouchableOpacity 
+                  style={[styles.headerButton, styles.closeButton]} 
+                  onPress={handleClose}
+                  activeOpacity={0.6}
+                  hitSlop={{ top: 10, right: 10, bottom: 10, left: 10 }}
+                >
                   <Ionicons name="close-outline" size={20} color="#555" />
                 </TouchableOpacity>
               </View>
             </Animated.View>
           </div>
-        );
-      }
-      
-      // For non-web platforms that support minimized mode
-      return (
+        </React.Fragment>
+      );
+    }
+    
+    // For non-web platforms that support minimized mode
+    return (
+      <React.Fragment key={`minimized-webview-${id}`}>
+        {/* Hidden WebView to keep audio playing on native platforms */}
+        <View style={{ width: 1, height: 1, position: 'absolute', opacity: 0, overflow: 'hidden' }}>
+          <WebView
+            ref={webViewRef}
+            key={stableRenderKey}
+            source={{ uri: validUrl }}
+            style={{ width: 1, height: 1 }}
+            originWhitelist={['*']}
+            javaScriptEnabled={true}
+            domStorageEnabled={true}
+            mediaPlaybackRequiresUserAction={false}
+            allowsInlineMediaPlayback={true}
+            androidLayerType="hardware"
+            injectedJavaScript={injectedJavaScript}
+            onNavigationStateChange={(navState) => {
+              if (navState.title) {
+                setPageTitle(navState.title);
+              }
+            }}
+          />
+        </View>
+        
+        {/* Visible minimized container */}
         <Animated.View
           {...panResponder.panHandlers}
           style={[
             styles.modalContainer,
             styles.minimizedContainer,
+            { bottom: getBottomPosition() }, // Use dynamic bottom position
             animatedStyle
           ]}
         >
@@ -588,24 +823,34 @@ const WebViewModal: React.FC<WebViewModalProps> = ({
             <TouchableOpacity style={styles.headerButton} onPress={openInBrowser}>
               <Ionicons name="open-outline" size={20} color="#555" />
             </TouchableOpacity>
-            <TouchableOpacity style={styles.headerButton} onPress={onClose}>
+            <TouchableOpacity 
+              style={[styles.headerButton, styles.closeButton]} 
+              onPress={handleClose}
+              activeOpacity={0.6}
+              hitSlop={{ top: 10, right: 10, bottom: 10, left: 10 }}
+            >
               <Ionicons name="close-outline" size={20} color="#555" />
             </TouchableOpacity>
           </View>
         </Animated.View>
-      );
-    }
-
-    // For full mode: use the enhanced modal
-    return renderFullScreenModal();
+      </React.Fragment>
+    );
   };
 
-  // Handle the different rendering approaches
-  return isWebPlatform() && isMinimized ? (
-    renderContent()
-  ) : (
-    visible ? renderContent() : null
-  );
+  // Use different rendering approach based on minimized state
+  const renderContent = () => {
+    const handleClose = createCloseHandler(onClose);
+    
+    if (isMinimized) {
+      return renderMinimizedWebView();
+    }
+
+    // For full mode: use the appropriate rendering based on platform
+    return renderFullScreenModalWithCloseHandler(handleClose);
+  };
+  
+  // Main component return
+  return isWebPlatform() && isMinimized ? renderContent() : visible ? renderContent() : null;
 };
 
 // Get window dimensions
@@ -658,19 +903,19 @@ const styles = StyleSheet.create({
     position: 'absolute',
     width: 220,
     height: 40,
-    bottom: 20,
+    bottom: 70,
     right: 20,
     borderRadius: 20,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    zIndex: 1000,
+    zIndex: 999999,
     backgroundColor: '#fff',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.25,
     shadowRadius: 3.84,
-    elevation: 5,
+    elevation: 10,
     ...(Platform.OS === 'web' ? { position: 'absolute' } : {}), // Use absolute for all platforms
   },
   header: {
@@ -703,6 +948,11 @@ const styles = StyleSheet.create({
   headerButton: {
     padding: 6,
     marginLeft: 2,
+  },
+  closeButton: {
+    padding: 8, // Larger touch area
+    marginLeft: 2,
+    borderRadius: 20,
   },
   webViewContainer: {
     flex: 1,
