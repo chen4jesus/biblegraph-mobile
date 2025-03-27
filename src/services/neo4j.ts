@@ -64,7 +64,7 @@ class Neo4jService {
       return await neo4jDatabaseService.getVerses(signal, verseIds);
     } catch (error) {
       if (error instanceof DOMException && error.name === 'AbortError') {
-        console.log('Verse fetch aborted');
+        console.debug('Verse fetch aborted');
         return [];
       }
       console.error('Error fetching verses:', error);
@@ -73,11 +73,11 @@ class Neo4jService {
   }
 
   async getVerse(id: string, signal?: AbortSignal): Promise<Verse | null> {
-    console.log(`[Neo4jService] Getting verse with id: ${id}`);
+    console.debug(`[Neo4jService] Getting verse with id: ${id}`);
     try {
       const result = await neo4jDatabaseService.getVerse(id, signal);
       if (result) {
-        console.log(`[Neo4jService] Successfully fetched verse: ${result.book} ${result.chapter}:${result.verse}`);
+        console.debug(`[Neo4jService] Successfully fetched verse: ${result.book} ${result.chapter}:${result.verse}`);
       } else {
         console.warn(`[Neo4jService] Verse with id ${id} not found`);
       }
@@ -121,7 +121,7 @@ class Neo4jService {
       return await neo4jDatabaseService.getConnections(signal);
     } catch (error) {
       if (error instanceof DOMException && error.name === 'AbortError') {
-        console.log('Connections fetch aborted');
+        console.debug('Connections fetch aborted');
         return [];
       }
       console.error('Error fetching connections:', error);
@@ -134,7 +134,7 @@ class Neo4jService {
       return await neo4jDatabaseService.getConnectionsForVerse(verseId, signal);
     } catch (error) {
       if (error instanceof DOMException && error.name === 'AbortError') {
-        console.log(`Connections for verse ${verseId} fetch aborted`);
+        console.debug(`Connections for verse ${verseId} fetch aborted`);
         return [];
       }
       console.error(`Error fetching connections for verse ${verseId}:`, error);
@@ -300,10 +300,10 @@ class Neo4jService {
   }
 
   async getVerseGroup(groupId: string): Promise<VerseGroup> {
-    console.log(`[Neo4jService] Getting verse group with id: ${groupId}`);
+    console.debug(`[Neo4jService] Getting verse group with id: ${groupId}`);
     try {
       const result = await neo4jDatabaseService.getVerseGroup(groupId);
-      console.log(`[Neo4jService] Successfully fetched verse group: ${JSON.stringify(result)}`);
+      console.debug(`[Neo4jService] Successfully fetched verse group: ${JSON.stringify(result)}`);
       
       // Validate the verse group structure
       if (!result) {
@@ -316,7 +316,7 @@ class Neo4jService {
         // Initialize empty array if missing to prevent crashes
         result.verseIds = [];
       } else {
-        console.log(`[Neo4jService] Verse group has ${result.verseIds.length} verses`);
+        console.debug(`[Neo4jService] Verse group has ${result.verseIds.length} verses`);
       }
       
       return result;
@@ -327,10 +327,10 @@ class Neo4jService {
   }
 
   async getVerseGroups(): Promise<VerseGroup[]> {
-    console.log(`[Neo4jService] Getting all verse groups`);
+    console.debug(`[Neo4jService] Getting all verse groups`);
     try {
       const result = await neo4jDatabaseService.getVerseGroups();
-      console.log(`[Neo4jService] Successfully fetched ${result.length} verse groups`);
+      console.debug(`[Neo4jService] Successfully fetched ${result.length} verse groups`);
       
       // Validate each verse group
       return result.map(group => {

@@ -18,14 +18,14 @@ export default function App() {
         // Connect to Neo4j database
         await neo4jDriverService.connect();
         
-        console.log('Checking if Bible data is already loaded...');
+        console.debug('Checking if Bible data is already loaded...');
         setLoadingMessage('Checking database...');
         
         // Check if Bible data is already loaded
         const isLoaded = await bibleDataLoader.isBibleLoaded();
         
         if (!isLoaded) {
-          console.log('Bible data not loaded. Loading XML data...');
+          console.debug('Bible data not loaded. Loading XML data...');
           setLoadingMessage('Loading Bible data from XML (limited to 5000 verses)...');
           
           try {
@@ -36,7 +36,7 @@ export default function App() {
             setError(`Failed to load Bible data: ${xmlError instanceof Error ? xmlError.message : 'Unknown error'}`);
           }
         } else {
-          console.log('Bible data already loaded in database. Skipping initialization.');
+          console.debug('Bible data already loaded in database. Skipping initialization.');
         }
         
         setLoading(false);

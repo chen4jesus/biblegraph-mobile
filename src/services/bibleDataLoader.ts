@@ -47,16 +47,16 @@ class BibleDataLoader {
       const existingVerses = await this.getVerseCount();
       
       if (existingVerses > 0) {
-        console.log(`Database already contains ${existingVerses} verses, skipping XML data loading`);
+        console.debug(`Database already contains ${existingVerses} verses, skipping XML data loading`);
         return;
       }
       
-      console.log('Loading Bible data from XML into Neo4j database...');
+      console.debug('Loading Bible data from XML into Neo4j database...');
       
       // Read the XML file
-      console.log('Reading XML file...');
+      console.debug('Reading XML file...');
       const xmlContent = await this.readXmlFile();
-      console.log('XML file read successfully, parsing content...');
+      console.debug('XML file read successfully, parsing content...');
       
       // Parse XML
       const parser = new XMLParser({
@@ -65,10 +65,10 @@ class BibleDataLoader {
         textNodeName: '_text'
       });
       
-      console.log('Parsing XML content...');
+      console.debug('Parsing XML content...');
       const parsedXml = parser.parse(xmlContent);
       const bibleData = parsedXml.bible;
-      console.log('XML parsing complete, beginning database loading...');
+      console.debug('XML parsing complete, beginning database loading...');
       
       // Keep track of created verse IDs for creating connections later
       const verseIdMap: Record<string, string> = {};
@@ -84,7 +84,7 @@ class BibleDataLoader {
       // Process books
       if (bibleData.book && Array.isArray(bibleData.book)) {
         totalBooks = bibleData.book.length;
-        console.log(`Found ${totalBooks} books in the Bible XML`);
+        console.debug(`Found ${totalBooks} books in the Bible XML`);
         
         for (let bookIndex = 0; bookIndex < bibleData.book.length && !shouldStopLoadingVerses; bookIndex++) {
           const book = bibleData.book[bookIndex];
@@ -96,7 +96,7 @@ class BibleDataLoader {
             const bookChapters = book.chapter.length;
             totalChapters += bookChapters;
             
-            console.log(`Processing book ${bookIndex + 1}/${totalBooks}: ${bookName} (${bookChapters} chapters)`);
+            console.debug(`Processing book ${bookIndex + 1}/${totalBooks}: ${bookName} (${bookChapters} chapters)`);
             
             for (let chapterIndex = 0; chapterIndex < book.chapter.length && !shouldStopLoadingVerses; chapterIndex++) {
               const chapter = book.chapter[chapterIndex];
@@ -107,12 +107,12 @@ class BibleDataLoader {
                 const chapterVerses = chapter.verse.length;
                 
                 if (chapterIndex === 0 || chapterIndex === book.chapter.length - 1 || chapterIndex % 10 === 0) {
-                  console.log(`  - Chapter ${chapterNumber}: ${chapterVerses} verses`);
+                  console.debug(`  - Chapter ${chapterNumber}: ${chapterVerses} verses`);
                 }
                 
                 for (const verse of chapter.verse) {
                   if (totalVerses >= MAX_VERSES_TO_LOAD) {
-                    console.log(`Reached maximum verse limit of ${MAX_VERSES_TO_LOAD}. Stopping verse loading.`);
+                    console.debug(`Reached maximum verse limit of ${MAX_VERSES_TO_LOAD}. Stopping verse loading.`);
                     shouldStopLoadingVerses = true;
                     break;
                   }
@@ -138,7 +138,7 @@ class BibleDataLoader {
                   
                   // Log progress occasionally
                   if (totalVerses % 500 === 0) {
-                    console.log(`Processed ${totalVerses} verses so far...`);
+                    console.debug(`Processed ${totalVerses} verses so far...`);
                   }
                 }
               }
@@ -147,13 +147,13 @@ class BibleDataLoader {
         }
       }
       
-      console.log(`Successfully loaded ${totalVerses} verses from ${totalChapters} chapters across ${totalBooks} books`);
+      console.debug(`Successfully loaded ${totalVerses} verses from ${totalChapters} chapters across ${totalBooks} books`);
       
       // Create basic connections - connect consecutive verses in each chapter
-      console.log('Creating basic verse connections...');
+      console.debug('Creating basic verse connections...');
       await this.createBasicConnections(verseIdMap, MAX_CONNECTIONS_TO_CREATE);
       
-      console.log('XML data loaded successfully!');
+      console.debug('XML data loaded successfully!');
     } catch (error: any) {
       console.error('Error loading XML data:', error);
       throw error;
@@ -179,7 +179,7 @@ class BibleDataLoader {
         
         if (!fileInfo.exists) {
           // Copy the file from assets to document directory if it doesn't exist
-          console.log('Copying Bible XML file to document directory...');
+          console.debug('Copying Bible XML file to document directory...');
           
           // For Android/iOS, we need to copy the file from the asset bundle
           const assetModule = require('../data/Bible_CUVS.xml');
@@ -196,12 +196,12 @@ class BibleDataLoader {
             to: fileUri
           });
           
-          console.log('Bible XML file copied successfully');
+          console.debug('Bible XML file copied successfully');
         }
         
         // Read the file from the document directory
         const content = await FileSystem.readAsStringAsync(fileUri);
-        console.log(`Read XML file successfully, size: ${content.length} bytes`);
+        console.debug(`Read XML file successfully, size: ${content.length} bytes`);
         return content;
       }
     } catch (error: any) {
@@ -218,7 +218,7 @@ class BibleDataLoader {
       // Group verse keys by book and chapter
       const chapterVerses: Record<string, string[]> = {};
       
-      console.log('Organizing verses by chapter for connection creation...');
+      console.debug('Organizing verses by chapter for connection creation...');
       
       // Group verse keys
       for (const verseKey of Object.keys(verseIdMap)) {
@@ -233,7 +233,7 @@ class BibleDataLoader {
       }
       
       const totalChapters = Object.keys(chapterVerses).length;
-      console.log(`Creating connections for ${totalChapters} chapters...`);
+      console.debug(`Creating connections for ${totalChapters} chapters...`);
       
       // For each chapter, connect consecutive verses
       let connectionCount = 0;
@@ -256,13 +256,13 @@ class BibleDataLoader {
           });
         
         if (chapterCount % 20 === 0 || chapterCount === 1 || chapterCount === totalChapters) {
-          console.log(`Creating connections for chapter ${chapterCount}/${totalChapters}: ${bookCode} ${chapterNum} (${verses.length} verses)`);
+          console.debug(`Creating connections for chapter ${chapterCount}/${totalChapters}: ${bookCode} ${chapterNum} (${verses.length} verses)`);
         }
         
         // Connect consecutive verses
         for (let i = 0; i < verses.length - 1; i++) {
           if (connectionCount >= maxConnections) {
-            console.log(`Reached maximum connection limit of ${maxConnections}. Stopping connection creation.`);
+            console.debug(`Reached maximum connection limit of ${maxConnections}. Stopping connection creation.`);
             shouldStopCreatingConnections = true;
             break;
           }
@@ -281,12 +281,12 @@ class BibleDataLoader {
           
           // Log progress occasionally
           if (connectionCount % 1000 === 0) {
-            console.log(`Created ${connectionCount} connections (${Math.round(chapterCount/totalChapters*100)}% complete)...`);
+            console.debug(`Created ${connectionCount} connections (${Math.round(chapterCount/totalChapters*100)}% complete)...`);
           }
         }
       }
       
-      console.log(`Created ${connectionCount} consecutive verse connections across ${chapterCount} chapters`);
+      console.debug(`Created ${connectionCount} consecutive verse connections across ${chapterCount} chapters`);
     } catch (error: any) {
       console.error('Error creating basic connections:', error);
       throw error;

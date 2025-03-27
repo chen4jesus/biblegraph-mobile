@@ -127,14 +127,14 @@ const HomeScreen: React.FC = () => {
 
   const handleViewGraphWithVerses = async (selections: Array<{book: string, chapter: number, verse: number, chineseBook?: string}>) => {
     setIsLoading(true);
-    console.log('Selected verses:', selections);
+    console.debug('Selected verses:', selections);
     
     try {
       const verseIds: string[] = [];
       
       // Fetch all the verse IDs
       for (const selection of selections) {
-        console.log(`Fetching verse: ${selection.book} ${selection.chapter}:${selection.verse}`);
+        console.debug(`Fetching verse: ${selection.book} ${selection.chapter}:${selection.verse}`);
         
         // Try with English name first
         let verse = await neo4jService.getVerseByReference(
@@ -145,7 +145,7 @@ const HomeScreen: React.FC = () => {
         
         // If not found and we have Chinese name, try with that
         if (!verse && selection.chineseBook) {
-          console.log(`Trying with Chinese name: ${selection.chineseBook}`);
+          console.debug(`Trying with Chinese name: ${selection.chineseBook}`);
           verse = await neo4jService.getVerseByReference(
             selection.chineseBook,
             selection.chapter,
@@ -156,7 +156,7 @@ const HomeScreen: React.FC = () => {
         // If still not found, try fallback approaches
         if (!verse) {
           // Try lowercase book name
-          console.log(`Trying lowercase: ${selection.book.toLowerCase()}`);
+          console.debug(`Trying lowercase: ${selection.book.toLowerCase()}`);
           verse = await neo4jService.getVerseByReference(
             selection.book.toLowerCase(),
             selection.chapter,
@@ -165,7 +165,7 @@ const HomeScreen: React.FC = () => {
         }
         
         if (verse) {
-          console.log(`Found verse ID: ${verse.id}`);
+          console.debug(`Found verse ID: ${verse.id}`);
           verseIds.push(verse.id);
           // Also update recent verses for each found verse
           updateRecentVerses(verse);
@@ -174,11 +174,11 @@ const HomeScreen: React.FC = () => {
         }
       }
       
-      console.log(`Total verse IDs found: ${verseIds.length}`);
+      console.debug(`Total verse IDs found: ${verseIds.length}`);
       
       if (verseIds.length > 0) {
         // Navigate to graph view with all the verse IDs
-        console.log('Navigating to GraphView with verse IDs:', verseIds);
+        console.debug('Navigating to GraphView with verse IDs:', verseIds);
         navigation.navigate('GraphView', { verseIds: verseIds });
       } else {
         console.warn('No verse IDs found for selections');

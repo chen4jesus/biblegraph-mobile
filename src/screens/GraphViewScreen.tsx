@@ -58,7 +58,7 @@ const GraphViewScreen: React.FC = () => {
   useEffect(() => {
     if (initialVerses.length > 0 && !initialVersesProcessedRef.current) {
       const newIds = initialVerses.map(v => v.id);
-      console.log('Updating bibleGraphVerseIds with:', newIds);
+      console.debug('Updating bibleGraphVerseIds with:', newIds);
       setBibleGraphVerseIds(newIds);
       initialVersesProcessedRef.current = true;
     }
@@ -77,7 +77,7 @@ const GraphViewScreen: React.FC = () => {
   
   // Load initial verses if verseIds is provided - removed initialVerses from dependencies
   useEffect(() => {
-    console.log('GraphViewScreen - initialVerseIds changed:', initialVerseIds);
+    console.debug('GraphViewScreen - initialVerseIds changed:', initialVerseIds);
     
     // Skip empty verse IDs
     if (!initialVerseIds || initialVerseIds.length === 0) {
@@ -89,7 +89,7 @@ const GraphViewScreen: React.FC = () => {
     
     // If we've already processed these exact IDs, don't reload
     if (currentIdsString === lastProcessedIdsRef.current) {
-      console.log('These IDs were already processed, skipping fetch');
+      console.debug('These IDs were already processed, skipping fetch');
       return;
     }
     
@@ -105,7 +105,7 @@ const GraphViewScreen: React.FC = () => {
           }
         }
         
-        console.log(`Loaded ${verses.length} verses from ${initialVerseIds.length} IDs`);
+        console.debug(`Loaded ${verses.length} verses from ${initialVerseIds.length} IDs`);
         if (verses.length > 0) {
           setInitialVerses(verses);
           // Store the processed IDs
@@ -235,7 +235,7 @@ const GraphViewScreen: React.FC = () => {
 
   // Make sure we have nodes before rendering
   if (nodes.length === 0) {
-    console.log('No nodes to display yet');
+    console.debug('No nodes to display yet');
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color={theme.colors.primary} />
@@ -244,7 +244,7 @@ const GraphViewScreen: React.FC = () => {
     );
   }
 
-  console.log(`Rendering graph with ${nodes.length} nodes and ${edges.length} edges`);
+  console.debug(`Rendering graph with ${nodes.length} nodes and ${edges.length} edges`);
 
   return (
     <SafeAreaView style={styles.container}>

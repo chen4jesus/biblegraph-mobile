@@ -48,12 +48,12 @@ const ForceGraph: React.FC<ForceGraphProps> = ({
       // When touch begins, check if we're touching a node
       onPanResponderGrant: (evt, gestureState) => {
         const { locationX, locationY } = evt.nativeEvent;
-        console.log(`Touch at (${locationX}, ${locationY})`);
+        console.debug(`Touch at (${locationX}, ${locationY})`);
         
         // Find which node was touched
         const touchedNode = findNodeAtPosition(locationX, locationY);
         if (touchedNode) {
-          console.log(`Started dragging node: ${touchedNode.id}`);
+          console.debug(`Started dragging node: ${touchedNode.id}`);
           draggingNode.current = touchedNode.id;
           
           // Fix the node position at current position
@@ -87,7 +87,7 @@ const ForceGraph: React.FC<ForceGraphProps> = ({
         const x = gestureState.moveX;
         const y = gestureState.moveY;
         
-        console.log(`Dragging node to (${x}, ${y})`);
+        console.debug(`Dragging node to (${x}, ${y})`);
         
         // Update node position
         const updatedNodes = currentNodesRef.current.map(n => {
@@ -110,7 +110,7 @@ const ForceGraph: React.FC<ForceGraphProps> = ({
       onPanResponderRelease: () => {
         if (!draggingNode.current) return;
         
-        console.log(`Finished dragging node: ${draggingNode.current}`);
+        console.debug(`Finished dragging node: ${draggingNode.current}`);
         
         // Unfix the node position but keep its current position
         const node = currentNodesRef.current.find(n => n.id === draggingNode.current);
@@ -173,7 +173,7 @@ const ForceGraph: React.FC<ForceGraphProps> = ({
   const currentNodesRef = useRef<Array<GraphNode & {x: number, y: number, fx?: number | null, fy?: number | null}>>([]);
   
   // Log render for debugging
-  console.log(`ForceGraph render: ${nodes.length} nodes, ${links.length} links`);
+  console.debug(`ForceGraph render: ${nodes.length} nodes, ${links.length} links`);
   
   // Initialize graph with nodes data
   useEffect(() => {
@@ -190,7 +190,7 @@ const ForceGraph: React.FC<ForceGraphProps> = ({
       nodes.some((node, i) => prevNodesRef.current[i]?.id !== node.id);
     
     if (nodesChanged) {
-      console.log(`ForceGraph: Initializing ${nodes.length} nodes`);
+      console.debug(`ForceGraph: Initializing ${nodes.length} nodes`);
       
       // Calculate optimal initial positions for nodes
       const calculateInitialPositions = () => {
@@ -273,7 +273,7 @@ const ForceGraph: React.FC<ForceGraphProps> = ({
       const newNodeIds = nodes.filter(node => !initialNodes.some(n => n.id === node.id)).map(n => n.id);
       
       if (newNodeIds.length > 0) {
-        console.log(`ForceGraph: Calculating positions for ${newNodeIds.length} new nodes`);
+        console.debug(`ForceGraph: Calculating positions for ${newNodeIds.length} new nodes`);
         
         // Calculate positions for all nodes to maintain layout consistency
         const allPositions = calculateInitialPositions();
@@ -300,7 +300,7 @@ const ForceGraph: React.FC<ForceGraphProps> = ({
       simulationActive.current = true;
       simulateForces();
       
-      console.log(`ForceGraph: Started simulation with ${initialNodes.length} nodes`);
+      console.debug(`ForceGraph: Started simulation with ${initialNodes.length} nodes`);
     } else if (links.length !== prevLinksRef.current.length || 
             links.some((link, i) => prevLinksRef.current[i]?.id !== link.id)) {
       // Links changed but nodes didn't
@@ -338,7 +338,7 @@ const ForceGraph: React.FC<ForceGraphProps> = ({
       // Check if we should stop
       if (iteration >= maxIterations || alpha < alphaMin || !simulationActive.current) {
         simulationActive.current = false;
-        console.log(`ForceGraph: Simulation completed after ${iteration} iterations`);
+        console.debug(`ForceGraph: Simulation completed after ${iteration} iterations`);
         return;
       }
       
@@ -426,7 +426,7 @@ const ForceGraph: React.FC<ForceGraphProps> = ({
 
   // Handle node press
   const handleNodePress = (node: GraphNode) => {
-    console.log(`Node pressed: ${node.id}`);
+    console.debug(`Node pressed: ${node.id}`);
     setSelectedNode(node.id);
     if (onNodePress) onNodePress(node);
   };

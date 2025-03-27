@@ -76,7 +76,7 @@ export const useBibleGraph = ({
       return;
     }
 
-    console.log("Starting fetchGraphData with initialVerseIds:", initialVerseIds);
+    console.debug("Starting fetchGraphData with initialVerseIds:", initialVerseIds);
     isFetchingRef.current = true;
     setIsFetching(true);
     
@@ -108,7 +108,7 @@ export const useBibleGraph = ({
       const edgeMap = new Map<string, GraphEdge>();
       
       const startingIds = initialVerseId ? [initialVerseId] : initialVerseIds;
-      console.log(`Processing ${startingIds.length} initial verse IDs`);
+      console.debug(`Processing ${startingIds.length} initial verse IDs`);
       
       // Fetch verses
       for (const id of startingIds) {
@@ -129,7 +129,7 @@ export const useBibleGraph = ({
           }
         } catch (err) {
           if (err.name === 'AbortError') {
-            console.log('Verse fetch aborted');
+            console.debug('Verse fetch aborted');
             break;
           }
           console.error(`Error fetching verse ${id}:`, err);
@@ -201,14 +201,14 @@ export const useBibleGraph = ({
           }
         } catch (err) {
           if (err.name === 'AbortError') {
-            console.log('Connections fetch aborted');
+            console.debug('Connections fetch aborted');
             break;
           }
           console.error(`Error fetching connections for verse ${id}:`, err);
         }
       }
       
-      console.log(`Graph data loaded: ${nodeMap.size} nodes, ${edgeMap.size} edges`);
+      console.debug(`Graph data loaded: ${nodeMap.size} nodes, ${edgeMap.size} edges`);
       
       // Update state with all nodes and edges at once
       if (isMountedRef.current && !signal.aborted) {
@@ -233,7 +233,7 @@ export const useBibleGraph = ({
         setIsFetching(false);
       }
       isFetchingRef.current = false;
-      console.log("Finished fetchGraphData");
+      console.debug("Finished fetchGraphData");
     }
   }, [initialVerseId, initialVerseIds, currentVerseId, timeoutMs]);
 

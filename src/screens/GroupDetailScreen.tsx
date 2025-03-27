@@ -27,7 +27,7 @@ const GroupDetailScreen: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
 
   const loadGroupData = useCallback(async () => {
-    console.log(`[GroupDetailScreen] Loading group data for groupId: ${groupId}`);
+    console.debug(`[GroupDetailScreen] Loading group data for groupId: ${groupId}`);
     setError(null);
     
     if (!groupId) {
@@ -39,12 +39,12 @@ const GroupDetailScreen: React.FC = () => {
     try {
       // First load the group data
       const group = await neo4jService.getVerseGroup(groupId);
-      console.log(`[GroupDetailScreen] Group loaded: ${JSON.stringify(group)}`);
+      console.debug(`[GroupDetailScreen] Group loaded: ${JSON.stringify(group)}`);
       setGroupData(group);
 
       // Then load all verses in the group
       if (group && group.verseIds && group.verseIds.length > 0) {
-        console.log(`[GroupDetailScreen] Loading ${group.verseIds.length} verses for group`);
+        console.debug(`[GroupDetailScreen] Loading ${group.verseIds.length} verses for group`);
         
         // Use Promise.allSettled to handle potential failures with individual verses
         const versePromises = group.verseIds.map(id => neo4jService.getVerse(id));
@@ -56,7 +56,7 @@ const GroupDetailScreen: React.FC = () => {
             result.status === 'fulfilled' && result.value !== null)
           .map(result => result.value);
         
-        console.log(`[GroupDetailScreen] Successfully loaded ${loadedVerses.length} out of ${group.verseIds.length} verses`);
+        console.debug(`[GroupDetailScreen] Successfully loaded ${loadedVerses.length} out of ${group.verseIds.length} verses`);
         
         // Sort verses by book, chapter, and verse for consistent display
         const sortedVerses = [...loadedVerses].sort((a, b) => {

@@ -184,7 +184,7 @@ const BibleSelectorModal: React.FC<BibleSelectorModalProps> = ({
 
   const handleViewGraph = () => {
     if (selectedVerses.length > 0) {
-      console.log('BibleSelectorModal - Selected verses for graph:', selectedVerses);
+      console.debug('BibleSelectorModal - Selected verses for graph:', selectedVerses);
       onViewGraph(selectedVerses.map(v => ({
         book: v.englishBook,
         chapter: v.chapter,

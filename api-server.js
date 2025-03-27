@@ -36,13 +36,13 @@ function closeDriver() {
 async function connectWithRetry(attempt = 1) {
   try {
     await driver.verifyConnectivity();
-    console.log('Successfully connected to Neo4j database');
+    console.debug('Successfully connected to Neo4j database');
     return true;
   } catch (error) {
     console.error(`Connection attempt ${attempt} failed:`, error.message);
     
     if (attempt < MAX_RETRY_ATTEMPTS) {
-      console.log(`Retrying in ${RETRY_INTERVAL/1000} seconds...`);
+      console.debug(`Retrying in ${RETRY_INTERVAL/1000} seconds...`);
       return new Promise(resolve => {
         setTimeout(() => {
           resolve(connectWithRetry(attempt + 1));
@@ -60,7 +60,7 @@ let isConnected = false;
 connectWithRetry().then(connected => {
   isConnected = connected;
   if (isConnected) {
-    console.log('API is ready to handle requests');
+    console.debug('API is ready to handle requests');
   } else {
     console.error('Warning: API starting without Neo4j connection');
   }
@@ -248,6 +248,6 @@ process.on('SIGTERM', () => {
 
 // Start the server
 app.listen(PORT, () => {
-  console.log(`API Server running on port ${PORT}`);
-  console.log(`Connecting to Neo4j at ${NEO4J_URI}`);
+  console.debug(`API Server running on port ${PORT}`);
+  console.debug(`Connecting to Neo4j at ${NEO4J_URI}`);
 }); 

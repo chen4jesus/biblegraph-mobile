@@ -63,7 +63,7 @@ const WebViewModal: React.FC<WebViewModalProps> = ({
   // Debug helper
   const debug = (message: string, ...args: any[]) => {
     if (DEBUG_MODE) {
-      console.log(`[WebViewModal:${id}] ${message}`, ...args);
+      console.debug(`[WebViewModal:${id}] ${message}`, ...args);
     }
   };
 

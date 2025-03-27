@@ -48,7 +48,7 @@ class Neo4jDriver {
       await session.run('RETURN 1');
       await session.close();
       
-      console.log('Successfully connected to Neo4j database');
+      console.debug('Successfully connected to Neo4j database');
     } catch (error) {
       console.error('Error connecting to Neo4j:', error);
       throw new Error('Failed to connect to Neo4j database');
@@ -59,7 +59,7 @@ class Neo4jDriver {
     if (this.driver) {
       await this.driver.close();
       this.driver = null;
-      console.log('Disconnected from Neo4j database');
+      console.debug('Disconnected from Neo4j database');
     }
   }
 
@@ -741,7 +741,7 @@ class Neo4jDriver {
       `, { id: noteId });
       
       if (checkResult.records[0].get('noteExists') === 0) {
-        console.log(`Note with id ${noteId} not found, nothing to delete`);
+        console.debug(`Note with id ${noteId} not found, nothing to delete`);
         return false;
       }
       
@@ -758,7 +758,7 @@ class Neo4jDriver {
         
         if (deleted) {
           await txc.commit();
-          console.log(`Successfully deleted note ${noteId}`);
+          console.debug(`Successfully deleted note ${noteId}`);
           return true;
         } else {
           await txc.rollback();
@@ -815,7 +815,7 @@ class Neo4jDriver {
         `);
       }
       
-      console.log('Database schema initialized');
+      console.debug('Database schema initialized');
     } catch (error) {
       console.error('Error initializing database schema:', error);
       throw error;
@@ -864,7 +864,7 @@ class Neo4jDriver {
 
   // New method to find a verse with more flexible book name matching
   private async findVerseWithFlexibleBookName(bookName: string, chapter: number, verse: number): Promise<Verse | null> {
-    console.log(`Trying flexible search for: ${bookName} ${chapter}:${verse}`);
+    console.debug(`Trying flexible search for: ${bookName} ${chapter}:${verse}`);
     const session = this.getSession();
     try {
       // Ensure we're using integer values

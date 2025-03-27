@@ -23,13 +23,13 @@ class SyncService {
 
   public async syncData(): Promise<boolean> {
     if (this.isSyncing) {
-      console.log('Sync already in progress');
+      console.debug('Sync already in progress');
       return false;
     }
 
     // Check if we've exceeded max attempts in this session
     if (this.syncAttempts >= this.maxSyncAttempts) {
-      console.log(`Exceeded maximum sync attempts (${this.maxSyncAttempts}), backing off for ${this.syncBackoffMs/1000} seconds`);
+      console.debug(`Exceeded maximum sync attempts (${this.maxSyncAttempts}), backing off for ${this.syncBackoffMs/1000} seconds`);
       
       // Reset attempts after some time
       if (this.syncTimeout) {
@@ -39,7 +39,7 @@ class SyncService {
       this.syncTimeout = setTimeout(() => {
         this.syncAttempts = 0;
         this.lastSyncError = null;
-        console.log('Sync backoff period ended, resetting attempts counter');
+        console.debug('Sync backoff period ended, resetting attempts counter');
       }, this.syncBackoffMs);
       
       return false;
@@ -48,12 +48,12 @@ class SyncService {
     try {
       this.isSyncing = true;
       this.syncAttempts++;
-      console.log(`Starting sync attempt ${this.syncAttempts} of ${this.maxSyncAttempts}`);
+      console.debug(`Starting sync attempt ${this.syncAttempts} of ${this.maxSyncAttempts}`);
 
       // Check if we're online
       const netInfo = await NetInfo.fetch();
       if (!netInfo.isConnected) {
-        console.log('No internet connection, skipping sync');
+        console.debug('No internet connection, skipping sync');
         return false;
       }
 
@@ -76,7 +76,7 @@ class SyncService {
       this.syncAttempts = 0;
       this.lastSyncError = null;
       
-      console.log('Sync completed successfully');
+      console.debug('Sync completed successfully');
       return true;
     } catch (error) {
       const err = error instanceof Error ? error : new Error(String(error));
@@ -129,7 +129,7 @@ class SyncService {
       });
       
       await Promise.all(createPromises);
-      console.log(`Synced ${createPromises.length} notes`);
+      console.debug(`Synced ${createPromises.length} notes`);
     } catch (error) {
       console.error('Error syncing notes:', error);
       throw error; // Re-throw to be caught by caller
@@ -176,7 +176,7 @@ class SyncService {
       const MAX_CONNECTION_OPS = 10;
       const connectionsToSync = finalConnections.slice(0, MAX_CONNECTION_OPS);
       
-      console.log(`Attempting to sync ${connectionsToSync.length} connections`);
+      console.debug(`Attempting to sync ${connectionsToSync.length} connections`);
       
       // Sync with server - update existing connections and create new ones with error handling
       const connectionPromises = connectionsToSync.map(async (connection) => {
@@ -231,7 +231,7 @@ class SyncService {
       
       const results = await Promise.all(connectionPromises);
       const successCount = results.filter(Boolean).length;
-      console.log(`Successfully synced ${successCount} of ${connectionsToSync.length} connections`);
+      console.debug(`Successfully synced ${successCount} of ${connectionsToSync.length} connections`);
     } catch (error) {
       console.error('Error syncing connections:', error);
       throw error; // Re-throw to be caught by caller
@@ -249,7 +249,7 @@ class SyncService {
       this.syncTimeout = null;
     }
     
-    console.log('Sync state has been reset');
+    console.debug('Sync state has been reset');
   }
   
   // Get information about the current sync state

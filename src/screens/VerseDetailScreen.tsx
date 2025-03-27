@@ -159,7 +159,7 @@ const VerseDetailScreen: React.FC = () => {
                 verseToDisplay = await neo4jService.createVerse(mockVerse);
               } catch (error) {
                 // If creation fails, try to fetch by book, chapter, verse again (race condition handling)
-                console.log('Error creating verse, trying to fetch existing one:', error);
+                console.debug('Error creating verse, trying to fetch existing one:', error);
                 verseToDisplay = await neo4jService.getVerseByReference(book, chapter, verse);
               }
             }
@@ -689,9 +689,9 @@ const VerseDetailScreen: React.FC = () => {
           <TouchableOpacity
             style={[styles.deleteConnectionButton, { padding: 12 }]}
             onPress={() => {
-              console.log('Directly deleting connection with ID:', item.id);
+              console.debug('Directly deleting connection with ID:', item.id);
               neo4jService.deleteConnection(item.id);
-              console.log('Connection deleted from database');
+              console.debug('Connection deleted from database');
               
               // Update the connections state to remove this connection
               setConnections(prev => prev.filter(c => c.id !== item.id));

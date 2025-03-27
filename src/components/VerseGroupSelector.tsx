@@ -30,9 +30,9 @@ const VerseGroupSelector: React.FC<VerseGroupSelectorProps> = ({
         setLoading(true);
         setError(null);
         
-        console.log('[VerseGroupSelector] Loading verse groups');
+        console.debug('[VerseGroupSelector] Loading verse groups');
         const loadedGroups = await neo4jService.getVerseGroups();
-        console.log(`[VerseGroupSelector] Loaded ${loadedGroups.length} verse groups`);
+        console.debug(`[VerseGroupSelector] Loaded ${loadedGroups.length} verse groups`);
         
         // Ensure each group has valid verseIds to prevent rendering issues
         const validatedGroups = loadedGroups.map(group => ({
@@ -71,13 +71,13 @@ const VerseGroupSelector: React.FC<VerseGroupSelectorProps> = ({
         description = `${verseIds.length} verses connected to ${firstVerse.book} ${firstVerse.chapter}:${firstVerse.verse}`;
       }
       
-      console.log(`[VerseGroupSelector] Creating verse group "${newGroupName}" with ${verseIds.length} verses`);
+      console.debug(`[VerseGroupSelector] Creating verse group "${newGroupName}" with ${verseIds.length} verses`);
       const newGroup = await neo4jService.createVerseGroup(
         newGroupName,
         verseIds,
         description
       );
-      console.log(`[VerseGroupSelector] Verse group created with ID: ${newGroup.id}`);
+      console.debug(`[VerseGroupSelector] Verse group created with ID: ${newGroup.id}`);
       
       // Reset form
       setNewGroupName('');

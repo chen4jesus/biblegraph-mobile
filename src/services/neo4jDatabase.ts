@@ -29,7 +29,7 @@ class Neo4jDatabaseService {
       await neo4jDriverService.connect();
       await neo4jDriverService.initializeDatabase();
       this.isInitialized = true;
-      console.log('Neo4j database service initialized');
+      console.debug('Neo4j database service initialized');
     } catch (error) {
       console.error('Failed to initialize Neo4j database service:', error);
       throw error;
