@@ -43,7 +43,9 @@
     "editNote": "Edit Note",
     "deleteNote": "Delete Note",
     "noteContent": "Note content",
-    "manageTags": "Manage Tags"
+    "manageTags": "Manage Tags",
+    "readMore": "Read more",
+    "showLess": "Show less"
   },
   "tags": {
     "manageTags": "Manage Tags",
@@ -123,7 +125,14 @@
     "confirmDeleteConnection": "Are you sure you want to delete this connection?",
     "connectionDeleted": "Connection deleted successfully",
     "failedToDeleteConnection": "Failed to delete connection",
-    "systemProtected": "System Protected"
+    "systemProtected": "System Protected",
+    "addNote": "Add Note",
+    "editNote": "Edit Note",
+    "myNote": "My Note",
+    "enterNoteHere": "Enter your note here...",
+    "noteContentRequired": "Note content is required",
+    "discardChanges": "Discard unsaved changes?",
+    "noNotesYet": "No notes yet"
   },
   "graph": {
     "title": "Bible Graph",

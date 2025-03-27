@@ -34,6 +34,7 @@ const NotesScreen: React.FC = () => {
   const [filteredNotes, setFilteredNotes] = useState<NoteWithVerse[]>([]);
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
   const [allTags, setAllTags] = useState<string[]>([]);
+  const [expandedNotes, setExpandedNotes] = useState<Record<string, boolean>>({});
   
   // Pagination states
   const [page, setPage] = useState(0);
@@ -158,7 +159,7 @@ const NotesScreen: React.FC = () => {
             note.content.toLowerCase().includes(query) ||
             note.verse?.text.toLowerCase().includes(query) ||
             (note.verse && `${note.verse.book} ${note.verse.chapter}:${note.verse.verse}`.toLowerCase().includes(query)) ||
-            note.tags.some((tag) => tag.toLowerCase().includes(query))
+            (note.tags && note.tags.some((tag) => tag.toLowerCase().includes(query)))
         );
       }
     }
@@ -176,37 +177,77 @@ const NotesScreen: React.FC = () => {
     return tagColors[tagIndex];
   };
 
-  const renderNoteItem = ({ item }: { item: NoteWithVerse }) => (
-    <TouchableOpacity
-      style={styles.noteItem}
-      onPress={() => {
-        if (item.verse) {
-          navigation.navigate('VerseDetail', { verseId: item.verseId });
-        }
-      }}
-    >
-      <View style={styles.noteHeader}>
-        <Text style={styles.verseReference}>
-          {item.verse?.book} {item.verse?.chapter}:{item.verse?.verse}
-        </Text>
-        <Text style={styles.noteDate}>
-          {new Date(item.createdAt).toLocaleDateString()}
-        </Text>
-      </View>
-      <Text style={styles.noteContent} numberOfLines={3}>
-        {item.content}
-      </Text>
-      {item.tags && item.tags.length > 0 && (
-        <View style={styles.tagsContainer}>
-          {item.tags.map((tag) => (
-            <View key={tag} style={styles.tag}>
-              <Text style={styles.tagText}>{tag}</Text>
-            </View>
-          ))}
+  const toggleNoteExpansion = (noteId: string) => {
+    setExpandedNotes(prev => ({
+      ...prev,
+      [noteId]: !prev[noteId]
+    }));
+  };
+
+  const isTextTruncated = (text: string) => {
+    return text.length > 120; // Arbitrary threshold - adjust as needed
+  };
+
+  const renderNoteItem = ({ item }: { item: NoteWithVerse }) => {
+    const isExpanded = expandedNotes[item.id] || false;
+    const shouldShowToggle = isTextTruncated(item.content);
+    
+    return (
+      <TouchableOpacity
+        style={styles.noteItem}
+        onPress={() => {
+          if (item.verse) {
+            navigation.navigate('VerseDetail', { verseId: item.verseId });
+          }
+        }}
+      >
+        <View style={styles.noteHeader}>
+          <Text style={styles.verseReference}>
+            {item.verse?.book} {item.verse?.chapter}:{item.verse?.verse}
+          </Text>
+          <Text style={styles.noteDate}>
+            {new Date(item.createdAt).toLocaleDateString()}
+          </Text>
         </View>
-      )}
-    </TouchableOpacity>
-  );
+        
+        <View>
+          <Text style={styles.noteContent} numberOfLines={isExpanded ? undefined : 3}>
+            {item.content}
+          </Text>
+          
+          {shouldShowToggle && (
+            <TouchableOpacity 
+              style={styles.toggleButton}
+              onPress={(e) => {
+                e.stopPropagation(); // Prevent opening verse detail
+                toggleNoteExpansion(item.id);
+              }}
+            >
+              <Text style={styles.toggleButtonText}>
+                {isExpanded ? t('notes:showLess') : t('notes:readMore')}
+              </Text>
+              <Ionicons 
+                name={isExpanded ? 'chevron-up' : 'chevron-down'} 
+                size={16} 
+                color="#007AFF"
+                style={{ marginLeft: 4 }}
+              />
+            </TouchableOpacity>
+          )}
+        </View>
+        
+        {item.tags && item.tags.length > 0 && (
+          <View style={styles.tagsContainer}>
+            {item.tags.map((tag) => (
+              <View key={tag} style={styles.tag}>
+                <Text style={styles.tagText}>{tag}</Text>
+              </View>
+            ))}
+          </View>
+        )}
+      </TouchableOpacity>
+    );
+  };
 
   const renderFooter = () => {
     if (!isLoadingMore) return null;
@@ -404,7 +445,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#333',
     lineHeight: 20,
-    marginBottom: 8,
+    marginBottom: 4,
   },
   tagsContainer: {
     flexDirection: 'row',
@@ -466,6 +507,17 @@ const styles = StyleSheet.create({
     marginLeft: 10,
     fontSize: 14,
     color: '#666',
+  },
+  toggleButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 4,
+    marginBottom: 8,
+  },
+  toggleButtonText: {
+    fontSize: 13,
+    color: '#007AFF',
+    fontWeight: '500',
   },
 });
 

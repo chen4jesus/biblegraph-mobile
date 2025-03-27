@@ -11,6 +11,7 @@ import {
   Switch,
   FlatList,
   Modal,
+  ActivityIndicator,
 } from 'react-native';
 import { useRoute, RouteProp, useNavigation } from '@react-navigation/native';
 import { RootStackParamList } from '../navigation/types';
@@ -23,6 +24,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import MultiConnectionSelector from '../components/MultiConnectionSelector';
 import VerseGroupSelector from '../components/VerseGroupSelector';
 import theme from 'theme';
+import NoteEditorModal from '../components/NoteEditorModal';
 
 type VerseDetailScreenRouteProp = RouteProp<RootStackParamList, 'VerseDetail'>;
 type VerseDetailNavigationProp = NativeStackNavigationProp<RootStackParamList>;
@@ -75,6 +77,10 @@ const VerseDetailScreen: React.FC = () => {
   );
   const [showMultiConnectionSelector, setShowMultiConnectionSelector] = useState(false);
   const [isGroupSelectorVisible, setIsGroupSelectorVisible] = useState(false);
+  const [noteModalVisible, setNoteModalVisible] = useState(false);
+  const [currentNote, setCurrentNote] = useState<Note | null>(null);
+  // Add state to track expanded notes
+  const [expandedNotes, setExpandedNotes] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     loadVerseDetails();
@@ -335,39 +341,30 @@ const VerseDetailScreen: React.FC = () => {
   };
 
   const handleEditNote = (note: Note) => {
-    setEditingNoteId(note.id);
-    setEditedNoteContent(note.content);
-    setEditedNoteTags(note.tags || []);
+    setCurrentNote(note);
+    setNoteModalVisible(true);
   };
 
-  const handleSaveNote = async () => {
-    if (!editingNoteId || !verse || !editedNoteContent.trim()) {
-      setEditingNoteId(null);
+  const handleSaveNote = async (content: string, tags: string[]) => {
+    if (!currentNote || !verse) {
+      setNoteModalVisible(false);
       return;
     }
 
     try {
-      const updatedNote = {
-        ...notes.find(note => note.id === editingNoteId)!,
-        content: editedNoteContent,
-        tags: editedNoteTags,
-        updatedAt: new Date().toISOString()
-      };
-
-      const savedNote = await neo4jService.updateNote(editingNoteId, {
-        content: editedNoteContent,
-        tags: editedNoteTags
+      const savedNote = await neo4jService.updateNote(currentNote.id, {
+        content,
+        tags
       });
       
       // Update the notes array with the edited note
       setNotes(notes.map(note => 
-        note.id === editingNoteId ? savedNote : note
+        note.id === currentNote.id ? savedNote : note
       ));
       
-      // Exit edit mode
-      setEditingNoteId(null);
-      setEditedNoteContent('');
-      setEditedNoteTags([]);
+      // Close the modal
+      setNoteModalVisible(false);
+      setCurrentNote(null);
     } catch (error) {
       console.error('Error updating note:', error);
       Alert.alert(t('common:error'), t('verseDetail:failedToUpdateNote'));
@@ -973,6 +970,139 @@ const VerseDetailScreen: React.FC = () => {
     }
   };
 
+  // Add function for adding new notes via modal
+  const handleAddNoteViaModal = () => {
+    // Create a temporary note object
+    const tempNote: Note = {
+      id: 'temp-' + Date.now(),
+      verseId: verse?.id || '',
+      content: '',
+      tags: [],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+    
+    setCurrentNote(tempNote);
+    setNoteModalVisible(true);
+  };
+
+  // Add function for saving new notes from modal
+  const handleSaveNewNote = async (content: string, tags: string[]) => {
+    if (!verse || !content.trim()) {
+      setNoteModalVisible(false);
+      setCurrentNote(null);
+      return;
+    }
+
+    try {
+      const note = await neo4jService.createNote(verse.id, content, tags);
+      setNotes([...notes, note]);
+      
+      // Close the modal
+      setNoteModalVisible(false);
+      setCurrentNote(null);
+    } catch (error) {
+      console.error('Error adding note:', error);
+      Alert.alert(t('common:error'), t('verseDetail:failedToAddNote'));
+    }
+  };
+
+  // Add toggle function for note expansion
+  const toggleNoteExpansion = (noteId: string) => {
+    setExpandedNotes(prev => ({
+      ...prev,
+      [noteId]: !prev[noteId]
+    }));
+  };
+
+  // Check if text is truncated by its length
+  const isTextTruncated = (text: string) => {
+    return text.length > 120; // Arbitrary threshold - adjust as needed
+  };
+
+  const renderNoteItem = (note: Note) => {
+    const isExpanded = expandedNotes[note.id] || false;
+    const shouldShowToggle = isTextTruncated(note.content);
+    
+    return (
+      <View key={note.id} style={styles.noteItem}>
+        <View>
+          <Text style={styles.noteContent} numberOfLines={isExpanded ? undefined : 3}>
+            {note.content}
+          </Text>
+          
+          {shouldShowToggle && (
+            <TouchableOpacity 
+              style={styles.toggleButton}
+              onPress={() => toggleNoteExpansion(note.id)}
+            >
+              <Text style={styles.toggleButtonText}>
+                {isExpanded ? t('notes:showLess') : t('notes:readMore')}
+              </Text>
+              <Ionicons 
+                name={isExpanded ? 'chevron-up' : 'chevron-down'} 
+                size={16} 
+                color="#007AFF"
+                style={{ marginLeft: 4 }}
+              />
+            </TouchableOpacity>
+          )}
+        </View>
+        
+        {note.tags && note.tags.length > 0 && (
+          <View style={styles.noteTagsContainer}>
+            {note.tags.map(tag => (
+              <View 
+                key={tag} 
+                style={[styles.noteTag, { backgroundColor: getTagColor(tag) }]}
+              >
+                <Text style={styles.noteTagText}>{tag}</Text>
+              </View>
+            ))}
+          </View>
+        )}
+        <View style={styles.noteFooter}>
+          <Text style={styles.noteDate}>
+            {new Date(note.createdAt).toLocaleDateString()}
+          </Text>
+          <View style={styles.noteActions}>
+            <TouchableOpacity
+              style={styles.noteActionButton}
+              onPress={() => handleEditNote(note)}
+            >
+              <Ionicons name="pencil" size={18} color="#007AFF" />
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.noteActionButton}
+              onPress={() => handleDeleteNote(note.id)}
+            >
+              <Ionicons name="trash" size={18} color="#FF3B30" />
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    );
+  };
+
+  const renderNotesSection = () => (
+    <View style={styles.section}>
+      <View style={styles.sectionHeader}>
+        <Text style={styles.sectionTitle}>{t('verseDetail:notes')}</Text>
+        <TouchableOpacity 
+          style={styles.addNoteButton}
+          onPress={handleAddNoteViaModal}
+        >
+          <Ionicons name="add-circle" size={24} color="#007AFF" />
+        </TouchableOpacity>
+      </View>
+      {notes.length > 0 ? (
+        notes.map(renderNoteItem)
+      ) : (
+        <Text style={styles.emptyNotesText}>{t('verseDetail:noNotesYet')}</Text>
+      )}
+    </View>
+  );
+
   if (isLoading) {
     return (
       <View style={styles.loadingContainer}>
@@ -988,80 +1118,6 @@ const VerseDetailScreen: React.FC = () => {
       </View>
     );
   }
-
-  const renderNoteItem = (note: Note) => {
-    const isEditing = editingNoteId === note.id;
-    
-    return (
-      <View key={note.id} style={styles.noteItem}>
-        {isEditing ? (
-          <View style={styles.editNoteContainer}>
-            <TextInput
-              style={styles.editNoteInput}
-              value={editedNoteContent}
-              onChangeText={setEditedNoteContent}
-              multiline
-              autoFocus
-            />
-            {renderTagsSection(editedNoteTags, false)}
-            <View style={styles.noteActionButtons}>
-              <TouchableOpacity
-                style={styles.noteSaveButton}
-                onPress={handleSaveNote}
-              >
-                <Ionicons name="checkmark" size={20} color="#007AFF" />
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.noteCancelButton}
-                onPress={() => {
-                  setEditingNoteId(null);
-                  setEditedNoteContent('');
-                  setEditedNoteTags([]);
-                }}
-              >
-                <Ionicons name="close" size={20} color="#FF3B30" />
-              </TouchableOpacity>
-            </View>
-          </View>
-        ) : (
-          <>
-            <Text style={styles.noteContent}>{note.content}</Text>
-            {note.tags && note.tags.length > 0 && (
-              <View style={styles.noteTagsContainer}>
-                {note.tags.map(tag => (
-                  <View 
-                    key={tag} 
-                    style={[styles.noteTag, { backgroundColor: getTagColor(tag) }]}
-                  >
-                    <Text style={styles.noteTagText}>{tag}</Text>
-                  </View>
-                ))}
-              </View>
-            )}
-            <View style={styles.noteFooter}>
-              <Text style={styles.noteDate}>
-                {new Date(note.createdAt).toLocaleDateString()}
-              </Text>
-              <View style={styles.noteActions}>
-                <TouchableOpacity
-                  style={styles.noteActionButton}
-                  onPress={() => handleEditNote(note)}
-                >
-                  <Ionicons name="pencil" size={18} color="#007AFF" />
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.noteActionButton}
-                  onPress={() => handleDeleteNote(note.id)}
-                >
-                  <Ionicons name="trash" size={18} color="#FF3B30" />
-                </TouchableOpacity>
-              </View>
-            </View>
-          </>
-        )}
-      </View>
-    );
-  };
 
   return (
     <SafeAreaView style={styles.container}>
@@ -1117,28 +1173,7 @@ const VerseDetailScreen: React.FC = () => {
         </View>
 
         {/* Notes Tab Content */}
-        {activeTab === 'notes' && (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>{t('verseDetail:notes')}</Text>
-            {notes.map(renderNoteItem)}
-            <View style={styles.addNoteContainer}>
-              <TextInput
-                style={styles.noteInput}
-                placeholder={t('verseDetail:addNoteHint')}
-                value={newNote}
-                onChangeText={setNewNote}
-                multiline
-              />
-              <TouchableOpacity
-                style={styles.addNoteButton}
-                onPress={handleAddNote}
-              >
-                <Ionicons name="add-circle" size={24} color="#007AFF" />
-              </TouchableOpacity>
-            </View>
-            {renderTagsSection(newNoteTags)}
-          </View>
-        )}
+        {activeTab === 'notes' && renderNotesSection()}
 
         {/* Connections Tab Content */}
         {activeTab === 'connections' && (
@@ -1180,6 +1215,24 @@ const VerseDetailScreen: React.FC = () => {
           </View>
         </View>
       </Modal>
+
+      {/* Add Note Editor Modal */}
+      <NoteEditorModal
+        visible={noteModalVisible}
+        note={currentNote}
+        onClose={() => {
+          setNoteModalVisible(false);
+          setCurrentNote(null);
+        }}
+        onSave={(content, tags) => {
+          if (currentNote?.id.startsWith('temp-')) {
+            handleSaveNewNote(content, tags);
+          } else {
+            handleSaveNote(content, tags);
+          }
+        }}
+        availableTags={allTags}
+      />
     </SafeAreaView>
   );
 };
@@ -1257,6 +1310,20 @@ const styles = StyleSheet.create({
   },
   noteContent: {
     fontSize: 14,
+    color: '#333',
+    lineHeight: 20,
+    marginBottom: 4,
+  },
+  toggleButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 4,
+    marginBottom: 8,
+  },
+  toggleButtonText: {
+    fontSize: 13,
+    color: '#007AFF',
+    fontWeight: '500',
   },
   noteDate: {
     fontSize: 12,
@@ -1487,201 +1554,146 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     padding: 8,
     fontSize: 14,
-    minHeight: 40,
-    marginBottom: 12,
+    marginBottom: 8,
   },
-  connectionTypeContainer: {
+  addConnectionContainer: {
+    marginVertical: 12,
+  },
+  addConnectionTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 8,
+  },
+  addConnectionInput: {
     flexDirection: 'row',
+    alignItems: 'center',
+  },
+  addConnectionButton: {
+    marginLeft: 8,
+    padding: 4,
+  },
+  connectionButtonsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
     justifyContent: 'space-between',
+    marginTop: 8,
   },
   connectionTypeButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flex: 1,
     backgroundColor: '#f0f0f0',
-    padding: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
     borderRadius: 8,
-    flex: 1,
-    marginHorizontal: 4,
-  },
-  connectionTypeText: {
-    fontSize: 12,
-    color: '#007AFF',
-    marginLeft: 4,
-  },
-  manageTagsButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 4,
-    borderRadius: 4,
-    backgroundColor: '#f0f0f0',
-  },
-  manageTagsText: {
-    fontSize: 12,
-    color: '#007AFF',
-    marginRight: 4,
-  },
-  tabContainer: {
-    flexDirection: 'row',
-    borderBottomWidth: 1,
-    borderBottomColor: '#eee',
-  },
-  tabButton: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    backgroundColor: '#f8f8f8',
-  },
-  activeTabButton: {
-    backgroundColor: '#fff',
-    borderBottomWidth: 2,
-    borderBottomColor: '#007AFF',
-  },
-  tabText: {
-    fontSize: 14,
-    color: '#666',
-    marginLeft: 8,
-  },
-  activeTabText: {
-    color: '#007AFF',
-    fontWeight: '600',
-  },
-  tabContent: {
-    flex: 1,
-  },
-  connectionActions: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 12,
-    backgroundColor: '#f8f8f8',
-    borderBottomWidth: 1,
-    borderBottomColor: '#e0e0e0',
-  },
-  addButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 8,
-    borderRadius: 8,
-    backgroundColor: '#007AFF',
-  },
-  addButtonText: {
-    fontSize: 14,
-    color: '#fff',
     marginRight: 8,
+    marginBottom: 8,
+    alignItems: 'center',
+    minWidth: 100,
+  },
+  multiConnectionButton: {
+    backgroundColor: '#007AFF',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    marginTop: 8,
+    alignItems: 'center',
+  },
+  multiConnectionButtonText: {
+    color: 'white',
+    fontSize: 14,
     fontWeight: '500',
   },
-  emptyContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
+  connectionTypeButtonText: {
+    color: '#333',
+    fontSize: 12,
   },
-  emptyText: {
-    fontSize: 16,
-    color: '#666',
-    marginBottom: 8,
-    textAlign: 'center',
-  },
-  emptyHint: {
-    fontSize: 14,
-    color: '#999',
-    textAlign: 'center',
-  },
-  singleConnectionSection: {
-    padding: 16,
-    borderTopWidth: 1,
-    borderTopColor: '#eee',
-    marginTop: 10,
-  },
-  multiConnectionContainer: {
-    padding: 16,
-  },
-  multiConnectionHint: {
-    fontSize: 14,
-    color: '#666',
-    marginBottom: 8,
-  },
-  separator: {
-    height: 1,
-    backgroundColor: '#eee',
-    marginVertical: 16,
-  },
-  actionsContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 12,
-    backgroundColor: '#f8f8f8',
-    borderTopWidth: 1,
-    borderTopColor: '#e0e0e0',
-  },
-  actionButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 8,
-    borderRadius: 8,
-    backgroundColor: '#007AFF',
-  },
-  actionButtonText: {
-    fontSize: 14,
-    color: '#fff',
-    marginRight: 8,
-    fontWeight: '500',
+  connectionTypeIcon: {
+    marginBottom: 4,
   },
   modalContainer: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-end',
   },
   modalContent: {
-    flex: 1,
-    marginTop: 50,
-    backgroundColor: theme.colors.background,
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    paddingTop: 16,
-    paddingBottom: 30,
+    backgroundColor: '#fff',
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    padding: 16,
+    maxHeight: '80%',
   },
   modalHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingBottom: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#e0e0e0',
+    marginBottom: 16,
   },
   modalTitle: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: theme.colors.text,
   },
   closeButton: {
-    fontSize: 20,
-    color: theme.colors.text,
-    padding: 4,
+    fontSize: 24,
+    color: '#999',
   },
-  groupedConnectionContainer: {
-    backgroundColor: '#f0f8ff',
+  tabContainer: {
+    flexDirection: 'row',
+    backgroundColor: '#f5f5f5',
+    padding: 8,
     borderRadius: 8,
-    marginBottom: 12,
-    marginHorizontal: 12,
-    overflow: 'hidden',
-    borderLeftWidth: 4,
-    borderLeftColor: '#5B8FF9',
-    elevation: 1,
+    marginHorizontal: 16,
+    marginVertical: 8,
+  },
+  tabButton: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 4,
+  },
+  activeTabButton: {
+    backgroundColor: '#fff',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.1,
     shadowRadius: 1,
+    elevation: 1,
   },
-  expandedGroupContent: {
-    padding: 12,
-    backgroundColor: '#f9f9f9',
+  tabText: {
+    fontSize: 14,
+    color: '#666',
+    marginLeft: 6,
+    fontWeight: '500',
+  },
+  activeTabText: {
+    color: '#007AFF',
+  },
+  actionsContainer: {
+    padding: 16,
     borderTopWidth: 1,
-    borderTopColor: '#e0e0e0',
+    borderTopColor: '#eee',
+  },
+  actionButton: {
+    backgroundColor: '#007AFF',
+    padding: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  actionButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  groupName: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginBottom: 8,
+  },
+  groupDescription: {
+    fontSize: 14,
+    color: '#666',
+    marginBottom: 12,
   },
   groupedConnectionHeader: {
     flexDirection: 'row',
@@ -1791,6 +1803,28 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#666',
   },
+  emptyNotesText: {
+    color: '#888',
+    textAlign: 'center',
+    paddingVertical: 16,
+    fontStyle: 'italic',
+  },
+  border: {
+    borderWidth: 1,
+    borderRadius: 5,
+    borderColor: '#555',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  manageTags: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    padding: 8,
+  },
+  manageTagsText: {
+    color: '#007AFF',
+    fontSize: 14,
+  }
 });
 
 export default VerseDetailScreen; 
