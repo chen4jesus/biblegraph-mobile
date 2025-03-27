@@ -69,7 +69,9 @@
     "selectTags": "Select Tags",
     "noTagsSelected": "No tags selected",
     "createTag": "Create Tag",
-    "addTag": "Add Tag"
+    "addTag": "Add Tag",
+    "noSearchResults": "No search results",
+    "noTags": "No tags"
 
   },
   "connections": {

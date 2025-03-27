@@ -156,7 +156,10 @@ const GraphViewScreen: React.FC = () => {
   // When a node is selected, navigate to verse detail
   const handleNodePress = useCallback((node: GraphNode) => {
     if (node.type === 'VERSE') {
-      navigation.navigate('VerseDetail', { verseId: node.id });
+      navigation.navigate('VerseDetail', { 
+        verseId: node.id,
+        activeTab: 'connections'
+      });
     } else if (node.type === 'GROUP') {
       // For group nodes, we could either:
       // 1. Show a list of all verses in the group

@@ -87,7 +87,9 @@
     "selectTags": "选择标签",
     "noTagsSelected": "未选择标签",
     "createTag": "创建标签",
-    "addTag": "添加标签"
+    "addTag": "添加标签",
+    "noSearchResults": "没有搜索结果",
+    "noTags": "没有标签"
   },
   "connections": {
     "title": "连接",
