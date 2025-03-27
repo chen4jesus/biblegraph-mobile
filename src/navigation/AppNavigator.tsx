@@ -54,6 +54,14 @@ const MainTabs = () => {
         },
         tabBarActiveTintColor: '#007AFF',
         tabBarInactiveTintColor: 'gray',
+        tabBarStyle: { 
+          height: 60,
+          paddingBottom: 0,
+          marginBottom: 8,
+        },
+        tabBarItemStyle: {
+          paddingTop: 4,
+        },
       })}
     >
       <Tab.Screen 

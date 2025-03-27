@@ -86,10 +86,18 @@ const ProfileScreen: React.FC = () => {
           style: 'destructive',
           onPress: async () => {
             try {
+              // Clear all user data and settings
               await authService.logout();
-              // Don't use navigation.replace here as it may cause issues
-              // The AppNavigator will automatically redirect to the Login screen 
-              // due to the auth state listener system we implemented
+              
+              // Clear any additional stored data
+              await AsyncStorage.removeItem('userSettings');
+              
+              // Force immediate navigation reset to Login screen
+              // This ensures we don't wait for the auth state listener
+              navigation.reset({
+                index: 0,
+                routes: [{ name: 'Login' }],
+              });
             } catch (error) {
               console.error('Error logging out:', error);
               Alert.alert('Error', 'Failed to logout. Please try again.');
