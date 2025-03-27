@@ -191,60 +191,71 @@ const NotesScreen: React.FC = () => {
     return text.length > 120; // Arbitrary threshold - adjust as needed
   };
 
-  // Function to detect URLs in text - improve the regex pattern
+  // Improved URL detection function with better handling of various formats
   const detectUrls = (text: string): RegExpMatchArray | null => {
-    // Enhanced regex to better detect URLs with various endings
-    const urlRegex = /(https?:\/\/[^\s]+)(?=[.,;:!?)\s]|$)/g;
+    // Enhanced regex that catches more URL patterns, including those after line breaks
+    const urlRegex = /(https?:\/\/[^\s]+)/gi;
     return text.match(urlRegex);
+  };
+
+  // Check if note content has URLs
+  const hasUrls = (text: string): boolean => {
+    const urls = detectUrls(text);
+    return urls !== null;
   };
 
   // Function to handle URL click
   const handleUrlClick = (url: string) => {
-    setWebViewUrl(url);
+    // Clean up the URL before opening - remove any trailing punctuation
+    const cleanUrl = url.replace(/[.,;:!?)"'\]]+$/, '');
+    setWebViewUrl(cleanUrl);
     setIsWebViewVisible(true);
   };
 
-  // Function to create clickable text with URLs - improve with icon
-  const renderTextWithClickableUrls = (text: string) => {
-    const urls = detectUrls(text);
-    if (!urls) return <Text style={styles.noteContent}>{text}</Text>;
-
-    // Split by URLs but preserve them in the result
-    const parts = text.split(/(https?:\/\/[^\s]+)(?=[.,;:!?)\s]|$)/g).filter(Boolean);
+  // Render note content with proper handling of URLs
+  const renderNoteContent = (note: NoteWithVerse) => {
+    const urls = detectUrls(note.content);
+    const hasUrls = urls !== null;
+    const truncateLength = 120;
+    const shouldTruncate = note.content.length > truncateLength;
+    
+    // Get displayed text (truncated or full)
+    const displayedText = shouldTruncate 
+      ? note.content.substring(0, truncateLength) + "..." 
+      : note.content;
     
     return (
-      <Text style={styles.noteContent}>
-        {parts.map((part, index) => {
-          // Check if this part is a URL (full or partial match)
-          const isUrl = urls.some(url => url.includes(part) || part.includes(url));
-          
-          if (isUrl) {
-            // Clean up the URL if it ends with punctuation
-            const cleanUrl = part.replace(/[.,;:!?)]$/, '');
-            
-            return (
-              <Text 
-                key={index}
-                style={styles.urlText}
-                onPress={() => handleUrlClick(cleanUrl)}
-              >
-                {part} 
-              </Text>
-            );
-          }
-          // Regular text
-          return <Text key={index}>{part}</Text>;
-        })}
-      </Text>
+      <>
+        <Text style={styles.noteContent}>
+          {displayedText}
+        </Text>
+        {(shouldTruncate || hasUrls) && (
+          <TouchableOpacity onPress={() => toggleNoteExpansion(note.id)}>
+            <Text style={styles.toggleButtonText}>
+              {t('notes:readMore')}
+              <Ionicons 
+                name='chevron-down'
+                size={16} 
+                color="#007AFF"
+                style={{ marginLeft: 4 }}
+              />
+            </Text>
+          </TouchableOpacity>
+        )}
+      </>
     );
   };
 
   const renderNoteItem = ({ item }: { item: NoteWithVerse }) => {
     const isExpanded = expandedNotes[item.id] || false;
-    const shouldShowToggle = isTextTruncated(item.content);
+    const shouldTruncate = isTextTruncated(item.content);
+    const containsUrls = hasUrls(item.content);
+    
+    // Always show toggle button if note contains URLs or is truncated
+    const showToggleButton = shouldTruncate || containsUrls;
     
     // Check if the note content is just a URL (or starts with one)
-    const isStandaloneUrl = item.content.trim().match(/^https?:\/\/[^\s,.!?)"']+/);
+    const isStandaloneUrl = item.content.trim().match(/^https?:\/\/[^\s]+/);
     
     return (
       <View style={styles.noteItem}>
@@ -263,7 +274,7 @@ const NotesScreen: React.FC = () => {
           </Text>
         </View>
         
-        {/* Special case for notes that are just URLs or start with URLs */}
+        {/* Special case for notes that are just URLs */}
         {isStandaloneUrl ? (
           <TouchableOpacity onPress={() => handleUrlClick(isStandaloneUrl[0])}>
             <Text style={[styles.noteContent, styles.urlText]} numberOfLines={isExpanded ? undefined : 3}>
@@ -273,44 +284,50 @@ const NotesScreen: React.FC = () => {
         ) : (
           <View>
             {isExpanded ? (
-              renderTextWithClickableUrls(item.content)
-            ) : (
-              // For collapsed notes, check for URLs and make the entire text clickable if found
-              (() => {
-                const urls = detectUrls(item.content);
-                if (urls && urls.length > 0) {
-                  return (
-                    <TouchableOpacity onPress={() => toggleNoteExpansion(item.id)}>
-                      <Text style={styles.noteContent} numberOfLines={3}>
-                        {item.content}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                } else {
-                  return (
-                    <Text style={styles.noteContent} numberOfLines={3}>
-                      {item.content}
-                    </Text>
-                  );
-                }
-              })()
-            )}
-            
-            {shouldShowToggle && (
-              <TouchableOpacity 
-                style={styles.toggleButton}
-                onPress={() => toggleNoteExpansion(item.id)}
-              >
-                <Text style={styles.toggleButtonText}>
-                  {isExpanded ? t('notes:showLess') : t('notes:readMore')}
+              <>
+                <Text style={styles.noteContent}>
+                  {item.content}
                 </Text>
-                <Ionicons 
-                  name={isExpanded ? 'chevron-up' : 'chevron-down'} 
-                  size={16} 
-                  color="#007AFF"
-                  style={{ marginLeft: 4 }}
-                />
-              </TouchableOpacity>
+                {containsUrls && renderUrlButtons(item.content)}
+                {showToggleButton && (
+                  <TouchableOpacity 
+                    style={styles.toggleButton}
+                    onPress={() => toggleNoteExpansion(item.id)}
+                  >
+                    <Text style={styles.toggleButtonText}>
+                      {t('notes:showLess')}
+                    </Text>
+                    <Ionicons 
+                      name='chevron-up'
+                      size={16} 
+                      color="#007AFF"
+                      style={{ marginLeft: 4 }}
+                    />
+                  </TouchableOpacity>
+                )}
+              </>
+            ) : (
+              <>
+                <Text style={styles.noteContent} numberOfLines={3}>
+                  {item.content}
+                </Text>
+                {showToggleButton && (
+                  <TouchableOpacity 
+                    style={styles.toggleButton}
+                    onPress={() => toggleNoteExpansion(item.id)}
+                  >
+                    <Text style={styles.toggleButtonText}>
+                      {t('notes:readMore')}
+                    </Text>
+                    <Ionicons 
+                      name='chevron-down'
+                      size={16} 
+                      color="#007AFF"
+                      style={{ marginLeft: 4 }}
+                    />
+                  </TouchableOpacity>
+                )}
+              </>
             )}
           </View>
         )}
@@ -318,12 +335,40 @@ const NotesScreen: React.FC = () => {
         {item.tags && item.tags.length > 0 && (
           <View style={styles.tagsContainer}>
             {item.tags.map((tag) => (
-              <View key={tag} style={styles.tag}>
-                <Text style={styles.tagText}>{tag}</Text>
+              <View key={tag} style={[styles.tag, {backgroundColor: getTagColor(tag)}]}>
+                <Text style={[styles.tagText, {color: '#fff'}]}>{tag}</Text>
               </View>
             ))}
           </View>
         )}
+      </View>
+    );
+  };
+
+  // Helper function to extract and render URL buttons
+  const renderUrlButtons = (content: string) => {
+    const urls = detectUrls(content);
+    if (!urls) return null;
+    
+    // Clean each URL and remove duplicates
+    const cleanUrls = Array.from(new Set(urls.map(url => 
+      url.replace(/[.,;:!?)"'\]]+$/, '')
+    )));
+    
+    return (
+      <View style={styles.urlButtonsContainer}>
+        {cleanUrls.map((url, index) => (
+          <TouchableOpacity 
+            key={index} 
+            style={styles.urlButton}
+            onPress={() => handleUrlClick(url)}
+          >
+            <Ionicons name="link-outline" size={16} color="#007AFF" />
+            <Text style={styles.urlButtonText} numberOfLines={1} ellipsizeMode="middle">
+              {url}
+            </Text>
+          </TouchableOpacity>
+        ))}
       </View>
     );
   };
@@ -493,6 +538,7 @@ const NotesScreen: React.FC = () => {
         visible={isWebViewVisible}
         url={webViewUrl}
         onClose={() => setIsWebViewVisible(false)}
+        id="notes-webview"
       />
     </SafeAreaView>
   );
@@ -672,6 +718,26 @@ const styles = StyleSheet.create({
   },
   urlIcon: {
     marginRight: 8,
+  },
+  urlButtonsContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginVertical: 8,
+  },
+  urlButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f0f8ff',
+    borderRadius: 16,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    marginBottom: 4,
+  },
+  urlButtonText: {
+    fontSize: 13,
+    color: '#007AFF',
+    marginLeft: 4,
   },
 });
 
