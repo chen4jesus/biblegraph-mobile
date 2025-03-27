@@ -4,7 +4,8 @@ import { storageService } from './storage';
 import { 
   ConnectionType, 
   VerseGroup, 
-  GroupConnection 
+  GroupConnection,
+  NodeType
 } from '../types/bible';
 
 class Neo4jService {
@@ -349,9 +350,46 @@ class Neo4jService {
     sourceIds: string[], 
     targetIds: string[], 
     type: ConnectionType, 
-    description: string = ''
+    description: string = '',
+    options: {
+      sourceType?: NodeType,
+      targetType?: NodeType,
+      relationshipType?: string,
+      metadata?: Record<string, any>,
+      name?: string
+    } = {}
   ): Promise<GroupConnection> {
-    return await neo4jDatabaseService.createGroupConnection(sourceIds, targetIds, type, description);
+    try {
+      // Set default options if not provided
+      const fullOptions = {
+        sourceType: options.sourceType || 'VERSE',
+        targetType: options.targetType || 'VERSE',
+        relationshipType: options.relationshipType,
+        metadata: options.metadata || {},
+        name: options.name
+      };
+      
+      // Ensure metadata only contains primitive values and arrays
+      if (fullOptions.metadata) {
+        // If needed, convert complex objects to strings
+        for (const key in fullOptions.metadata) {
+          if (typeof fullOptions.metadata[key] === 'object' && fullOptions.metadata[key] !== null && !Array.isArray(fullOptions.metadata[key])) {
+            fullOptions.metadata[key] = JSON.stringify(fullOptions.metadata[key]);
+          }
+        }
+      }
+      
+      return await neo4jDatabaseService.createGroupConnection(
+        sourceIds, 
+        targetIds, 
+        type, 
+        description,
+        fullOptions
+      );
+    } catch (error) {
+      console.error('Error creating group connection:', error);
+      throw error;
+    }
   }
 
   async getGroupConnectionsByVerseId(verseId: string): Promise<GroupConnection[]> {

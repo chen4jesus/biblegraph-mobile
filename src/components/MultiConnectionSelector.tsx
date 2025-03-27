@@ -127,23 +127,25 @@ const MultiConnectionSelector: React.FC<MultiConnectionSelectorProps> = ({
             CONNECTION_TYPES.find(t => t.value === connectionType)?.label || 'Connection'
           }`;
         
-        // First create a source group if needed (only if multiple source verses)
-        let sourceGroupId = targetVerseId;
-        
-        // Then create a target group
-        const targetGroup = await neo4jService.createVerseGroup(
-          effectiveGroupName, 
-          targetIds,
-          // Add description based on the verses being connected
-          `${targetIds.length} verses connected to ${targetVerse?.book} ${targetVerse?.chapter}:${targetVerse?.verse}`
-        );
-        
-        // Create the group connection
+        // Prepare metadata with primitive values that Neo4j can handle  
+        const metadata = {
+          createdBy: 'MultiConnectionSelector',
+          verseCount: targetIds.length,
+          sourceVerse: targetVerse ? `${targetVerse.book} ${targetVerse.chapter}:${targetVerse.verse}` : 'Unknown'
+        };
+          
+        // Create the group connection with source and target IDs and custom options
         const groupConnection = await neo4jService.createGroupConnection(
           sourceIds,
           targetIds,
           connectionType,
-          ''
+          `Group connection from verse to multiple targets`,
+          {
+            name: effectiveGroupName,
+            sourceType: 'VERSE',
+            targetType: 'VERSE',
+            metadata: metadata
+          }
         );
         
         Alert.alert(

@@ -14,7 +14,7 @@ import {
 } from 'react-native';
 import { useRoute, RouteProp, useNavigation } from '@react-navigation/native';
 import { RootStackParamList } from '../navigation/types';
-import { Verse, Note, Connection, ConnectionType, VerseGroup, GroupConnection } from '../types/bible';
+import { Verse, Note, Connection, ConnectionType, VerseGroup, GroupConnection, NodeType } from '../types/bible';
 import { neo4jService } from '../services/neo4j';
 import { Ionicons } from '@expo/vector-icons';
 import { useTranslation } from 'react-i18next';
@@ -41,13 +41,16 @@ const CONNECTION_COLORS = {
   INCOMING: '#FF9500'  // Orange for incoming connections
 };
 
-// Add this type near the top of the file after the existing types
+// Extended Connection interface that includes the connected verse and node
 interface ConnectionWithVerse extends Connection {
-  connectedVerse: Verse | null;
-  isGrouped?: boolean; // Flag for grouped connections
-  groupedConnections?: Connection[]; // Holds all connections in the group
-  connectedVerseCount?: number; // How many verses are in this group
-  isExpanded?: boolean; // Controls UI expansion state
+  connectedVerse?: Verse | null;
+  connectedNode?: any; // Could be Verse, Note, Tag, etc.
+  connectedNodeType?: NodeType;
+  isGrouped?: boolean;
+  groupedConnections?: Connection[];
+  connectedVerseCount?: number;
+  expanded?: boolean;
+  metadata?: Record<string, any>;
 }
 
 const VerseDetailScreen: React.FC = () => {
@@ -163,144 +166,117 @@ const VerseDetailScreen: React.FC = () => {
         const verseNotes = await neo4jService.getNotesForVerse(verseToDisplay.id);
         setNotes(verseNotes);
         
-        // Load connections for this verse
-        const verseConnections = await neo4jService.getConnectionsForVerse(verseToDisplay.id);
+        // First load regular connections for this verse
+        const regularConnections = await neo4jService.getConnectionsForVerse(verseToDisplay.id);
         
-        // Process and group connections
-        const uniqueConnectionsMap = new Map<string, Connection>();
-        const groupedConnectionsMap = new Map<string, Connection[]>();
+        // Filter out connections that are part of groups (have a groupConnectionId)
+        const singleConnections = regularConnections.filter(conn => !conn.groupConnectionId);
         
-        // Group connections by their common source and target pattern
-        // First, organize connections by source book/chapter and target book/chapter
-        const connectionsBySourceAndTarget = new Map<string, Connection[]>();
-        
-        verseConnections.forEach(connection => {
-          if (connection.groupConnectionId) {
-            // If this connection already has a groupConnectionId, use it
-            if (!groupedConnectionsMap.has(connection.groupConnectionId)) {
-              groupedConnectionsMap.set(connection.groupConnectionId, []);
-            }
-            groupedConnectionsMap.get(connection.groupConnectionId)!.push(connection);
-          } else {
-            // For connections without a groupConnectionId, try to detect patterns
-            // Like multiple connections from the same verse to sequential verses
-            const sourceId = connection.sourceVerseId;
-            const targetId = connection.targetVerseId;
-            
-            // Parse verse IDs to check for sequential verses
-            const sourceParts = sourceId.split('-');
-            const targetParts = targetId.split('-');
-            
-            if (sourceParts.length >= 3 && targetParts.length >= 3) {
-              const sourceBook = sourceParts[0];
-              const sourceChapter = sourceParts[1];
-              const targetBook = targetParts[0];
-              const targetChapter = targetParts[1];
-              
-              // Group by source book/chapter and target book/chapter
-              const groupKey = `${sourceBook}-${sourceChapter}-to-${targetBook}-${targetChapter}`;
-              
-              if (!connectionsBySourceAndTarget.has(groupKey)) {
-                connectionsBySourceAndTarget.set(groupKey, []);
-              }
-              connectionsBySourceAndTarget.get(groupKey)!.push(connection);
-            } else {
-              // Handle regular connections as before
-              const uniqueKey = `${connection.sourceVerseId}-${connection.targetVerseId}-${connection.type}`;
-              if (!uniqueConnectionsMap.has(uniqueKey) ||
-                  new Date(connection.updatedAt) > new Date(uniqueConnectionsMap.get(uniqueKey)!.updatedAt)) {
-                uniqueConnectionsMap.set(uniqueKey, connection);
-              }
-            }
-          }
-        });
-        
-        // Check each potential group to see if it should be grouped
-        connectionsBySourceAndTarget.forEach((connections, groupKey) => {
-          if (connections.length >= 3) {
-            // If we have 3+ connections with the same source/target pattern, group them
-            // Create a synthetic group ID
-            const groupId = `auto-group-${groupKey}-${Date.now()}`;
-            groupedConnectionsMap.set(groupId, connections);
-          } else {
-            // Otherwise, treat them as individual connections
-            connections.forEach(connection => {
-              const uniqueKey = `${connection.sourceVerseId}-${connection.targetVerseId}-${connection.type}`;
-              if (!uniqueConnectionsMap.has(uniqueKey) ||
-                  new Date(connection.updatedAt) > new Date(uniqueConnectionsMap.get(uniqueKey)!.updatedAt)) {
-                uniqueConnectionsMap.set(uniqueKey, connection);
-              }
-            });
-          }
-        });
-        
-        // Convert maps to arrays
-        const regularConnections = Array.from(uniqueConnectionsMap.values()) as ConnectionWithVerse[];
-        const groupedConnections = Array.from(groupedConnectionsMap.entries()).map(([groupId, connections]) => ({
-          id: groupId,
-          isGrouped: true,
-          groupedConnections: connections,
-          type: connections[0]?.type || ConnectionType.THEMATIC,
-          description: connections[0]?.description || '',
-          sourceVerseId: verseToDisplay.id, // Use current verse as reference
-          targetVerseId: '', // This will be filled when fetching connected verses
-          createdAt: connections[0]?.createdAt || new Date().toISOString(),
-          updatedAt: connections[0]?.updatedAt || new Date().toISOString(),
-        })) as ConnectionWithVerse[];
-        
-        // Combine regular and grouped connections
-        const allConnections = [...regularConnections, ...groupedConnections];
-        
-        // Continue with fetching verse content for connections...
+        // Process single connections
         const connectionsWithVerses = await Promise.all(
-          allConnections.map(async (connection) => {
-            if (connection.isGrouped) {
-              // Handle grouped connection (first one is enough for display)
-              const groupConns = (connection as any).groupedConnections || [];
-              const firstConn = groupConns[0];
-              if (firstConn) {
-                const connectedVerseId = firstConn.targetVerseId === verseToDisplay.id ? 
-                  firstConn.sourceVerseId : firstConn.targetVerseId;
-                
-                try {
-                  const connectedVerse = await neo4jService.getVerse(connectedVerseId);
-                  return {
-                    ...connection,
-                    connectedVerse,
-                    connectedVerseCount: groupConns.length
-                  };
-                } catch (error) {
-                  console.error(`Error fetching verse ${connectedVerseId}:`, error);
-                  return {
-                    ...connection,
-                    connectedVerse: null
-                  };
-                }
-              }
-              return connection;
-            } else {
-              // Handle regular connection as before
-              const isOutgoing = connection.sourceVerseId === verseToDisplay.id;
-              const connectedVerseId = isOutgoing ? connection.targetVerseId : connection.sourceVerseId;
-              
-              try {
-                const connectedVerse = await neo4jService.getVerse(connectedVerseId);
-                return {
-                  ...connection,
-                  connectedVerse
-                };
-              } catch (error) {
-                console.error(`Error fetching verse ${connectedVerseId}:`, error);
-                return {
-                  ...connection,
-                  connectedVerse: null
-                };
-              }
+          singleConnections.map(async (connection) => {
+            const isOutgoing = connection.sourceVerseId === verseToDisplay.id;
+            const connectedVerseId = isOutgoing ? connection.targetVerseId : connection.sourceVerseId;
+            
+            try {
+              const connectedVerse = await neo4jService.getVerse(connectedVerseId);
+              return {
+                ...connection,
+                connectedVerse
+              } as ConnectionWithVerse;
+            } catch (error) {
+              console.error(`Error fetching verse ${connectedVerseId}:`, error);
+              return {
+                ...connection,
+                connectedVerse: null
+              } as ConnectionWithVerse;
             }
           })
         );
         
-        setConnections(connectionsWithVerses);
+        // Then load group connections
+        const groupConnections = await neo4jService.getGroupConnectionsByVerseId(verseToDisplay.id);
+        
+        // Process group connections
+        const groupConnectionsWithVerses = await Promise.all(
+          groupConnections.map(async (group) => {
+            // For group connections, get information based on node types
+            let sampleConnectedNode: any = null;
+            const isSource = group.sourceIds?.includes(verseToDisplay.id);
+            const isTarget = group.targetIds?.includes(verseToDisplay.id);
+            
+            try {
+              // Determine which node to fetch based on whether the current verse is a source or target
+              if (isSource && group.targetIds?.length) {
+                // This is a connection where our verse is a source - fetch a target
+                if (group.targetType === 'VERSE') {
+                  sampleConnectedNode = await neo4jService.getVerse(group.targetIds[0]);
+                } else if (group.targetType === 'NOTE') {
+                  sampleConnectedNode = await neo4jService.getNote(group.targetIds[0]);
+                } else if (group.targetType === 'TAG') {
+                  // Handle tag fetching - we may need to implement this method
+                  // For now just create a placeholder object
+                  sampleConnectedNode = { id: group.targetIds[0], name: "Tag", color: "#cccccc" };
+                }
+              } 
+              else if (isTarget && group.sourceIds?.length) {
+                // This is a connection where our verse is a target - fetch a source
+                if (group.sourceType === 'VERSE') {
+                  sampleConnectedNode = await neo4jService.getVerse(group.sourceIds[0]);
+                } else if (group.sourceType === 'NOTE') {
+                  sampleConnectedNode = await neo4jService.getNote(group.sourceIds[0]);
+                } else if (group.sourceType === 'TAG') {
+                  // Handle tag fetching - we may need to implement this method
+                  // For now just create a placeholder object
+                  sampleConnectedNode = { id: group.sourceIds[0], name: "Tag", color: "#cccccc" };
+                }
+              }
+              
+              // Get all individual connections for this group - will be needed for expanding/collapsing
+              const groupedConnections = regularConnections.filter(conn => 
+                conn.groupConnectionId === group.id
+              );
+              
+              return {
+                id: group.id,
+                sourceVerseId: verseToDisplay.id, // Use current verse as reference point
+                targetVerseId: isSource ? (group.targetIds?.[0] || '') : (group.sourceIds?.[0] || ''), 
+                type: group.type,
+                description: group.description || '',
+                createdAt: group.createdAt,
+                updatedAt: group.updatedAt,
+                isGrouped: true,
+                groupedConnections: groupedConnections,
+                connectedVerse: group.sourceType === 'VERSE' || group.targetType === 'VERSE' 
+                  ? sampleConnectedNode 
+                  : null,
+                connectedNode: sampleConnectedNode,
+                connectedNodeType: isSource ? group.targetType : group.sourceType,
+                connectedVerseCount: (isSource ? group.targetIds?.length : group.sourceIds?.length) || 0,
+                metadata: group.metadata
+              } as ConnectionWithVerse;
+            } catch (error) {
+              console.error(`Error processing group connection ${group.id}:`, error);
+              return {
+                id: group.id,
+                sourceVerseId: verseToDisplay.id,
+                targetVerseId: '',
+                type: group.type,
+                description: group.description || '',
+                createdAt: group.createdAt,
+                updatedAt: group.updatedAt,
+                isGrouped: true,
+                groupedConnections: [],
+                connectedVerse: null,
+                connectedNodeType: isSource ? group.targetType : group.sourceType,
+                connectedVerseCount: 0
+              } as ConnectionWithVerse;
+            }
+          })
+        );
+        
+        // Combine single and group connections
+        setConnections([...connectionsWithVerses, ...groupConnectionsWithVerses]);
       }
       
       setIsLoading(false);
@@ -731,130 +707,121 @@ const VerseDetailScreen: React.FC = () => {
     );
   };
 
-  // Add a new function to render grouped connections
-  const renderGroupedConnection = (item: ConnectionWithVerse) => {
-    const [isExpanded, setIsExpanded] = useState(false);
-    const groupedConnections = item.groupedConnections || [];
-    const connectionColor = '#5B8FF9'; // Special color for grouped connections
+  // Function to render a grouped connection
+  const renderGroupedConnection = (connection: ConnectionWithVerse) => {
+    const sampleNode = connection.connectedNode;
+    const connectionCount = connection.connectedVerseCount || 0;
+    const nodeType = connection.connectedNodeType || 'VERSE';
     
-    // Get the common book/chapter for displaying a better group title
-    let groupTitle = t('verseDetail:groupedConnection');
+    // Get a display name for the connected node based on its type
+    let nodeDisplayName = '';
+    let nodeDetails = '';
     
-    if (groupedConnections.length > 0) {
-      // Extract target verse IDs
-      const verseIds = groupedConnections.map(conn => {
-        return conn.sourceVerseId === verse?.id ? conn.targetVerseId : conn.sourceVerseId;
-      });
-      
-      // Parse the first verse ID to extract book/chapter
-      const firstParts = verseIds[0].split('-');
-      if (firstParts.length >= 3) {
-        const book = firstParts[0];
-        const chapter = firstParts[1];
-        groupTitle = `${book} ${chapter}`;
+    if (sampleNode) {
+      if (nodeType === 'VERSE' && connection.connectedVerse) {
+        nodeDisplayName = `${connection.connectedVerse.book} ${connection.connectedVerse.chapter}:${connection.connectedVerse.verse}`;
+        nodeDetails = connection.connectedVerse.text;
+      } else if (nodeType === 'NOTE') {
+        nodeDisplayName = `Note ${sampleNode.id.substring(0, 8)}`;
+        nodeDetails = sampleNode.content.substring(0, 60) + (sampleNode.content.length > 60 ? '...' : '');
+      } else if (nodeType === 'TAG') {
+        nodeDisplayName = `Tag: ${sampleNode.name}`;
+        nodeDetails = '';
+      } else if (nodeType === 'TOPIC') {
+        nodeDisplayName = `Topic: ${sampleNode.name}`;
+        nodeDetails = sampleNode.description ? (sampleNode.description.substring(0, 60) + (sampleNode.description.length > 60 ? '...' : '')) : '';
       }
     }
     
-    const toggleExpand = () => {
-      setIsExpanded(!isExpanded);
+    // Color coding by node type
+    const nodeTypeColors = {
+      VERSE: '#5B8FF9', // Blue
+      NOTE: '#F6BD16',  // Yellow
+      TAG: '#5AD8A6',   // Green
+      TOPIC: '#FF6B3B', // Orange
+      GROUP: '#945FB9'  // Purple
     };
     
-    const deleteGroupedConnection = async () => {
-      try {
-        console.log('Deleting group connection with ID:', item.id);
-        
-        // Confirm deletion
-        Alert.alert(
-          t('common:confirm'),
-          t('verseDetail:confirmDeleteGroupConnection').replace('{count}', 
-            String(groupedConnections.length)),
-          [
-            { text: t('common:cancel'), style: 'cancel' },
-            {
-              text: t('common:delete'),
-              style: 'destructive',
-              onPress: async () => {
-                try {
-                  // Delete all connections in the group
-                  for (const conn of groupedConnections) {
-                    await neo4jService.deleteConnection(conn.id);
-                  }
-                  
-                  // Update local state
-                  setConnections(prevConnections => 
-                    prevConnections.filter(conn => conn.id !== item.id)
-                  );
-                  
-                  showNotification(t('verseDetail:groupConnectionDeleted'));
-                } catch (error) {
-                  console.error('Error deleting group connection:', error);
-                  showNotification(t('verseDetail:failedToDeleteConnection'));
-                }
-              }
-            }
-          ]
-        );
-      } catch (error) {
-        console.error('Error displaying delete confirmation:', error);
-      }
-    };
+    const borderColor = nodeTypeColors[nodeType] || '#5B8FF9';
     
     return (
-      <View style={styles.groupedConnectionContainer}>
-        <View style={styles.groupedConnectionHeader}>
-          <TouchableOpacity 
-            style={styles.groupedConnectionToggle}
-            onPress={toggleExpand}
-          >
+      <View key={connection.id} style={[styles.groupedConnectionItem, { borderLeftColor: borderColor }]}>
+        <TouchableOpacity 
+          style={styles.groupedConnectionHeader}
+          onPress={() => {
+            setConnections(prev => 
+              prev.map(conn => 
+                conn.id === connection.id 
+                  ? { ...conn, expanded: !conn.expanded } 
+                  : conn
+              )
+            );
+          }}
+        >
+          <View style={styles.groupHeaderLeft}>
             <Ionicons 
-              name={isExpanded ? "chevron-down" : "chevron-forward"} 
-              size={22} 
-              color={connectionColor} 
+              name={connection.expanded ? "chevron-down-outline" : "chevron-forward-outline"} 
+              size={18} 
+              color="#666" 
             />
-            <Text style={[styles.groupedConnectionTitle, {color: connectionColor}]}>
-              {groupTitle}
-              <Text style={styles.groupCount}> ({groupedConnections.length} verses)</Text>
+            <Text style={styles.connectionTypeText}>
+              {t(`connections:types.${connection.type}`)} 
+              <Text style={styles.groupCount}>({connectionCount} {nodeType.toLowerCase()}s)</Text>
             </Text>
-          </TouchableOpacity>
+          </View>
           
-          <TouchableOpacity
-            style={styles.deleteConnectionButton}
-            onPress={deleteGroupedConnection}
+          <TouchableOpacity 
+            onPress={(e) => {
+              e.stopPropagation(); // Prevent triggering the parent onPress
+              handleDeleteGroupConnection(connection);
+            }} 
+            style={styles.deleteButton}
           >
-            <Ionicons name="trash" size={26} color="#FF3B30" />
+            <Ionicons name="trash-outline" size={16} color="#ff6b6b" />
           </TouchableOpacity>
-        </View>
+        </TouchableOpacity>
         
-        {isExpanded && (
+        {connection.description ? (
+          <Text style={styles.connectionDescription}>{connection.description}</Text>
+        ) : null}
+        
+        {/* Display connected node info based on its type */}
+        {sampleNode && (
+          <View style={styles.connectedNodeInfo}>
+            <Text style={styles.nodeTypeBadge}>
+              {nodeType}
+            </Text>
+            <Text style={styles.verseReference}>
+              {nodeDisplayName}
+              <Text style={styles.sampleLabel}> ({t('verseDetail:sampleNode')})</Text>
+            </Text>
+            {nodeDetails ? (
+              <Text style={styles.verseText} numberOfLines={2} ellipsizeMode="tail">
+                {nodeDetails}
+              </Text>
+            ) : null}
+          </View>
+        )}
+        
+        {/* Expanded section with all group connections */}
+        {connection.expanded && connection.groupedConnections && connection.groupedConnections.length > 0 && (
           <View style={styles.expandedGroupContent}>
-            {groupedConnections.map((conn, index) => {
-              const isOutgoing = conn.sourceVerseId === verse?.id;
-              const connectedVerseId = isOutgoing ? conn.targetVerseId : conn.sourceVerseId;
-              
-              // Format the verse reference for better display
-              let formattedReference = connectedVerseId;
-              const parts = connectedVerseId.split('-');
-              if (parts.length >= 3) {
-                formattedReference = `${parts[0]} ${parts[1]}:${parts[2]}`;
-              }
+            <Text style={styles.expandedGroupTitle}>{t('verseDetail:allGroupedConnections')}:</Text>
+            {connection.groupedConnections.map(groupConn => {
+              // For each connection in group, determine the node to display
+              const isOutgoing = groupConn.sourceVerseId === verse?.id;
+              const connectedId = isOutgoing ? groupConn.targetVerseId : groupConn.sourceVerseId;
               
               return (
                 <TouchableOpacity
-                  key={`group-conn-${conn.id}`}
-                  style={styles.groupConnectionItem}
-                  onPress={() => navigateToConnectedVerse(connectedVerseId)}
+                  key={groupConn.id}
+                  style={styles.groupedVerseItem}
+                  onPress={() => handleNodePress(connectedId, nodeType)}
                 >
-                  <View style={styles.groupConnectionDetails}>
-                    <Ionicons 
-                      name={isOutgoing ? "arrow-forward" : "arrow-back"}
-                      size={16}
-                      color={connectionColor}
-                      style={{marginRight: 8}}
-                    />
-                    <Text style={styles.groupConnectionText}>
-                      {formattedReference}
-                    </Text>
-                  </View>
+                  <Text style={styles.groupedVerseReference}>
+                    {nodeType === 'VERSE' ? connectedId.replace(/-/g, ' ') : connectedId}
+                    {groupConn.description ? `: ${groupConn.description}` : ''}
+                  </Text>
                 </TouchableOpacity>
               );
             })}
@@ -862,6 +829,22 @@ const VerseDetailScreen: React.FC = () => {
         )}
       </View>
     );
+  };
+  
+  // Function to handle pressing on a node (verse, note, tag, etc.)
+  const handleNodePress = (nodeId: string, nodeType: NodeType) => {
+    if (nodeType === 'VERSE') {
+      navigation.navigate('VerseDetail', { verseId: nodeId });
+    } else if (nodeType === 'NOTE') {
+      // Navigate to note detail screen if you have one
+      Alert.alert('Note', `Navigate to note with ID: ${nodeId}`);
+    } else if (nodeType === 'TAG') {
+      // Navigate to tag detail or filtered results
+      Alert.alert('Tag', `Show verses with tag ID: ${nodeId}`);
+    } else if (nodeType === 'TOPIC') {
+      // Navigate to topic detail
+      Alert.alert('Topic', `Show topic with ID: ${nodeId}`);
+    }
   };
 
   const renderConnectionsTab = () => (
@@ -949,6 +932,45 @@ const VerseDetailScreen: React.FC = () => {
   // Add a function to show notifications
   const showNotification = (message: string) => {
     Alert.alert('', message);
+  };
+
+  // Function to handle deleting a group connection
+  const handleDeleteGroupConnection = async (connection: ConnectionWithVerse) => {
+    try {
+      Alert.alert(
+        t('common:confirm'),
+        t('verseDetail:confirmDeleteGroupConnection').replace('{count}', 
+          String(connection.connectedVerseCount || 0)),
+        [
+          { text: t('common:cancel'), style: 'cancel' },
+          {
+            text: t('common:delete'),
+            style: 'destructive',
+            onPress: async () => {
+              try {
+                // Delete all individual connections in the group
+                if (connection.groupedConnections && connection.groupedConnections.length > 0) {
+                  for (const conn of connection.groupedConnections) {
+                    await neo4jService.deleteConnection(conn.id);
+                  }
+                }
+                
+                // Update the connections state to remove this group
+                setConnections(prev => prev.filter(c => c.id !== connection.id));
+                
+                // Show success message
+                Alert.alert(t('common:success'), t('verseDetail:groupConnectionDeleted'));
+              } catch (error) {
+                console.error('Error deleting group connection:', error);
+                Alert.alert(t('common:error'), t('verseDetail:failedToDeleteConnection'));
+              }
+            }
+          }
+        ]
+      );
+    } catch (error) {
+      console.error('Error displaying delete confirmation:', error);
+    }
   };
 
   if (isLoading) {
@@ -1124,14 +1146,15 @@ const VerseDetailScreen: React.FC = () => {
         )}
       </ScrollView>
       
-      <View style={styles.actionsContainer}>
+      {/* TODO: Remove this once we have a way to manage groups */}
+      {false && <View style={styles.actionsContainer}>
         <TouchableOpacity
           style={styles.actionButton}
           onPress={toggleGroupSelector}
         >
           <Text style={styles.actionButtonText}>{t('verseDetail:manageGroups')}</Text>
         </TouchableOpacity>
-      </View>
+      </View>}
       
       {/* Add the verse group selector modal */}
       <Modal
@@ -1655,8 +1678,8 @@ const styles = StyleSheet.create({
     shadowRadius: 1,
   },
   expandedGroupContent: {
-    padding: 8,
-    backgroundColor: '#f8f8f8',
+    padding: 12,
+    backgroundColor: '#f9f9f9',
     borderTopWidth: 1,
     borderTopColor: '#e0e0e0',
   },
@@ -1665,6 +1688,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     padding: 12,
+    backgroundColor: 'rgba(255,255,255,0.5)',
   },
   groupedConnectionToggle: {
     flexDirection: 'row',
@@ -1694,6 +1718,78 @@ const styles = StyleSheet.create({
   groupConnectionText: {
     fontSize: 14,
     color: '#333',
+  },
+  groupedConnectionItem: {
+    backgroundColor: '#f0f8ff',
+    borderRadius: 8,
+    marginBottom: 12,
+    marginHorizontal: 12,
+    overflow: 'hidden',
+    borderLeftWidth: 4,
+    borderLeftColor: '#5B8FF9',
+    elevation: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 1,
+  },
+  groupHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  connectionTypeText: {
+    fontSize: 14,
+    color: '#666',
+    fontWeight: '500',
+  },
+  deleteButton: {
+    padding: 4,
+  },
+  connectionDescription: {
+    fontSize: 14,
+    color: '#666',
+    marginBottom: 8,
+  },
+  connectedNodeInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  nodeTypeBadge: {
+    backgroundColor: '#5B8FF9',
+    color: 'white',
+    paddingHorizontal: 4,
+    paddingVertical: 2,
+    borderRadius: 4,
+    marginRight: 8,
+  },
+  verseReference: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#333',
+  },
+  sampleLabel: {
+    fontSize: 12,
+    color: '#999',
+  },
+  verseText: {
+    fontSize: 14,
+    color: '#666',
+  },
+  expandedGroupTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginBottom: 8,
+  },
+  groupedVerseItem: {
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e0e0e0',
+  },
+  groupedVerseReference: {
+    fontSize: 14,
+    color: '#666',
   },
 });
 

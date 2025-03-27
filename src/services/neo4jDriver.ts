@@ -1,5 +1,5 @@
 import neo4j, { Driver, Session, Result } from 'neo4j-driver';
-import { Verse, Connection, Note, ConnectionType, VerseGroup, GroupConnection } from '../types/bible';
+import { Verse, Connection, Note, ConnectionType, VerseGroup, GroupConnection, NodeType } from '../types/bible';
 import { v4 as uuidv4 } from 'uuid';
 
 // Type for creating a new connection
@@ -1128,68 +1128,111 @@ class Neo4jDriver {
     }
   }
 
-  // Update createGroupConnection method
+  // Enhanced createGroupConnection method to support many-to-many relationships between any node types
   public async createGroupConnection(
-    connections: Connection[], 
+    sourceIds: string[], 
+    targetIds: string[], 
     type: ConnectionType, 
-    name?: string,
-    description: string = ''
+    description: string = '',
+    options: {
+      sourceType: NodeType,
+      targetType: NodeType,
+      relationshipType?: string,
+      metadata?: Record<string, any>,
+      name?: string
+    }
   ): Promise<GroupConnection> {
     const session = this.getSession();
-    const id = uuidv4();
+    const groupConnectionId = uuidv4();
     const now = new Date().toISOString();
+    
+    // Default name if not provided
+    const name = options.name || `${options.sourceType} to ${options.targetType} Group (${now.substring(0, 10)})`;
+    
+    // Default relationship type based on source and target types
+    const relationshipType = options.relationshipType || 'CONNECTS_TO';
     
     try {
       // Start transaction
       const txc = session.beginTransaction();
       try {
+        // Create connections for each source-target pair with the same groupConnectionId
+        const connectionIds: string[] = [];
+        
+        for (const sourceId of sourceIds) {
+          for (const targetId of targetIds) {
+            // Skip self-connections only if same node type and same ID
+            if (options.sourceType === options.targetType && sourceId === targetId) continue;
+            
+            const connectionId = uuidv4();
+            connectionIds.push(connectionId);
+            
+            // Create the individual connection with the group ID reference
+            // Using parameterized Cypher with dynamic node labels
+            await txc.run(`
+              MATCH (source:${options.sourceType} {id: $sourceId})
+              MATCH (target:${options.targetType} {id: $targetId})
+              CREATE (source)-[c:${relationshipType} {
+                id: $connectionId,
+                groupConnectionId: $groupConnectionId,
+                type: $type,
+                description: $description,
+                createdAt: $now,
+                updatedAt: $now
+              }]->(target)
+            `, {
+              sourceId,
+              targetId,
+              connectionId,
+              groupConnectionId,
+              type,
+              description,
+              now
+            });
+          }
+        }
+
+        // Convert metadata to a JSON string if it exists
+        const metadataString = options.metadata ? JSON.stringify(options.metadata) : null;
+
         // Create the group connection node
         const result = await txc.run(`
           CREATE (gc:GroupConnection {
-            id: $id,
+            id: $groupConnectionId,
             name: $name,
             connectionIds: $connectionIds,
             type: $type,
             description: $description,
+            sourceIds: $sourceIds,
+            targetIds: $targetIds,
+            sourceType: $sourceType,
+            targetType: $targetType,
+            metadata: $metadata,
             createdAt: $now,
             updatedAt: $now
           })
           RETURN gc
         `, { 
-          id, 
-          name: name || '', 
-          connectionIds: connections.map(c => c.id),
+          groupConnectionId, 
+          name, 
+          connectionIds,
           type, 
-          description, 
+          description,
+          sourceIds,
+          targetIds,
+          sourceType: options.sourceType,
+          targetType: options.targetType,
+          metadata: metadataString, // Pass the stringified metadata
           now 
         });
-        
-        // Update or create each individual connection with the group ID
-        for (const connection of connections) {
-          // Set the groupConnectionId on each connection
-          await txc.run(`
-            MATCH (source:Verse {id: $sourceId})
-            MATCH (target:Verse {id: $targetId})
-            MERGE (source)-[c:CONNECTS_TO {id: $connectionId}]->(target)
-            SET c.groupConnectionId = $groupConnectionId,
-                c.type = $type,
-                c.description = $description,
-                c.updatedAt = $now
-          `, {
-            sourceId: connection.sourceVerseId,
-            targetId: connection.targetVerseId,
-            connectionId: connection.id || uuidv4(),
-            groupConnectionId: id,
-            type,
-            description,
-            now
-          });
-        }
         
         await txc.commit();
         
         const gcNode = result.records[0].get('gc');
         const gcProps = gcNode.properties;
+        
+        // Parse the metadata back from string to object if it exists
+        const parsedMetadata = gcProps.metadata ? JSON.parse(gcProps.metadata) : {};
         
         return {
           id: gcProps.id,
@@ -1198,7 +1241,12 @@ class Neo4jDriver {
           type: gcProps.type,
           description: gcProps.description,
           createdAt: gcProps.createdAt,
-          updatedAt: gcProps.updatedAt
+          updatedAt: gcProps.updatedAt,
+          sourceIds: gcProps.sourceIds,
+          targetIds: gcProps.targetIds,
+          sourceType: gcProps.sourceType,
+          targetType: gcProps.targetType,
+          metadata: parsedMetadata // Return the parsed metadata
         };
       } catch (error) {
         await txc.rollback();
@@ -1245,11 +1293,11 @@ class Neo4jDriver {
     try {
       // First get all connections involving this verse
       const connectionResult = await session.run(`
-        MATCH (v:Verse {id: $verseId})-[c:CONNECTS_TO]->(otherV:Verse)
+        MATCH (v:Verse {id: $verseId})-[c:CONNECTS_TO]->(otherV)
         WHERE c.groupConnectionId IS NOT NULL
         RETURN DISTINCT c.groupConnectionId as gcId
         UNION
-        MATCH (otherV:Verse)-[c:CONNECTS_TO]->(v:Verse {id: $verseId})
+        MATCH (otherV)-[c:CONNECTS_TO]->(v:Verse {id: $verseId})
         WHERE c.groupConnectionId IS NOT NULL
         RETURN DISTINCT c.groupConnectionId as gcId
       `, { verseId });
@@ -1274,6 +1322,21 @@ class Neo4jDriver {
         // Get all connections for this group
         const connections = await this.getConnectionsByGroupId(gcProps.id);
         
+        // Parse metadata if it exists and is a string
+        let metadata = {};
+        if (gcProps.metadata) {
+          try {
+            if (typeof gcProps.metadata === 'string') {
+              metadata = JSON.parse(gcProps.metadata);
+            } else {
+              metadata = gcProps.metadata;
+            }
+          } catch (e) {
+            console.warn('Error parsing metadata for group connection:', e);
+            metadata = gcProps.metadata; // Use as-is if parsing fails
+          }
+        }
+        
         return {
           id: gcProps.id,
           name: gcProps.name || '',
@@ -1281,7 +1344,12 @@ class Neo4jDriver {
           type: gcProps.type,
           description: gcProps.description || '',
           createdAt: gcProps.createdAt,
-          updatedAt: gcProps.updatedAt
+          updatedAt: gcProps.updatedAt,
+          sourceIds: gcProps.sourceIds || [],
+          targetIds: gcProps.targetIds || [],
+          sourceType: gcProps.sourceType || 'VERSE',
+          targetType: gcProps.targetType || 'VERSE',
+          metadata: metadata
         };
       }));
     } finally {

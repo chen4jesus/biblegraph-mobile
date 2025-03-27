@@ -1,5 +1,5 @@
 import { neo4jDriverService } from './neo4jDriver';
-import { Verse, Connection, Note, ConnectionType, User, VerseGroup, GroupConnection } from '../types/bible';
+import { Verse, Connection, Note, ConnectionType, User, VerseGroup, GroupConnection, NodeType } from '../types/bible';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // Token storage key
@@ -247,9 +247,32 @@ class Neo4jDatabaseService {
     sourceIds: string[], 
     targetIds: string[], 
     type: ConnectionType, 
-    description: string = ''
+    description: string = '',
+    options: {
+      sourceType?: NodeType,
+      targetType?: NodeType,
+      relationshipType?: string,
+      metadata?: Record<string, any>,
+      name?: string
+    } = {}
   ): Promise<GroupConnection> {
-    return neo4jDriverService.createGroupConnection(sourceIds, targetIds, type, description);
+    await this.ensureInitialized();
+    // Ensure all required properties are set
+    const fullOptions = {
+      sourceType: options.sourceType || 'VERSE' as NodeType,
+      targetType: options.targetType || 'VERSE' as NodeType,
+      relationshipType: options.relationshipType,
+      metadata: options.metadata || {},
+      name: options.name
+    };
+    
+    return neo4jDriverService.createGroupConnection(
+      sourceIds, 
+      targetIds, 
+      type, 
+      description, 
+      fullOptions
+    );
   }
 
   public async getGroupConnectionsByVerseId(verseId: string): Promise<GroupConnection[]> {

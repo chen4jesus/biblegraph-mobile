@@ -38,6 +38,8 @@ export interface Connection {
   updatedAt: string;
 }
 
+export type NodeType = 'VERSE' | 'GROUP' | 'NOTE' | 'TAG' | 'TOPIC';
+
 export interface GroupConnection {
   id: string;
   name?: string;
@@ -46,8 +48,17 @@ export interface GroupConnection {
   description?: string;
   createdAt: string;
   updatedAt: string;
-  sourceType?: NodeType;
-  targetType?: NodeType;
+  
+  // Arrays of related node IDs by type
+  sourceIds: string[];
+  targetIds: string[];
+  
+  // Source and target node types (allows connecting between different node types)
+  sourceType: NodeType;
+  targetType: NodeType;
+  
+  // Optional metadata for rich connections
+  metadata?: Record<string, any>;
 }
 
 export interface Note {
@@ -91,8 +102,6 @@ export interface VerseTag {
   createdAt: string;
   updatedAt: string;
 }
-
-export type NodeType = 'VERSE' | 'GROUP' | 'NOTE' | 'TAG';
 
 export interface GraphNode {
   id: string;
