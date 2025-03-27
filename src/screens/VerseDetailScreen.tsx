@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -12,6 +12,8 @@ import {
   FlatList,
   Modal,
   ActivityIndicator,
+  Animated,
+  Platform,
 } from 'react-native';
 import { useRoute, RouteProp, useNavigation } from '@react-navigation/native';
 import { RootStackParamList } from '../navigation/types';
@@ -84,6 +86,11 @@ const VerseDetailScreen: React.FC = () => {
   const [expandedNotes, setExpandedNotes] = useState<Record<string, boolean>>({});
   const [webViewUrl, setWebViewUrl] = useState<string>('');
   const [isWebViewVisible, setIsWebViewVisible] = useState<boolean>(false);
+  // Add state for tracking recently updated notes
+  const [recentlyUpdatedNote, setRecentlyUpdatedNote] = useState<string | null>(null);
+  
+  // Animation value for the highlight effect
+  const highlightAnimation = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     loadVerseDetails();
@@ -989,13 +996,15 @@ const VerseDetailScreen: React.FC = () => {
     setNoteModalVisible(true);
   };
 
+  // Update the handleSaveNoteFromModal function to trigger animation
   const handleSaveNoteFromModal = async (content: string, tags: string[], noteId?: string, isNew?: boolean) => {
     try {
-      setNoteModalVisible(false);
+      // Check if this is a new note by checking for temp- prefix in the ID
+      const isNewNote = !noteId || noteId.startsWith('temp-') || isNew === true;
       
-      if (noteId) {
+      if (!isNewNote) {
         // Editing existing note
-        const updatedNote = await neo4jService.updateNote(noteId, {
+        await neo4jService.updateNote(noteId, {
           content,
           tags,
         });
@@ -1006,6 +1015,9 @@ const VerseDetailScreen: React.FC = () => {
             note.id === noteId ? { ...note, content, tags } : note
           )
         );
+        
+        // Set it as recently updated for animation
+        setRecentlyUpdatedNote(noteId);
         
         // Try to update the note in the NotesScreen if it's in the navigation stack
         const notesScreen = getNotesScreenRef();
@@ -1019,12 +1031,19 @@ const VerseDetailScreen: React.FC = () => {
         // Add to local notes state
         setNotes(prevNotes => [newNote, ...prevNotes]);
         
+        // Set it as recently updated for animation
+        setRecentlyUpdatedNote(newNote.id);
+        
         // Try to update the NotesScreen if it's in the navigation stack
         const notesScreen = getNotesScreenRef();
         if (notesScreen) {
           notesScreen.updateSingleNote(newNote.id, true);
         }
       }
+      
+      // Close the modal after saving is complete
+      setNoteModalVisible(false);
+      setCurrentNote(null);
     } catch (error) {
       console.error('Error saving note:', error);
       Alert.alert(t('common:error'), t('verseDetail:errorSavingNote'));
@@ -1085,11 +1104,17 @@ const VerseDetailScreen: React.FC = () => {
     return text.length > 120; // Arbitrary threshold - adjust as needed
   };
 
-  // Function to detect URLs in text
+  // Improved URL detection function with better handling of various formats
   const detectUrls = (text: string): RegExpMatchArray | null => {
-    // Updated regex to better handle URL boundaries and avoid catching trailing punctuation
-    const urlRegex = /(https?:\/\/[^\s,.!?)"']+)/g;
+    // Enhanced regex that catches more URL patterns, including those after line breaks
+    const urlRegex = /(https?:\/\/[^\s]+)/gi;
     return text.match(urlRegex);
+  };
+
+  // Check if note content has URLs
+  const hasUrls = (text: string): boolean => {
+    const urls = detectUrls(text);
+    return urls !== null;
   };
 
   // Function to handle URL click
@@ -1101,13 +1126,13 @@ const VerseDetailScreen: React.FC = () => {
   // Function to create clickable text with URLs
   const renderTextWithClickableUrls = (text: string) => {
     const urls = detectUrls(text);
-    if (!urls) return <Text style={styles.noteContent}>{text}</Text>;
+    if (!urls) return text;
 
     // Split by URLs but preserve them in the result
-    const parts = text.split(/(https?:\/\/[^\s,.!?)"']+)/g);
+    const parts = text.split(/(https?:\/\/[^\s]+)/g);
     
     return (
-      <Text style={styles.noteContent}>
+      <>
         {parts.map((part, index) => {
           // Check if this part is a URL
           if (urls.includes(part)) {
@@ -1124,40 +1149,101 @@ const VerseDetailScreen: React.FC = () => {
           // Regular text
           return <Text key={index}>{part}</Text>;
         })}
-      </Text>
+      </>
     );
   };
 
+  // Update the renderNoteItem to match NotesScreen style and animations
   const renderNoteItem = (note: Note) => {
     const isExpanded = expandedNotes[note.id] || false;
-    const shouldShowToggle = isTextTruncated(note.content);
+    const shouldTruncate = isTextTruncated(note.content);
+    const containsUrls = hasUrls(note.content);
+    
+    // Check if this item should be animated
+    const isRecentlyUpdated = recentlyUpdatedNote === note.id;
+    
+    // Interpolate animation value for background color
+    const backgroundColor = isRecentlyUpdated
+      ? highlightAnimation.interpolate({
+          inputRange: [0, 1],
+          outputRange: ['#ffffff', '#e6f7ff'] // white to light blue
+        })
+      : '#ffffff';
+    
+    // Always show toggle button if note contains URLs or is truncated
+    const showToggleButton = shouldTruncate || containsUrls;
+    
+    // Check if the note content is just a URL (or starts with one)
+    const isStandaloneUrl = note.content.trim().match(/^https?:\/\/[^\s]+/);
     
     return (
-      <View key={note.id} style={styles.noteItem}>
+      <Animated.View 
+        key={`note-${note.id || note.content.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0)}`}
+        style={[
+          styles.noteItem,
+          { backgroundColor },
+          // On web, we need to use style directly since Animated.View interpolation doesn't work well
+          Platform.OS === 'web' && isRecentlyUpdated ? 
+            { backgroundColor: recentlyUpdatedNote ? '#e6f7ff' : '#ffffff' } : null
+        ]}
+      >
         <View>
-          {isExpanded ? (
-            renderTextWithClickableUrls(note.content)
-          ) : (
-            <Text style={styles.noteContent} numberOfLines={3}>
-              {note.content}
-            </Text>
-          )}
-          
-          {shouldShowToggle && (
-            <TouchableOpacity 
-              style={styles.toggleButton}
-              onPress={() => toggleNoteExpansion(note.id)}
-            >
-              <Text style={styles.toggleButtonText}>
-                {isExpanded ? t('notes:showLess') : t('notes:readMore')}
+          {/* Special case for notes that are just URLs */}
+          {isStandaloneUrl ? (
+            <TouchableOpacity onPress={() => handleUrlClick(isStandaloneUrl[0])}>
+              <Text style={[styles.noteContent, styles.urlText]} numberOfLines={isExpanded ? undefined : 3}>
+                {note.content}
               </Text>
-              <Ionicons 
-                name={isExpanded ? 'chevron-up' : 'chevron-down'} 
-                size={16} 
-                color="#007AFF"
-                style={{ marginLeft: 4 }}
-              />
             </TouchableOpacity>
+          ) : (
+            <View>
+              {isExpanded ? (
+                <>
+                  <Text style={styles.noteContent}>
+                    {renderTextWithClickableUrls(note.content)}
+                  </Text>
+                  {containsUrls && renderUrlButtons(note.content)}
+                  {showToggleButton && (
+                    <TouchableOpacity 
+                      style={styles.toggleButton}
+                      onPress={() => toggleNoteExpansion(note.id)}
+                    >
+                      <Text style={styles.toggleButtonText}>
+                        {t('notes:showLess')}
+                      </Text>
+                      <Ionicons 
+                        name='chevron-up'
+                        size={16} 
+                        color="#007AFF"
+                        style={{ marginLeft: 4 }}
+                      />
+                    </TouchableOpacity>
+                  )}
+                </>
+              ) : (
+                <>
+                  <Text style={styles.noteContent} numberOfLines={3}>
+                    {note.content}
+                  </Text>
+                  {showToggleButton && (
+                    <TouchableOpacity 
+                      style={styles.toggleButton}
+                      onPress={() => toggleNoteExpansion(note.id)}
+                    >
+                      <Text style={styles.toggleButtonText}>
+                        {t('notes:readMore')}
+                      </Text>
+                      <Ionicons 
+                        name='chevron-down'
+                        size={16} 
+                        color="#007AFF"
+                        style={{ marginLeft: 4 }}
+                      />
+                    </TouchableOpacity>
+                  )}
+                </>
+              )}
+            </View>
           )}
         </View>
         
@@ -1192,28 +1278,64 @@ const VerseDetailScreen: React.FC = () => {
             </TouchableOpacity>
           </View>
         </View>
+      </Animated.View>
+    );
+  };
+
+  // Helper function to extract and render URL buttons (copied from NotesScreen)
+  const renderUrlButtons = (content: string) => {
+    const urls = detectUrls(content);
+    if (!urls) return null;
+    
+    // Clean each URL and remove duplicates
+    const cleanUrls = Array.from(new Set(urls.map(url => 
+      url.replace(/[.,;:!?)"'\]]+$/, '')
+    )));
+    
+    return (
+      <View style={styles.urlButtonsContainer}>
+        {cleanUrls.map((url, index) => (
+          <TouchableOpacity 
+            key={index} 
+            style={styles.urlButton}
+            onPress={() => handleUrlClick(url)}
+          >
+            <Ionicons name="link-outline" size={16} color="#007AFF" />
+            <Text style={styles.urlButtonText} numberOfLines={1} ellipsizeMode="middle">
+              {url}
+            </Text>
+          </TouchableOpacity>
+        ))}
       </View>
     );
   };
 
-  const renderNotesSection = () => (
-    <View style={styles.section}>
-      <View style={styles.sectionHeader}>
-        <Text style={styles.sectionTitle}>{t('verseDetail:notes')}</Text>
-        <TouchableOpacity 
-          style={styles.addNoteButton}
-          onPress={handleAddNoteViaModal}
-        >
-          <Ionicons name="add-circle" size={24} color="#007AFF" />
-        </TouchableOpacity>
-      </View>
-      {notes.length > 0 ? (
-        notes.map(renderNoteItem)
-      ) : (
-        <Text style={styles.emptyNotesText}>{t('verseDetail:noNotesYet')}</Text>
-      )}
-    </View>
-  );
+  // Run animation when a note is updated
+  useEffect(() => {
+    if (recentlyUpdatedNote) {
+      // Reset animation value
+      highlightAnimation.setValue(0);
+      
+      // Run animation sequence
+      Animated.sequence([
+        // Quick fade in of highlight
+        Animated.timing(highlightAnimation, {
+          toValue: 1,
+          duration: 300,
+          useNativeDriver: Platform.OS !== 'web', // Native driver doesn't work well with backgroundColor on web
+        }),
+        // Slower fade out
+        Animated.timing(highlightAnimation, {
+          toValue: 0,
+          duration: 1500,
+          useNativeDriver: Platform.OS !== 'web',
+        }),
+      ]).start(() => {
+        // Clear the updated note reference after animation completes
+        setRecentlyUpdatedNote(null);
+      });
+    }
+  }, [recentlyUpdatedNote, highlightAnimation]);
 
   if (isLoading) {
     return (
@@ -1233,7 +1355,8 @@ const VerseDetailScreen: React.FC = () => {
 
   return (
     <SafeAreaView style={styles.container}>
-      <ScrollView style={styles.content}>
+      {/* Fixed Header Section */}
+      <View style={styles.fixedHeaderContainer}>
         <View style={styles.verseContainer}>
           <Text style={styles.reference}>
             {verse.book} {verse.chapter}:{verse.verse}
@@ -1284,8 +1407,36 @@ const VerseDetailScreen: React.FC = () => {
           </TouchableOpacity>
         </View>
 
+        {/* Notes section header - fixed in place */}
+        {activeTab === 'notes' && (
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>{t('verseDetail:notes')}</Text>
+            <TouchableOpacity 
+              style={styles.addNoteButton}
+              onPress={handleAddNoteViaModal}
+            >
+              <Ionicons name="add-circle" size={24} color="#007AFF" />
+            </TouchableOpacity>
+          </View>
+        )}
+      </View>
+
+      {/* Scrollable Content Section */}
+      <ScrollView style={styles.scrollableContent}>
         {/* Notes Tab Content */}
-        {activeTab === 'notes' && renderNotesSection()}
+        {activeTab === 'notes' && (
+          <View style={styles.section}>
+            {notes.length > 0 ? (
+              notes.map((note, index) => (
+                <React.Fragment key={`note-${note.id || index}`}>
+                  {renderNoteItem(note)}
+                </React.Fragment>
+              ))
+            ) : (
+              <Text style={styles.emptyNotesText}>{t('verseDetail:noNotesYet')}</Text>
+            )}
+          </View>
+        )}
 
         {/* Connections Tab Content */}
         {activeTab === 'connections' && (
@@ -1359,6 +1510,20 @@ const styles = StyleSheet.create({
   content: {
     flex: 1,
   },
+  fixedHeaderContainer: {
+    backgroundColor: '#fff',
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
+    zIndex: 10,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+  },
+  scrollableContent: {
+    flex: 1,
+  },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
@@ -1389,16 +1554,20 @@ const styles = StyleSheet.create({
     color: '#666',
     marginTop: 4,
   },
-  section: {
-    padding: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#eee',
-  },
   sectionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: 0,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: '#f9f9f9',
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
+  },
+  section: {
+    padding: 16,
+    paddingTop: 8,
   },
   sectionTitle: {
     fontSize: 18,
@@ -1417,86 +1586,80 @@ const styles = StyleSheet.create({
     marginRight: 8,
   },
   noteItem: {
-    backgroundColor: '#f8f8f8',
-    padding: 12,
-    borderRadius: 8,
-    marginBottom: 8,
+    backgroundColor: '#ffffff',
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+    borderWidth: 1,
+    borderColor: '#e8e8e8',
   },
   noteContent: {
-    fontSize: 14,
+    fontSize: 15,
     color: '#333',
-    lineHeight: 20,
-    marginBottom: 4,
+    lineHeight: 22,
+    marginBottom: 8,
+    fontWeight: '400',
   },
   toggleButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 4,
+    paddingVertical: 6,
     marginBottom: 8,
   },
   toggleButtonText: {
-    fontSize: 13,
+    fontSize: 14,
     color: '#007AFF',
     fontWeight: '500',
   },
   noteDate: {
     fontSize: 12,
-    color: '#666',
+    color: '#888',
   },
   noteFooter: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginTop: 8,
+    marginTop: 12,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#f0f0f0',
   },
   noteActions: {
     flexDirection: 'row',
   },
   noteActionButton: {
-    padding: 4,
-    marginLeft: 8,
-  },
-  editNoteContainer: {
-    width: '100%',
-  },
-  editNoteInput: {
-    borderWidth: 1,
-    borderColor: '#007AFF',
-    borderRadius: 6,
     padding: 8,
-    fontSize: 14,
-    minHeight: 60,
-    marginBottom: 8,
+    marginLeft: 12,
+    backgroundColor: '#f9f9f9',
+    borderRadius: 20,
   },
-  noteActionButtons: {
+  noteTagsContainer: {
     flexDirection: 'row',
-    justifyContent: 'flex-end',
+    flexWrap: 'wrap',
     marginTop: 8,
+    marginBottom: 10,
   },
-  noteSaveButton: {
-    padding: 6,
-    marginRight: 8,
-    backgroundColor: '#E1F0FF',
-    borderRadius: 4,
+  noteTag: {
+    borderRadius: 16,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    marginRight: 6,
+    marginBottom: 6,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 1,
+    elevation: 1,
   },
-  noteCancelButton: {
-    padding: 6,
-    backgroundColor: '#FFEEEE',
-    borderRadius: 4,
-  },
-  addNoteContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 8,
-  },
-  noteInput: {
-    flex: 1,
-    borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 8,
-    padding: 8,
-    fontSize: 14,
-    minHeight: 200,
+  noteTagText: {
+    color: 'white',
+    fontSize: 12,
+    fontWeight: '500',
   },
   addNoteButton: {
     marginLeft: 8,
@@ -1550,22 +1713,6 @@ const styles = StyleSheet.create({
   },
   tagRemoveButton: {
     padding: 2,
-  },
-  noteTagsContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    marginTop: 8,
-  },
-  noteTag: {
-    borderRadius: 12,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    marginRight: 4,
-    marginBottom: 4,
-  },
-  noteTagText: {
-    color: 'white',
-    fontSize: 12,
   },
   suggestedTagsContainer: {
     marginVertical: 8,
@@ -1942,6 +2089,7 @@ const styles = StyleSheet.create({
   urlText: {
     color: '#007AFF',
     textDecorationLine: 'underline',
+    fontWeight: '500',
   },
   manageTagsButton: {
     flexDirection: 'row',
@@ -2009,6 +2157,27 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#999',
     textAlign: 'center',
+  },
+  urlButtonsContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginVertical: 8,
+  },
+  urlButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f0f8ff',
+    borderRadius: 16,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    marginBottom: 4,
+  },
+  urlButtonText: {
+    fontSize: 13,
+    color: '#007AFF',
+    marginLeft: 4,
+    maxWidth: 200,
   },
 });
 

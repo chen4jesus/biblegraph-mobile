@@ -12,6 +12,7 @@ import {
   Modal,
   TouchableWithoutFeedback,
   SafeAreaView,
+  Pressable
 } from 'react-native';
 import Svg, { Line, Circle, Text as SvgText, Path } from 'react-native-svg';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
@@ -652,21 +653,17 @@ const BibleGraph: React.FC<BibleGraphProps> = ({
       visible={modalVisible}
       onRequestClose={() => setModalVisible(false)}
     >
-      <TouchableWithoutFeedback onPress={() => setModalVisible(false)}>
-        <View style={styles.modalOverlay}>
-          <TouchableWithoutFeedback onPress={e => e.stopPropagation()}>
-            <View style={styles.modalContent}>
-              <View style={styles.modalHeader}>
-                <Text style={styles.modalTitle}>{modalContent.title}</Text>
-                <TouchableOpacity onPress={() => setModalVisible(false)}>
-                  <Ionicons name="close" size={24} color="#555" />
-                </TouchableOpacity>
-              </View>
-              <Text style={styles.modalText}>{modalContent.content}</Text>
-            </View>
-          </TouchableWithoutFeedback>
-        </View>
-      </TouchableWithoutFeedback>
+      <Pressable onPress={() => setModalVisible(false)} style={styles.modalOverlay}>
+        <Pressable onPress={e => e.stopPropagation()} style={styles.modalContent}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>{modalContent.title}</Text>
+            <TouchableOpacity onPress={() => setModalVisible(false)}>
+              <Text style={styles.modalClose}>✕</Text>
+            </TouchableOpacity>
+          </View>
+          <Text style={styles.modalText}>{modalContent.content}</Text>
+        </Pressable>
+      </Pressable>
     </Modal>
   );
 

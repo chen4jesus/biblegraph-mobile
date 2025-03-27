@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { StyleSheet, View, Dimensions, Platform, TouchableWithoutFeedback, PanResponder, GestureResponderEvent } from 'react-native';
+import { StyleSheet, View, Dimensions, Platform, Pressable, PanResponder, GestureResponderEvent } from 'react-native';
 import Svg, { SvgProps } from 'react-native-svg';
 import { Circle, Line, G, Text } from 'react-native-svg';
 import { GraphNode, GraphEdge } from '../types/bible';

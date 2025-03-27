@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -6,10 +6,11 @@ import {
   Modal,
   StyleSheet,
   TouchableOpacity,
-  TouchableWithoutFeedback,
+  Keyboard,
+  Pressable,
+  Platform,
   ScrollView,
   Alert,
-  Keyboard,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTranslation } from 'react-i18next';
@@ -35,16 +36,20 @@ const NoteEditorModal: React.FC<NoteEditorModalProps> = ({
   const [tags, setTags] = useState<string[]>([]);
   const [tagInput, setTagInput] = useState('');
   const [showTagOptions, setShowTagOptions] = useState(false);
+  const inputRef = useRef<TextInput>(null);
 
   // Initialize state when modal becomes visible or note changes
   useEffect(() => {
     if (visible && note) {
       setContent(note.content || '');
       setTags(note.tags || []);
+      // Focus input after a short delay to ensure it's visible
+      setTimeout(() => inputRef.current?.focus(), 100);
     } else if (visible && !note) {
       // For new notes
       setContent('');
       setTags([]);
+      setTimeout(() => inputRef.current?.focus(), 100);
     }
   }, [visible, note]);
 
@@ -154,63 +159,57 @@ const NoteEditorModal: React.FC<NoteEditorModalProps> = ({
       animationType="slide"
       onRequestClose={handleCancel}
     >
-      <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContainer}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>
-                {note ? t('verseDetail:editNote') : t('verseDetail:addNote')}
-              </Text>
-              <TouchableOpacity onPress={handleCancel} style={styles.closeButton}>
-                <Ionicons name="close" size={24} color="#888" />
-              </TouchableOpacity>
-            </View>
-            
-            <ScrollView style={styles.modalContent}>
+      <View style={styles.modalBackdrop}>
+        <View style={styles.modalContainer}>
+          {/* Header */}
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>
+              {note ? t('verseDetail:editNote') : t('verseDetail:addNote')}
+            </Text>
+            <TouchableOpacity 
+              onPress={handleCancel} 
+              style={styles.closeButton}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            >
+              <Ionicons name="close" size={24} color="#666" />
+            </TouchableOpacity>
+          </View>
+          
+          {/* Content */}
+          <ScrollView 
+            style={styles.modalContent}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+          >
+            <View style={styles.noteSection}>
               <Text style={styles.sectionTitle}>{t('verseDetail:myNote')}</Text>
               <TextInput
+                ref={inputRef}
                 style={styles.noteInput}
                 value={content}
                 onChangeText={setContent}
                 multiline
                 placeholder={t('verseDetail:enterNoteHere')}
-                autoFocus
+                placeholderTextColor="#aaa"
+                textAlignVertical="top"
               />
+            </View>
+            
+            <View style={styles.tagsSection}>
+              <View style={styles.tagsHeader}>
+                <Text style={styles.sectionTitle}>{t('verseDetail:tags')}</Text>
+                <TouchableOpacity 
+                  style={styles.manageTagsButton}
+                  onPress={() => {/* Navigate to tags management screen */}}
+                >
+                  <Text style={styles.manageTagsText}>{t('verseDetail:manageTags')}</Text>
+                </TouchableOpacity>
+              </View>
               
-              <View style={styles.tagsSection}>
-                <View style={styles.tagsHeader}>
-                  <Text style={styles.sectionTitle}>{t('verseDetail:tags')}</Text>
-                  <TouchableOpacity 
-                    style={styles.manageTagsButton}
-                    onPress={() => {/* Navigate to tags management screen */}}
-                  >
-                    <Text style={styles.manageTagsText}>{t('verseDetail:manageTags')}</Text>
-                    <Ionicons name="pencil" size={16} color="#007AFF" />
-                  </TouchableOpacity>
-                </View>
-                
-                {/* Existing tags */}
-                {tags.length > 0 && (
-                  <View style={styles.tagsList}>
-                    {tags.map(tag => (
-                      <View 
-                        key={tag} 
-                        style={[styles.tagItem, { backgroundColor: getTagColor(tag) }]}
-                      >
-                        <Text style={styles.tagText}>{tag}</Text>
-                        <TouchableOpacity
-                          style={styles.tagRemoveButton}
-                          onPress={() => handleRemoveTag(tag)}
-                        >
-                          <Ionicons name="close-circle" size={16} color="#fff" />
-                        </TouchableOpacity>
-                      </View>
-                    ))}
-                  </View>
-                )}
-                
-                {/* Add tag input */}
-                <View style={styles.addTagContainer}>
+              {/* Add tag input */}
+              <View style={styles.addTagContainer}>
+                <View style={styles.tagInputWrapper}>
+                  <Ionicons name="pricetag-outline" size={18} color="#999" style={styles.tagIcon} />
                   <TextInput
                     style={styles.tagInput}
                     value={tagInput}
@@ -219,231 +218,301 @@ const NoteEditorModal: React.FC<NoteEditorModalProps> = ({
                       setShowTagOptions(text.length > 0);
                     }}
                     placeholder={t('verseDetail:addTag')}
+                    placeholderTextColor="#aaa"
                     returnKeyType="done"
                     onSubmitEditing={handleAddTag}
                   />
-                  {tagInput.trim() ? (
-                    <View style={styles.tagActions}>
-                      <TouchableOpacity onPress={handleAddTag} style={styles.tagActionButton}>
-                        <Ionicons name="checkmark" size={24} color="#4CAF50" />
-                      </TouchableOpacity>
-                      <TouchableOpacity 
-                        onPress={() => setTagInput('')} 
-                        style={styles.tagActionButton}
-                      >
-                        <Ionicons name="close" size={24} color="#F44336" />
-                      </TouchableOpacity>
-                    </View>
-                  ) : (
+                  {tagInput.trim() && (
                     <TouchableOpacity 
-                      style={styles.addButton}
-                      onPress={() => setShowTagOptions(true)}
+                      onPress={() => setTagInput('')} 
+                      style={styles.clearTagButton}
                     >
-                      <Ionicons name="add" size={24} color="#007AFF" />
+                      <Ionicons name="close-circle" size={16} color="#999" />
                     </TouchableOpacity>
                   )}
                 </View>
                 
-                {/* Tag suggestions */}
-                {showTagOptions && filteredTags.length > 0 && (
-                  <View style={styles.tagSuggestions}>
-                    {filteredTags.slice(0, 5).map(tag => (
-                      <TouchableOpacity
-                        key={tag}
-                        style={styles.tagSuggestion}
-                        onPress={() => handleSelectExistingTag(tag)}
-                      >
-                        <Text style={styles.tagSuggestionText}>{tag}</Text>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
+                {tagInput.trim() && (
+                  <TouchableOpacity 
+                    style={styles.addTagButton}
+                    onPress={handleAddTag}
+                  >
+                    <Ionicons name="add-circle" size={28} color="#007AFF" />
+                  </TouchableOpacity>
                 )}
               </View>
-            </ScrollView>
-            
-            <View style={styles.modalFooter}>
-              <TouchableOpacity 
-                style={styles.cancelButton}
-                onPress={handleCancel}
-              >
-                <Text style={styles.cancelButtonText}>{t('common:cancel')}</Text>
-              </TouchableOpacity>
-              <TouchableOpacity 
-                style={styles.saveButton}
-                onPress={handleSave}
-              >
-                <Text style={styles.saveButtonText}>{t('common:save')}</Text>
-              </TouchableOpacity>
+              
+              {/* Existing tags */}
+              {tags.length > 0 && (
+                <View style={styles.tagsList}>
+                  {tags.map(tag => (
+                    <View 
+                      key={tag} 
+                      style={[styles.tagItem, { backgroundColor: getTagColor(tag) }]}
+                    >
+                      <Text style={styles.tagText}>{tag}</Text>
+                      <TouchableOpacity
+                        style={styles.tagRemoveButton}
+                        onPress={() => handleRemoveTag(tag)}
+                      >
+                        <Ionicons name="close-circle" size={16} color="rgba(255,255,255,0.9)" />
+                      </TouchableOpacity>
+                    </View>
+                  ))}
+                </View>
+              )}
+              
+              {/* Tag suggestions */}
+              {showTagOptions && filteredTags.length > 0 && (
+                <View style={styles.tagSuggestions}>
+                  <Text style={styles.suggestionsTitle}>
+                    {t('verseDetail:suggestedTags', 'Suggested Tags')}
+                  </Text>
+                  {filteredTags.slice(0, 5).map(tag => (
+                    <TouchableOpacity
+                      key={tag}
+                      style={styles.tagSuggestion}
+                      onPress={() => handleSelectExistingTag(tag)}
+                    >
+                      <Ionicons name="pricetag-outline" size={16} color="#666" style={styles.suggestionIcon} />
+                      <Text style={styles.tagSuggestionText}>{tag}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
             </View>
+          </ScrollView>
+          
+          {/* Footer with buttons */}
+          <View style={styles.modalFooter}>
+            <TouchableOpacity 
+              style={styles.cancelButton}
+              onPress={handleCancel}
+            >
+              <Text style={styles.cancelButtonText}>{t('common:cancel')}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={[styles.saveButton, !content.trim() && styles.saveButtonDisabled]}
+              onPress={handleSave}
+              disabled={!content.trim()}
+            >
+              <Text style={styles.saveButtonText}>{t('common:save')}</Text>
+            </TouchableOpacity>
           </View>
         </View>
-      </TouchableWithoutFeedback>
+      </View>
     </Modal>
   );
 };
 
 const styles = StyleSheet.create({
-  modalOverlay: {
+  modalBackdrop: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
     justifyContent: 'center',
     alignItems: 'center',
   },
   modalContainer: {
-    width: '90%',
-    maxHeight: '80%',
+    width: '92%',
+    maxHeight: '85%',
     backgroundColor: '#fff',
-    borderRadius: 12,
+    borderRadius: 16,
     overflow: 'hidden',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.3,
-    shadowRadius: 4,
-    elevation: 5,
+    shadowRadius: 8,
+    elevation: 8,
   },
   modalHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 16,
+    paddingVertical: 14,
+    paddingHorizontal: 20,
     borderBottomWidth: 1,
     borderBottomColor: '#eee',
+    backgroundColor: '#f8f8f8',
   },
   modalTitle: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: '#007AFF',
+    color: '#333',
   },
   closeButton: {
-    padding: 4,
+    padding: 5,
+    borderRadius: 15,
   },
   modalContent: {
-    padding: 16,
-    maxHeight: '70%',
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    maxHeight: '72%',
+  },
+  noteSection: {
+    marginBottom: 24,
   },
   sectionTitle: {
     fontSize: 16,
     fontWeight: '600',
-    marginBottom: 8,
-    color: '#333',
+    marginBottom: 10,
+    color: '#444',
   },
   noteInput: {
     borderWidth: 1,
     borderColor: '#ddd',
-    borderRadius: 8,
-    padding: 12,
-    minHeight: 120,
+    borderRadius: 12,
+    padding: 16,
+    minHeight: 140,
     fontSize: 16,
-    textAlignVertical: 'top',
-    marginBottom: 16,
+    lineHeight: 22,
+    color: '#333',
+    backgroundColor: '#f9f9f9',
   },
   tagsSection: {
-    marginTop: 8,
+    marginBottom: 20,
   },
   tagsHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 8,
+    marginBottom: 12,
   },
   manageTagsButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 4,
+    paddingVertical: 5,
+    paddingHorizontal: 10,
   },
   manageTagsText: {
     fontSize: 14,
     color: '#007AFF',
-    marginRight: 4,
+    fontWeight: '500',
+  },
+  addTagContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 15,
+  },
+  tagInputWrapper: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    backgroundColor: '#f9f9f9',
+    height: 44,
+  },
+  tagIcon: {
+    marginRight: 8,
+  },
+  tagInput: {
+    flex: 1,
+    fontSize: 15,
+    color: '#333',
+    paddingVertical: 8,
+  },
+  clearTagButton: {
+    padding: 4,
+  },
+  addTagButton: {
+    padding: 6,
+    marginLeft: 10,
   },
   tagsList: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    marginBottom: 12,
+    marginBottom: 15,
   },
   tagItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    borderRadius: 16,
+    borderRadius: 20,
     paddingHorizontal: 12,
     paddingVertical: 6,
     margin: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 1,
+    elevation: 1,
   },
   tagText: {
     color: 'white',
     marginRight: 6,
     fontSize: 14,
+    fontWeight: '500',
   },
   tagRemoveButton: {
     padding: 2,
   },
-  addTagContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 8,
-  },
-  tagInput: {
-    flex: 1,
-    borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 8,
-    padding: 10,
+  suggestionsTitle: {
     fontSize: 14,
-    height: 40,
-  },
-  tagActions: {
-    flexDirection: 'row',
-  },
-  tagActionButton: {
-    padding: 8,
-  },
-  addButton: {
-    padding: 8,
-    marginLeft: 8,
+    color: '#666',
+    marginBottom: 6,
+    marginLeft: 2,
   },
   tagSuggestions: {
-    marginTop: 8,
-    borderWidth: 1,
-    borderColor: '#eee',
-    borderRadius: 8,
+    marginTop: 5,
+    marginBottom: 15,
+    borderRadius: 10,
+    backgroundColor: '#f5f5f5',
+    padding: 10,
   },
   tagSuggestion: {
+    flexDirection: 'row',
+    alignItems: 'center',
     padding: 10,
     borderBottomWidth: 1,
     borderBottomColor: '#eee',
   },
+  suggestionIcon: {
+    marginRight: 8,
+  },
   tagSuggestionText: {
-    fontSize: 14,
+    fontSize: 15,
     color: '#333',
   },
   modalFooter: {
     flexDirection: 'row',
     justifyContent: 'flex-end',
     padding: 16,
+    paddingHorizontal: 20,
     borderTopWidth: 1,
     borderTopColor: '#eee',
+    backgroundColor: '#f8f8f8',
   },
   cancelButton: {
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    marginRight: 8,
-    borderRadius: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    marginRight: 12,
+    borderRadius: 10,
     backgroundColor: '#f0f0f0',
+    borderWidth: 1,
+    borderColor: '#ddd',
   },
   cancelButtonText: {
     fontSize: 16,
-    color: '#666',
+    color: '#555',
+    fontWeight: '500',
   },
   saveButton: {
-    paddingVertical: 8,
-    paddingHorizontal: 16,
+    paddingVertical: 10,
+    paddingHorizontal: 24,
     backgroundColor: '#007AFF',
-    borderRadius: 8,
+    borderRadius: 10,
+  },
+  saveButtonDisabled: {
+    backgroundColor: '#97c2f7',
   },
   saveButtonText: {
     fontSize: 16,
     color: '#fff',
     fontWeight: '600',
+  },
+  urlText: {
+    color: '#007AFF',
+    textDecorationLine: 'underline',
+    fontWeight: '500',
   },
 });
 
