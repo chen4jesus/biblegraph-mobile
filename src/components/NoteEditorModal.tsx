@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -13,11 +13,10 @@ import {
   Alert,
   Dimensions,
   KeyboardAvoidingView,
-  BackHandler,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTranslation } from 'react-i18next';
-import { Note, Tag } from '../types/bible';
+import { Note } from '../types/bible';
 import TagSelector from './TagSelector';
 import { useNavigation, useIsFocused } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -48,28 +47,6 @@ const NoteEditorModal: React.FC<NoteEditorModalProps> = ({
   const [tags, setTags] = useState<string[]>([]);
   const inputRef = useRef<TextInput>(null);
   const [keyboardVisible, setKeyboardVisible] = useState(false);
-  const [allTags, setAllTags] = useState<Tag[]>([]);
-  const [isLoadingTags, setIsLoadingTags] = useState(false);
-  
-  // Add a state to track if any inner modal is open
-  const [isTagSelectorModalOpen, setIsTagSelectorModalOpen] = useState(false);
-
-  // Register back handler
-  useEffect(() => {
-    const backHandler = BackHandler.addEventListener('hardwareBackPress', () => {
-      if (visible) {
-        if (isTagSelectorModalOpen) {
-          // Let TagSelector handle its own back press
-          return false;
-        }
-        handleCancel();
-        return true;
-      }
-      return false;
-    });
-
-    return () => backHandler.remove();
-  }, [visible, isTagSelectorModalOpen]);
 
   // Keyboard listeners to adjust layout
   useEffect(() => {
@@ -90,54 +67,20 @@ const NoteEditorModal: React.FC<NoteEditorModalProps> = ({
 
   // Initialize state when modal becomes visible or note changes
   useEffect(() => {
-    if (visible) {
-      loadTags();
-      
-      if (note) {
-        setContent(note.content || '');
-        setTags(note.tags || []);
-        // Focus input after a short delay to ensure it's visible
-        setTimeout(() => inputRef.current?.focus(), 100);
-      } else {
-        // For new notes
-        setContent('');
-        setTags([]);
-        setTimeout(() => inputRef.current?.focus(), 100);
-      }
+    if (visible && note) {
+      setContent(note.content || '');
+      setTags(note.tags || []);
+      // Focus input after a short delay to ensure it's visible
+      setTimeout(() => inputRef.current?.focus(), 100);
+    } else if (visible && !note) {
+      // For new notes
+      setContent('');
+      setTags([]);
+      setTimeout(() => inputRef.current?.focus(), 100);
     }
   }, [visible, note]);
 
-  // Load all tags from the database
-  const loadTags = async () => {
-    try {
-      setIsLoadingTags(true);
-      const fetchedTags = await neo4jService.getTags();
-      setAllTags(fetchedTags);
-    } catch (error) {
-      console.error('Error loading tags:', error);
-    } finally {
-      setIsLoadingTags(false);
-    }
-  };
-
-  // Monitor tag selector modal state
-  const handleTagSelectorModalOpen = useCallback(() => {
-    setIsTagSelectorModalOpen(true);
-  }, []);
-
-  const handleTagSelectorModalClose = useCallback(() => {
-    setIsTagSelectorModalOpen(false);
-  }, []);
-
-  const handleTagsChange = useCallback((newTags: string[]) => {
-    // Update tags state
-    setTags(newTags);
-    
-    // Reload all tags to ensure new tags are properly reflected
-    loadTags();
-  }, []);
-
-  const handleSave = useCallback(() => {
+  const handleSave = () => {
     if (!content.trim()) {
       Alert.alert(t('common:error'), t('verseDetail:noteContentRequired'));
       return;
@@ -145,14 +88,9 @@ const NoteEditorModal: React.FC<NoteEditorModalProps> = ({
     
     // Pass the noteId and isNew flag to the onSave handler
     onSave(content, tags, note?.id, !note);
-  }, [content, tags, note, onSave, t]);
+  };
 
-  const handleCancel = useCallback(() => {
-    // Don't allow closing if tag selector modal is open
-    if (isTagSelectorModalOpen) {
-      return;
-    }
-    
+  const handleCancel = () => {
     // Confirm if there are unsaved changes
     if (note && (content !== note.content || JSON.stringify(tags) !== JSON.stringify(note.tags))) {
       Alert.alert(
@@ -189,7 +127,7 @@ const NoteEditorModal: React.FC<NoteEditorModalProps> = ({
     } else {
       onClose();
     }
-  }, [isTagSelectorModalOpen, note, content, tags, t, onClose]);
+  };
 
   return (
     <Modal
@@ -213,13 +151,8 @@ const NoteEditorModal: React.FC<NoteEditorModalProps> = ({
                 onPress={handleCancel} 
                 style={styles.closeButton}
                 hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                disabled={isTagSelectorModalOpen}
               >
-                <Ionicons 
-                  name="close" 
-                  size={24} 
-                  color={isTagSelectorModalOpen ? "#ccc" : "#666"} 
-                />
+                <Ionicons name="close" size={24} color="#666" />
               </TouchableOpacity>
             </View>
             
@@ -243,20 +176,11 @@ const NoteEditorModal: React.FC<NoteEditorModalProps> = ({
                 <Text style={styles.sectionTitle}>{t('verseDetail:tags')}</Text>
                 
                 {/* Tag Selector */}
-                {isLoadingTags ? (
-                  <View style={styles.loadingContainer}>
-                    <Text style={styles.loadingText}>{t('common:loading')}</Text>
-                  </View>
-                ) : (
-                  <TagSelector 
-                    selectedTags={tags}
-                    onTagsChange={handleTagsChange}
-                    label=""
-                    tagList={allTags}
-                    onModalOpen={handleTagSelectorModalOpen}
-                    onModalClose={handleTagSelectorModalClose}
-                  />
-                )}
+                <TagSelector 
+                  selectedTags={tags}
+                  onTagsChange={setTags}
+                  label=""
+                />
               </View>
             </View>
             
@@ -265,22 +189,18 @@ const NoteEditorModal: React.FC<NoteEditorModalProps> = ({
               <TouchableOpacity 
                 style={styles.cancelButton}
                 onPress={handleCancel}
-                disabled={isTagSelectorModalOpen}
               >
-                <Text style={[
-                  styles.cancelButtonText,
-                  isTagSelectorModalOpen && styles.disabledText
-                ]}>
+                <Text style={styles.cancelButtonText}>
                   {t('common:cancel')}
                 </Text>
               </TouchableOpacity>
               <TouchableOpacity 
                 style={[
                   styles.saveButton, 
-                  (!content.trim() || isTagSelectorModalOpen) && styles.disabledButton
+                  !content.trim() && styles.disabledButton
                 ]}
                 onPress={handleSave}
-                disabled={!content.trim() || isTagSelectorModalOpen}
+                disabled={!content.trim()}
               >
                 <Text style={styles.saveButtonText}>{t('common:save')}</Text>
               </TouchableOpacity>
@@ -326,7 +246,6 @@ const styles = StyleSheet.create({
     padding: 20,
     borderBottomWidth: 1,
     borderBottomColor: '#eee',
-    zIndex: 10,
   },
   modalTitle: {
     fontSize: 20,
@@ -373,7 +292,6 @@ const styles = StyleSheet.create({
     paddingBottom: Platform.OS === 'ios' ? 30 : 20,
     borderTopWidth: 1,
     borderTopColor: '#eee',
-    zIndex: 10,
   },
   cancelButton: {
     paddingVertical: 12,
@@ -396,22 +314,10 @@ const styles = StyleSheet.create({
   disabledButton: {
     backgroundColor: '#ccc',
   },
-  disabledText: {
-    color: '#ccc',
-  },
   saveButtonText: {
     color: '#fff',
     fontSize: 16,
     fontWeight: '600',
-  },
-  loadingContainer: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 16,
-  },
-  loadingText: {
-    color: '#666',
-    fontSize: 14,
   },
 });
 

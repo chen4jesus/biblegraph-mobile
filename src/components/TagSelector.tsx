@@ -21,16 +21,22 @@ interface TagSelectorProps {
   onTagsChange: (tags: string[]) => void;
   label?: string;
   disabled?: boolean;
+  tagList?: Tag[]; // Optional prop for pre-loaded tags
+  onModalOpen?: () => void; // Callback when modal is opened
+  onModalClose?: () => void; // Callback when modal is closed
 }
 
 const TagSelector: React.FC<TagSelectorProps> = ({ 
   selectedTags, 
   onTagsChange,
   label = 'Tags',
-  disabled = false
+  disabled = false,
+  tagList,
+  onModalOpen,
+  onModalClose
 }) => {
   const { t } = useTranslation(['tags', 'common']);
-  const [tags, setTags] = useState<Tag[]>([]);
+  const [tags, setTags] = useState<Tag[]>(tagList || []);
   const [loading, setLoading] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -38,17 +44,32 @@ const TagSelector: React.FC<TagSelectorProps> = ({
   const screenHeight = Dimensions.get('window').height;
   const screenWidth = Dimensions.get('window').width;
 
+  // Update tags if tagList prop changes
   useEffect(() => {
-    if (modalVisible) {
+    if (tagList) {
+      // Ensure tags are unique by ID
+      const uniqueTags = Array.from(
+        new Map(tagList.map(tag => [tag.id, tag])).values()
+      );
+      setTags(uniqueTags);
+    }
+  }, [tagList]);
+
+  useEffect(() => {
+    if (modalVisible && !tagList) {
       loadTags();
     }
-  }, [modalVisible]);
+  }, [modalVisible, tagList]);
 
   const loadTags = async () => {
     try {
       setLoading(true);
       const fetchedTags = await neo4jService.getTags();
-      setTags(fetchedTags);
+      // Ensure fetched tags are unique by ID
+      const uniqueTags = Array.from(
+        new Map(fetchedTags.map(tag => [tag.id, tag])).values()
+      );
+      setTags(uniqueTags);
     } catch (error) {
       console.error('Error loading tags:', error);
     } finally {
@@ -91,11 +112,20 @@ const TagSelector: React.FC<TagSelectorProps> = ({
       // Create tag
       const createdTag = await neo4jService.createTag(newTagName.trim(), randomColor);
       
-      // Add to state
-      setTags([...tags, createdTag]);
+      // Add to state - ensure no duplicates
+      const tagExists = tags.some(t => t.id === createdTag.id);
+      if (!tagExists) {
+        setTags(prevTags => {
+          // Using functional update to ensure we have the latest state
+          const updatedTags = [...prevTags, createdTag];
+          return Array.from(new Map(updatedTags.map(tag => [tag.id, tag])).values());
+        });
+      }
       
-      // Add to selected tags
-      onTagsChange([...selectedTags, createdTag.name]);
+      // Add to selected tags if not already selected
+      if (!selectedTags.includes(createdTag.name)) {
+        onTagsChange([...selectedTags, createdTag.name]);
+      }
       
       // Reset input
       setNewTagName('');
@@ -106,9 +136,32 @@ const TagSelector: React.FC<TagSelectorProps> = ({
     }
   };
 
-  const filteredTags = searchQuery.trim()
-    ? tags.filter(tag => tag.name.toLowerCase().includes(searchQuery.toLowerCase()))
-    : tags;
+  // Update modal visibility and notify parent component
+  const openModal = () => {
+    setModalVisible(true);
+    onModalOpen?.();
+  };
+
+  // Safely close the modal
+  const handleCloseModal = () => {
+    // First reset the search and new tag state
+    setSearchQuery('');
+    setNewTagName('');
+    // Then close the modal
+    setModalVisible(false);
+    // Notify parent component
+    onModalClose?.();
+  };
+
+  // Ensure filtered tags have unique IDs
+  const filteredTags = React.useMemo(() => {
+    const filtered = searchQuery.trim()
+      ? tags.filter(tag => tag.name.toLowerCase().includes(searchQuery.toLowerCase()))
+      : tags;
+    
+    // Ensure all tags have unique IDs
+    return Array.from(new Map(filtered.map(tag => [tag.id, tag])).values());
+  }, [searchQuery, tags]);
 
   return (
     <View style={styles.container}>
@@ -116,11 +169,14 @@ const TagSelector: React.FC<TagSelectorProps> = ({
       
       <View style={styles.tagsContainer}>
         {selectedTags.length > 0 ? (
-          selectedTags.map(tagName => {
+          // Make sure we use unique keys by combining tag name with index as fallback
+          selectedTags.map((tagName, index) => {
             const tagColor = getTagColor(tagName);
+            // Create a composite key to ensure uniqueness
+            const key = `tag-${tagName}-${index}`;
             return (
               <View 
-                key={tagName} 
+                key={key} 
                 style={[
                   styles.tagChip, 
                   { backgroundColor: tagColor }
@@ -147,7 +203,7 @@ const TagSelector: React.FC<TagSelectorProps> = ({
           styles.selectButton,
           disabled && styles.disabledSelectButton
         ]}
-        onPress={() => setModalVisible(true)}
+        onPress={openModal}
         disabled={disabled}
       >
         <Text style={[
@@ -156,105 +212,107 @@ const TagSelector: React.FC<TagSelectorProps> = ({
         ]}>{t('tags:selectTags')}</Text>
       </TouchableOpacity>
       
-      <Modal
-        animationType="slide"
-        transparent={true}
-        visible={modalVisible}
-        onRequestClose={() => setModalVisible(false)}
-        statusBarTranslucent={true}
-        presentationStyle="overFullScreen"
-      >
-        <View style={[styles.modalContainer, { zIndex: 9999 }]}>
-          <View style={[styles.modalContent, { height: Platform.OS === 'ios' ? screenHeight * 0.8 : screenHeight * 0.7 }]}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>{t('tags:selectTags')}</Text>
-              <TouchableOpacity 
-                onPress={() => setModalVisible(false)}
-                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-              >
-                <Ionicons name="close" size={24} color="#000000" />
-              </TouchableOpacity>
-            </View>
-            
-            <View style={styles.searchContainer}>
-              <Ionicons name="search" size={18} color="#888888" style={styles.searchIcon} />
-              <TextInput
-                style={styles.searchInput}
-                placeholder={t('tags:searchPlaceholder')}
-                value={searchQuery}
-                onChangeText={setSearchQuery}
-              />
-              {searchQuery.length > 0 && (
+      {/* Use a separate component for the modal to avoid z-index issues */}
+      {modalVisible && (
+        <Modal
+          animationType="slide"
+          transparent={true}
+          visible={true}
+          onRequestClose={handleCloseModal}
+          statusBarTranslucent={true}
+        >
+          <View style={styles.modalContainer}>
+            <View style={[styles.modalContent, { height: Platform.OS === 'ios' ? screenHeight * 0.8 : screenHeight * 0.7 }]}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>{t('tags:selectTags')}</Text>
                 <TouchableOpacity 
-                  onPress={() => setSearchQuery('')}
-                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  onPress={handleCloseModal}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                 >
-                  <Ionicons name="close-circle" size={18} color="#888888" />
+                  <Ionicons name="close" size={24} color="#000000" />
                 </TouchableOpacity>
-              )}
-            </View>
-            
-            <View style={styles.createTagContainer}>
-              <TextInput
-                style={styles.createTagInput}
-                placeholder={t('tags:newTagPlaceholder')}
-                value={newTagName}
-                onChangeText={setNewTagName}
-              />
-              <TouchableOpacity 
-                style={[
-                  styles.createTagButton, 
-                  !newTagName.trim() && styles.disabledButton
-                ]}
-                onPress={addNewTag}
-                disabled={!newTagName.trim() || loading}
-              >
-                {loading ? (
-                  <ActivityIndicator size="small" color="#FFFFFF" />
-                ) : (
-                  <Text style={styles.createTagButtonText}>{t('tags:createTag')}</Text>
-                )}
-              </TouchableOpacity>
-            </View>
-            
-            {loading ? (
-              <ActivityIndicator style={styles.loader} size="large" color="#3B82F6" />
-            ) : (
-              <FlatList
-                data={filteredTags}
-                keyExtractor={(item) => item.id}
-                renderItem={({ item }) => (
-                  <TouchableOpacity
-                    style={[
-                      styles.tagListItem,
-                      selectedTags.includes(item.name) && styles.tagListItemSelected
-                    ]}
-                    onPress={() => toggleTag(item)}
+              </View>
+              
+              <View style={styles.searchContainer}>
+                <Ionicons name="search" size={18} color="#888888" style={styles.searchIcon} />
+                <TextInput
+                  style={styles.searchInput}
+                  placeholder={t('tags:searchPlaceholder')}
+                  value={searchQuery}
+                  onChangeText={setSearchQuery}
+                />
+                {searchQuery.length > 0 && (
+                  <TouchableOpacity 
+                    onPress={() => setSearchQuery('')}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                   >
-                    <View 
-                      style={[
-                        styles.tagColorIndicator, 
-                        { backgroundColor: item.color }
-                      ]} 
-                    />
-                    <Text style={styles.tagListItemText}>{item.name}</Text>
-                    {selectedTags.includes(item.name) && (
-                      <Ionicons name="checkmark-circle" size={20} color="#3B82F6" />
-                    )}
+                    <Ionicons name="close-circle" size={18} color="#888888" />
                   </TouchableOpacity>
                 )}
-                ListEmptyComponent={
-                  <Text style={styles.emptyListText}>
-                    {searchQuery ? t('tags:noTagsFound') : t('tags:noTagsYet')}
-                  </Text>
-                }
-                style={styles.tagsList}
-                contentContainerStyle={styles.tagsListContent}
-              />
-            )}
+              </View>
+              
+              <View style={styles.createTagContainer}>
+                <TextInput
+                  style={styles.createTagInput}
+                  placeholder={t('tags:newTagPlaceholder')}
+                  value={newTagName}
+                  onChangeText={setNewTagName}
+                />
+                <TouchableOpacity 
+                  style={[
+                    styles.createTagButton, 
+                    !newTagName.trim() && styles.disabledButton
+                  ]}
+                  onPress={addNewTag}
+                  disabled={!newTagName.trim() || loading}
+                >
+                  {loading ? (
+                    <ActivityIndicator size="small" color="#FFFFFF" />
+                  ) : (
+                    <Text style={styles.createTagButtonText}>{t('tags:createTag')}</Text>
+                  )}
+                </TouchableOpacity>
+              </View>
+              
+              {loading && !filteredTags.length ? (
+                <ActivityIndicator style={styles.loader} size="large" color="#3B82F6" />
+              ) : (
+                <FlatList
+                  data={filteredTags}
+                  keyExtractor={(item) => `tag-list-${item.id}`}
+                  renderItem={({ item }) => (
+                    <TouchableOpacity
+                      style={[
+                        styles.tagListItem,
+                        selectedTags.includes(item.name) && styles.tagListItemSelected
+                      ]}
+                      onPress={() => toggleTag(item)}
+                    >
+                      <View 
+                        style={[
+                          styles.tagColorIndicator, 
+                          { backgroundColor: item.color }
+                        ]} 
+                      />
+                      <Text style={styles.tagListItemText}>{item.name}</Text>
+                      {selectedTags.includes(item.name) && (
+                        <Ionicons name="checkmark-circle" size={20} color="#3B82F6" />
+                      )}
+                    </TouchableOpacity>
+                  )}
+                  ListEmptyComponent={
+                    <Text style={styles.emptyListText}>
+                      {searchQuery ? t('tags:noTagsFound') : t('tags:noTagsYet')}
+                    </Text>
+                  }
+                  style={styles.tagsList}
+                  contentContainerStyle={styles.tagsListContent}
+                />
+              )}
+            </View>
           </View>
-        </View>
-      </Modal>
+        </Modal>
+      )}
     </View>
   );
 };
@@ -316,13 +374,6 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.5)',
     justifyContent: 'flex-end',
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    zIndex: 9999,
-    elevation: 10,
   },
   modalContent: {
     backgroundColor: '#FFFFFF',
@@ -331,8 +382,6 @@ const styles = StyleSheet.create({
     paddingBottom: 24,
     height: '80%',
     width: '100%',
-    zIndex: 10000,
-    elevation: 11,
   },
   modalHeader: {
     flexDirection: 'row',
