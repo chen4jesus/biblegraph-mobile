@@ -69,14 +69,118 @@ const NotesScreen = forwardRef<NotesScreenRef, {}>((props, ref) => {
   // Keep the previous selectedTag for backward compatibility during refactoring
   const selectedTag = selectedTags.length === 1 ? selectedTags[0] : null;
 
+  // Add a flatlist ref for scrolling
+  const flatListRef = useRef<FlatList>(null);
+
+  // Add a cache for note keys to prevent duplicate keys
+  const noteKeysCache = useRef<Record<string, string>>({}).current;
+
   useEffect(() => {
     loadNotes();
     loadTagColors();
+    
+    // Clean up cache when component unmounts
+    return () => {
+      // Clear the cache
+      Object.keys(noteKeysCache).forEach(key => {
+        delete noteKeysCache[key];
+      });
+    };
   }, []);
+
+  const handleRefresh = useCallback(() => {
+    setIsRefreshing(true);
+    
+    // Clear the note keys cache when refreshing
+    Object.keys(noteKeysCache).forEach(key => {
+      delete noteKeysCache[key];
+    });
+    
+    loadNotes(true);
+  }, [noteKeysCache]);
+  
+  // Function to deduplicate notes by ID
+  const deduplicateNotes = useCallback((notesArray: NoteWithVerse[]) => {
+    const uniqueNotes: NoteWithVerse[] = [];
+    const seenIds = new Set<string>();
+    
+    for (const note of notesArray) {
+      if (!seenIds.has(note.id)) {
+        seenIds.add(note.id);
+        uniqueNotes.push(note);
+      }
+    }
+    
+    return uniqueNotes;
+  }, []);
+  
+  // Define filterNotes before using it in useEffect
+  const filterNotes = useCallback(() => {
+    // Start with deduplicated notes for filtering
+    let filtered = deduplicateNotes(notes);
+    
+    // Filter by tags if any are selected (AND logic - note must have ALL selected tags)
+    if (selectedTags.length > 0) {
+      filtered = filtered.filter(note => {
+        // If note has no tags, it can't match our filter
+        if (!note.tags || note.tags.length === 0) {
+          return false;
+        }
+        
+        // Now we know note.tags exists and is non-empty
+        const noteTags = note.tags as string[];
+        return selectedTags.every(tag => noteTags.includes(tag));
+      });
+    }
+    
+    // Filter by search query if present
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase();
+      
+      // Check if query looks like a verse reference (e.g., "Genesis 1:1")
+      const verseReferencePattern = /^([a-z0-9\s]+)\s*(\d+):(\d+)$/i;
+      const match = query.match(verseReferencePattern);
+      
+      if (match) {
+        // Extract book, chapter, and verse from the reference
+        const [, book, chapter, verse] = match;
+        const normalizedBook = book.trim().toLowerCase();
+        
+        // Filter notes that match this verse reference
+        filtered = filtered.filter(note => 
+          note.verse && 
+          note.verse.book.toLowerCase().includes(normalizedBook) &&
+          note.verse.chapter.toString() === chapter &&
+          note.verse.verse.toString() === verse
+        );
+      } else {
+        // Perform regular text search if not a verse reference
+        filtered = filtered.filter(
+          (note) =>
+            note.content.toLowerCase().includes(query) ||
+            note.verse?.text.toLowerCase().includes(query) ||
+            (note.verse && `${note.verse.book} ${note.verse.chapter}:${note.verse.verse}`.toLowerCase().includes(query)) ||
+            (note.tags && note.tags.some((tag) => tag.toLowerCase().includes(query)))
+        );
+      }
+    }
+    
+    setFilteredNotes(filtered);
+  }, [notes, selectedTags, searchQuery, deduplicateNotes]);
 
   useEffect(() => {
     filterNotes();
-  }, [searchQuery, notes, selectedTags]);
+  }, [filterNotes]);
+  
+  // Add useEffect to ensure notes array is always deduplicated
+  useEffect(() => {
+    // Deduplicate notes if there are any duplicates
+    const uniqueNotes = deduplicateNotes(notes);
+    if (uniqueNotes.length !== notes.length) {
+      console.log(`Deduplicated notes: removed ${notes.length - uniqueNotes.length} duplicates`);
+      setNotes(uniqueNotes);
+    }
+  }, [notes, deduplicateNotes]);
 
   // Extract all unique tags from notes
   useEffect(() => {
@@ -140,17 +244,33 @@ const NotesScreen = forwardRef<NotesScreenRef, {}>((props, ref) => {
           verse = await neo4jService.getVerse(note.verseId);
         }
         
-        notesWithVerses.push({
+        const noteWithVerse = {
           ...note,
           verse: verse || undefined
-        });
+        };
+        
+        // Cache the note id to prevent duplicates
+        if (noteWithVerse.id) {
+          noteKeysCache[noteWithVerse.id] = noteWithVerse.id;
+        }
+        
+        notesWithVerses.push(noteWithVerse);
       }
       
       // If refreshing, replace notes, otherwise append
       if (refresh) {
         setNotes(notesWithVerses);
       } else {
-        setNotes(prev => [...prev, ...notesWithVerses]);
+        // Deduplicate before updating state
+        setNotes(prev => {
+          // Create a set of existing note IDs
+          const existingNoteIds = new Set(prev.map(note => note.id));
+          
+          // Filter out any new notes that already exist in the previous notes
+          const uniqueNewNotes = notesWithVerses.filter(note => !existingNoteIds.has(note.id));
+          
+          return [...prev, ...uniqueNewNotes];
+        });
       }
       
       // If we successfully loaded data, increment the page
@@ -171,63 +291,6 @@ const NotesScreen = forwardRef<NotesScreenRef, {}>((props, ref) => {
       loadNotes(false);
     }
   }, [isLoadingMore, hasMoreData, searchQuery, selectedTags]);
-
-  const handleRefresh = useCallback(() => {
-    setIsRefreshing(true);
-    loadNotes(true);
-  }, []);
-
-  const filterNotes = () => {
-    let filtered = notes;
-    
-    // Filter by tags if any are selected (AND logic - note must have ALL selected tags)
-    if (selectedTags.length > 0) {
-      filtered = filtered.filter(note => {
-        // If note has no tags, it can't match our filter
-        if (!note.tags || note.tags.length === 0) {
-          return false;
-        }
-        
-        // Now we know note.tags exists and is non-empty
-        const noteTags = note.tags as string[];
-        return selectedTags.every(tag => noteTags.includes(tag));
-      });
-    }
-    
-    // Filter by search query if present
-    if (searchQuery.trim()) {
-      const query = searchQuery.toLowerCase();
-      
-      // Check if query looks like a verse reference (e.g., "Genesis 1:1")
-      const verseReferencePattern = /^([a-z0-9\s]+)\s*(\d+):(\d+)$/i;
-      const match = query.match(verseReferencePattern);
-      
-      if (match) {
-        // Extract book, chapter, and verse from the reference
-        const [, book, chapter, verse] = match;
-        const normalizedBook = book.trim().toLowerCase();
-        
-        // Filter notes that match this verse reference
-        filtered = filtered.filter(note => 
-          note.verse && 
-          note.verse.book.toLowerCase().includes(normalizedBook) &&
-          note.verse.chapter.toString() === chapter &&
-          note.verse.verse.toString() === verse
-        );
-      } else {
-        // Perform regular text search if not a verse reference
-        filtered = filtered.filter(
-          (note) =>
-            note.content.toLowerCase().includes(query) ||
-            note.verse?.text.toLowerCase().includes(query) ||
-            (note.verse && `${note.verse.book} ${note.verse.chapter}:${note.verse.verse}`.toLowerCase().includes(query)) ||
-            (note.tags && note.tags.some((tag) => tag.toLowerCase().includes(query)))
-        );
-      }
-    }
-    
-    setFilteredNotes(filtered);
-  };
 
   const loadTagColors = async () => {
     try {
@@ -312,8 +375,26 @@ const NotesScreen = forwardRef<NotesScreenRef, {}>((props, ref) => {
             verse: verse || undefined
           };
           
+          // Add to cache to prevent duplicate keys
+          if (noteWithVerse.id) {
+            noteKeysCache[noteWithVerse.id] = noteWithVerse.id;
+          }
+          
           // Add the new note to the top of the list
-          setNotes(prevNotes => [noteWithVerse, ...prevNotes]);
+          setNotes(prevNotes => {
+            // Check if note already exists
+            const existingNoteIndex = prevNotes.findIndex(note => note.id === noteWithVerse.id);
+            
+            if (existingNoteIndex !== -1) {
+              // If note exists, replace it instead of adding a duplicate
+              const updatedNotes = [...prevNotes];
+              updatedNotes[existingNoteIndex] = noteWithVerse;
+              return updatedNotes;
+            }
+            
+            // Otherwise add it to the top
+            return [noteWithVerse, ...prevNotes];
+          });
           
           // Set it as recently updated for animation
           setRecentlyUpdatedNote({
@@ -336,12 +417,26 @@ const NotesScreen = forwardRef<NotesScreenRef, {}>((props, ref) => {
             verse: verse || undefined
           };
           
+          // Add to cache to prevent duplicate keys
+          if (noteWithVerse.id) {
+            noteKeysCache[noteWithVerse.id] = noteWithVerse.id;
+          }
+          
           // Update only this note in the list
-          setNotes(prevNotes => 
-            prevNotes.map(note => 
-              note.id === noteId ? noteWithVerse : note
-            )
-          );
+          setNotes(prevNotes => {
+            // Check if note exists
+            const existingNoteIndex = prevNotes.findIndex(note => note.id === noteId);
+            
+            if (existingNoteIndex === -1) {
+              // If note doesn't exist, add it (shouldn't normally happen)
+              return [noteWithVerse, ...prevNotes];
+            }
+            
+            // Otherwise update the existing note
+            const updatedNotes = [...prevNotes];
+            updatedNotes[existingNoteIndex] = noteWithVerse;
+            return updatedNotes;
+          });
           
           // Set it as recently updated for animation
           setRecentlyUpdatedNote({
@@ -620,9 +715,6 @@ const NotesScreen = forwardRef<NotesScreenRef, {}>((props, ref) => {
     }
   };
 
-  // Add a flatlist ref for scrolling
-  const flatListRef = useRef<FlatList>(null);
-
   // Update tag rendering in note item to make them clickable
   const renderTagsForNote = (tags: string[]) => (
     <View style={styles.tagsContainer}>
@@ -642,6 +734,23 @@ const NotesScreen = forwardRef<NotesScreenRef, {}>((props, ref) => {
       ))}
     </View>
   );
+
+  // Add function to clean noteKeysCache for keys that aren't in the notes array
+  const cleanupNoteKeysCache = useCallback(() => {
+    const currentNoteIds = new Set(notes.map(note => note.id));
+    
+    // Remove keys from cache that aren't in the current notes array
+    Object.keys(noteKeysCache).forEach(key => {
+      if (!currentNoteIds.has(key)) {
+        delete noteKeysCache[key];
+      }
+    });
+  }, [notes, noteKeysCache]);
+  
+  // Call cleanup after notes are filtered
+  useEffect(() => {
+    cleanupNoteKeysCache();
+  }, [filteredNotes, cleanupNoteKeysCache]);
 
   return (
     <SafeAreaView style={styles.container}>
@@ -745,7 +854,14 @@ const NotesScreen = forwardRef<NotesScreenRef, {}>((props, ref) => {
         ref={flatListRef}
         data={filteredNotes}
         renderItem={renderItem}
-        keyExtractor={(item) => item.id}
+        keyExtractor={(item) => {
+          // Use cached key if exists, otherwise create and cache a new one
+          if (!noteKeysCache[item.id]) {
+            noteKeysCache[item.id] = item.id;
+          }
+          return noteKeysCache[item.id];
+        }}
+        extraData={notes.length}
         contentContainerStyle={styles.notesList}
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
