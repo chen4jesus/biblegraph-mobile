@@ -25,6 +25,7 @@ import MultiConnectionSelector from '../components/MultiConnectionSelector';
 import VerseGroupSelector from '../components/VerseGroupSelector';
 import theme from 'theme';
 import NoteEditorModal from '../components/NoteEditorModal';
+import WebViewModal from '../components/WebViewModal';
 
 type VerseDetailScreenRouteProp = RouteProp<RootStackParamList, 'VerseDetail'>;
 type VerseDetailNavigationProp = NativeStackNavigationProp<RootStackParamList>;
@@ -81,6 +82,8 @@ const VerseDetailScreen: React.FC = () => {
   const [currentNote, setCurrentNote] = useState<Note | null>(null);
   // Add state to track expanded notes
   const [expandedNotes, setExpandedNotes] = useState<Record<string, boolean>>({});
+  const [webViewUrl, setWebViewUrl] = useState<string>('');
+  const [isWebViewVisible, setIsWebViewVisible] = useState<boolean>(false);
 
   useEffect(() => {
     loadVerseDetails();
@@ -1020,6 +1023,49 @@ const VerseDetailScreen: React.FC = () => {
     return text.length > 120; // Arbitrary threshold - adjust as needed
   };
 
+  // Function to detect URLs in text
+  const detectUrls = (text: string): RegExpMatchArray | null => {
+    // Updated regex to better handle URL boundaries and avoid catching trailing punctuation
+    const urlRegex = /(https?:\/\/[^\s,.!?)"']+)/g;
+    return text.match(urlRegex);
+  };
+
+  // Function to handle URL click
+  const handleUrlClick = (url: string) => {
+    setWebViewUrl(url);
+    setIsWebViewVisible(true);
+  };
+
+  // Function to create clickable text with URLs
+  const renderTextWithClickableUrls = (text: string) => {
+    const urls = detectUrls(text);
+    if (!urls) return <Text style={styles.noteContent}>{text}</Text>;
+
+    // Split by URLs but preserve them in the result
+    const parts = text.split(/(https?:\/\/[^\s,.!?)"']+)/g);
+    
+    return (
+      <Text style={styles.noteContent}>
+        {parts.map((part, index) => {
+          // Check if this part is a URL
+          if (urls.includes(part)) {
+            return (
+              <Text 
+                key={index}
+                style={styles.urlText}
+                onPress={() => handleUrlClick(part)}
+              >
+                {part}
+              </Text>
+            );
+          }
+          // Regular text
+          return <Text key={index}>{part}</Text>;
+        })}
+      </Text>
+    );
+  };
+
   const renderNoteItem = (note: Note) => {
     const isExpanded = expandedNotes[note.id] || false;
     const shouldShowToggle = isTextTruncated(note.content);
@@ -1027,9 +1073,13 @@ const VerseDetailScreen: React.FC = () => {
     return (
       <View key={note.id} style={styles.noteItem}>
         <View>
-          <Text style={styles.noteContent} numberOfLines={isExpanded ? undefined : 3}>
-            {note.content}
-          </Text>
+          {isExpanded ? (
+            renderTextWithClickableUrls(note.content)
+          ) : (
+            <Text style={styles.noteContent} numberOfLines={3}>
+              {note.content}
+            </Text>
+          )}
           
           {shouldShowToggle && (
             <TouchableOpacity 
@@ -1232,6 +1282,13 @@ const VerseDetailScreen: React.FC = () => {
           }
         }}
         availableTags={allTags}
+      />
+
+      {/* Add WebView Modal */}
+      <WebViewModal
+        visible={isWebViewVisible}
+        url={webViewUrl}
+        onClose={() => setIsWebViewVisible(false)}
       />
     </SafeAreaView>
   );
@@ -1824,7 +1881,78 @@ const styles = StyleSheet.create({
   manageTagsText: {
     color: '#007AFF',
     fontSize: 14,
-  }
+  },
+  urlText: {
+    color: '#007AFF',
+    textDecorationLine: 'underline',
+  },
+  manageTagsButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 4,
+  },
+  expandedGroupContent: {
+    backgroundColor: '#f9f9f9',
+    padding: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#e0e0e0',
+  },
+  tabContent: {
+    flex: 1,
+    padding: 8,
+  },
+  connectionActions: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+    paddingHorizontal: 8,
+  },
+  addButton: {
+    backgroundColor: '#007AFF',
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 16,
+  },
+  addButtonText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '500',
+    marginRight: 6,
+  },
+  multiConnectionContainer: {
+    padding: 12,
+    backgroundColor: '#f8f8f8',
+    borderRadius: 8,
+  },
+  multiConnectionHint: {
+    fontSize: 14,
+    color: '#666',
+    marginBottom: 8,
+  },
+  separator: {
+    height: 1,
+    backgroundColor: '#e0e0e0',
+    marginVertical: 8,
+  },
+  emptyContainer: {
+    padding: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  emptyText: {
+    fontSize: 16,
+    color: '#666',
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  emptyHint: {
+    fontSize: 14,
+    color: '#999',
+    textAlign: 'center',
+  },
 });
 
 export default VerseDetailScreen; 

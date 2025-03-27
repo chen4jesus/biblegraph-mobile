@@ -17,6 +17,7 @@ import { Note, Verse } from '../types/bible';
 import { neo4jService } from '../services/neo4j';
 import { Ionicons } from '@expo/vector-icons';
 import { useTranslation } from 'react-i18next';
+import WebViewModal from '../components/WebViewModal';
 
 type NotesScreenNavigationProp = NativeStackNavigationProp<RootStackParamList, 'Notes'>;
 
@@ -35,6 +36,8 @@ const NotesScreen: React.FC = () => {
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
   const [allTags, setAllTags] = useState<string[]>([]);
   const [expandedNotes, setExpandedNotes] = useState<Record<string, boolean>>({});
+  const [webViewUrl, setWebViewUrl] = useState<string>('');
+  const [isWebViewVisible, setIsWebViewVisible] = useState<boolean>(false);
   
   // Pagination states
   const [page, setPage] = useState(0);
@@ -188,53 +191,129 @@ const NotesScreen: React.FC = () => {
     return text.length > 120; // Arbitrary threshold - adjust as needed
   };
 
+  // Function to detect URLs in text - improve the regex pattern
+  const detectUrls = (text: string): RegExpMatchArray | null => {
+    // Enhanced regex to better detect URLs with various endings
+    const urlRegex = /(https?:\/\/[^\s]+)(?=[.,;:!?)\s]|$)/g;
+    return text.match(urlRegex);
+  };
+
+  // Function to handle URL click
+  const handleUrlClick = (url: string) => {
+    setWebViewUrl(url);
+    setIsWebViewVisible(true);
+  };
+
+  // Function to create clickable text with URLs - improve with icon
+  const renderTextWithClickableUrls = (text: string) => {
+    const urls = detectUrls(text);
+    if (!urls) return <Text style={styles.noteContent}>{text}</Text>;
+
+    // Split by URLs but preserve them in the result
+    const parts = text.split(/(https?:\/\/[^\s]+)(?=[.,;:!?)\s]|$)/g).filter(Boolean);
+    
+    return (
+      <Text style={styles.noteContent}>
+        {parts.map((part, index) => {
+          // Check if this part is a URL (full or partial match)
+          const isUrl = urls.some(url => url.includes(part) || part.includes(url));
+          
+          if (isUrl) {
+            // Clean up the URL if it ends with punctuation
+            const cleanUrl = part.replace(/[.,;:!?)]$/, '');
+            
+            return (
+              <Text 
+                key={index}
+                style={styles.urlText}
+                onPress={() => handleUrlClick(cleanUrl)}
+              >
+                {part} 
+              </Text>
+            );
+          }
+          // Regular text
+          return <Text key={index}>{part}</Text>;
+        })}
+      </Text>
+    );
+  };
+
   const renderNoteItem = ({ item }: { item: NoteWithVerse }) => {
     const isExpanded = expandedNotes[item.id] || false;
     const shouldShowToggle = isTextTruncated(item.content);
     
+    // Check if the note content is just a URL (or starts with one)
+    const isStandaloneUrl = item.content.trim().match(/^https?:\/\/[^\s,.!?)"']+/);
+    
     return (
-      <TouchableOpacity
-        style={styles.noteItem}
-        onPress={() => {
-          if (item.verse) {
-            navigation.navigate('VerseDetail', { verseId: item.verseId });
-          }
-        }}
-      >
+      <View style={styles.noteItem}>
         <View style={styles.noteHeader}>
-          <Text style={styles.verseReference}>
-            {item.verse?.book} {item.verse?.chapter}:{item.verse?.verse}
-          </Text>
+          {item.verse && (
+            <TouchableOpacity
+              onPress={() => navigation.navigate('VerseDetail', { verseId: item.verseId })}
+            >
+              <Text style={[styles.verseReference, styles.clickableText]}>
+                {item.verse.book} {item.verse.chapter}:{item.verse.verse}
+              </Text>
+            </TouchableOpacity>
+          )}
           <Text style={styles.noteDate}>
             {new Date(item.createdAt).toLocaleDateString()}
           </Text>
         </View>
         
-        <View>
-          <Text style={styles.noteContent} numberOfLines={isExpanded ? undefined : 3}>
-            {item.content}
-          </Text>
-          
-          {shouldShowToggle && (
-            <TouchableOpacity 
-              style={styles.toggleButton}
-              onPress={(e) => {
-                e.stopPropagation(); // Prevent opening verse detail
-                toggleNoteExpansion(item.id);
-              }}
-            >
-              <Text style={styles.toggleButtonText}>
-                {isExpanded ? t('notes:showLess') : t('notes:readMore')}
-              </Text>
-              <Ionicons 
-                name={isExpanded ? 'chevron-up' : 'chevron-down'} 
-                size={16} 
-                color="#007AFF"
-                style={{ marginLeft: 4 }}
-              />
-            </TouchableOpacity>
-          )}
-        </View>
+        {/* Special case for notes that are just URLs or start with URLs */}
+        {isStandaloneUrl ? (
+          <TouchableOpacity onPress={() => handleUrlClick(isStandaloneUrl[0])}>
+            <Text style={[styles.noteContent, styles.urlText]} numberOfLines={isExpanded ? undefined : 3}>
+              {item.content}
+            </Text>
+          </TouchableOpacity>
+        ) : (
+          <View>
+            {isExpanded ? (
+              renderTextWithClickableUrls(item.content)
+            ) : (
+              // For collapsed notes, check for URLs and make the entire text clickable if found
+              (() => {
+                const urls = detectUrls(item.content);
+                if (urls && urls.length > 0) {
+                  return (
+                    <TouchableOpacity onPress={() => toggleNoteExpansion(item.id)}>
+                      <Text style={styles.noteContent} numberOfLines={3}>
+                        {item.content}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                } else {
+                  return (
+                    <Text style={styles.noteContent} numberOfLines={3}>
+                      {item.content}
+                    </Text>
+                  );
+                }
+              })()
+            )}
+            
+            {shouldShowToggle && (
+              <TouchableOpacity 
+                style={styles.toggleButton}
+                onPress={() => toggleNoteExpansion(item.id)}
+              >
+                <Text style={styles.toggleButtonText}>
+                  {isExpanded ? t('notes:showLess') : t('notes:readMore')}
+                </Text>
+                <Ionicons 
+                  name={isExpanded ? 'chevron-up' : 'chevron-down'} 
+                  size={16} 
+                  color="#007AFF"
+                  style={{ marginLeft: 4 }}
+                />
+              </TouchableOpacity>
+            )}
+          </View>
+        )}
         
         {item.tags && item.tags.length > 0 && (
           <View style={styles.tagsContainer}>
@@ -245,8 +324,56 @@ const NotesScreen: React.FC = () => {
             ))}
           </View>
         )}
-      </TouchableOpacity>
+      </View>
     );
+  };
+
+  // Add this function to render standalone URL items
+  const renderUrlItem = ({ item }: { item: NoteWithVerse }) => {
+    // Get the URL from the content
+    const url = item.content.trim();
+    
+    return (
+      <View style={styles.noteItem}>
+        <View style={styles.noteHeader}>
+          {item.verse && (
+            <TouchableOpacity
+              onPress={() => navigation.navigate('VerseDetail', { verseId: item.verseId })}
+            >
+              <Text style={[styles.verseReference, styles.clickableText]}>
+                {item.verse.book} {item.verse.chapter}:{item.verse.verse}
+              </Text>
+            </TouchableOpacity>
+          )}
+          <Text style={styles.noteDate}>
+            {new Date(item.createdAt).toLocaleDateString()}
+          </Text>
+        </View>
+        
+        <TouchableOpacity 
+          onPress={() => handleUrlClick(url)}
+          style={styles.urlContainer}
+        >
+          <Ionicons name="link-outline" size={18} color="#007AFF" style={styles.urlIcon} />
+          <Text style={styles.urlText} numberOfLines={2} ellipsizeMode="middle">
+            {url}
+          </Text>
+        </TouchableOpacity>
+      </View>
+    );
+  };
+
+  // Update the FlatList rendering logic to use a different renderer based on content
+  const renderItem = (info: { item: NoteWithVerse }) => {
+    // Check if the note is basically just a URL
+    const item = info.item;
+    const urlRegex = /^https?:\/\/\S+$/;
+    
+    if (urlRegex.test(item.content.trim())) {
+      return renderUrlItem(info);
+    }
+    
+    return renderNoteItem(info);
   };
 
   const renderFooter = () => {
@@ -345,7 +472,7 @@ const NotesScreen: React.FC = () => {
 
       <FlatList
         data={filteredNotes}
-        renderItem={renderNoteItem}
+        renderItem={renderItem}
         keyExtractor={(item) => item.id}
         contentContainerStyle={styles.notesList}
         ListEmptyComponent={
@@ -360,6 +487,12 @@ const NotesScreen: React.FC = () => {
         ListFooterComponent={renderFooter}
         refreshing={isRefreshing}
         onRefresh={handleRefresh}
+      />
+      
+      <WebViewModal
+        visible={isWebViewVisible}
+        url={webViewUrl}
+        onClose={() => setIsWebViewVisible(false)}
       />
     </SafeAreaView>
   );
@@ -433,9 +566,10 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   verseReference: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#007AFF',
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: '#333',
+    marginBottom: 4,
   },
   noteDate: {
     fontSize: 12,
@@ -518,6 +652,26 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#007AFF',
     fontWeight: '500',
+  },
+  clickableText: {
+    color: '#007AFF',
+    textDecorationLine: 'underline',
+  },
+  urlText: {
+    color: '#007AFF',
+    textDecorationLine: 'underline',
+    fontWeight: '500',
+  },
+  urlContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f8f9fa',
+    padding: 12,
+    borderRadius: 8,
+    marginTop: 8,
+  },
+  urlIcon: {
+    marginRight: 8,
   },
 });
 
