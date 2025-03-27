@@ -7,7 +7,7 @@ interface ConnectionCreateInput {
   sourceVerseId: string;
   targetVerseId: string;
   type: ConnectionType;
-  description: string;
+  description?: string;
 }
 
 class Neo4jDriver {
@@ -782,42 +782,21 @@ class Neo4jDriver {
   public async initializeDatabase(): Promise<void> {
     const session = this.getSession();
     try {
-      // Create constraints
-      await session.run(`
-        CREATE CONSTRAINT verse_id IF NOT EXISTS
-        FOR (v:Verse) REQUIRE v.id IS UNIQUE
-      `);
+      // Create necessary constraints and indexes
+      await session.run('CREATE CONSTRAINT user_id IF NOT EXISTS FOR (u:User) REQUIRE u.id IS UNIQUE');
+      await session.run('CREATE CONSTRAINT user_email IF NOT EXISTS FOR (u:User) REQUIRE u.email IS UNIQUE');
+      await session.run('CREATE INDEX user_email_idx IF NOT EXISTS FOR (u:User) ON (u.email)');
       
-      await session.run(`
-        CREATE CONSTRAINT note_id IF NOT EXISTS
-        FOR (n:Note) REQUIRE n.id IS UNIQUE
-      `);
+      // Other existing constraints and indexes
+      await session.run('CREATE CONSTRAINT verse_id IF NOT EXISTS FOR (v:Verse) REQUIRE v.id IS UNIQUE');
+      await session.run('CREATE CONSTRAINT connection_id IF NOT EXISTS FOR (c:Connection) REQUIRE c.id IS UNIQUE');
+      await session.run('CREATE CONSTRAINT note_id IF NOT EXISTS FOR (n:Note) REQUIRE n.id IS UNIQUE');
+      await session.run('CREATE CONSTRAINT group_id IF NOT EXISTS FOR (g:VerseGroup) REQUIRE g.id IS UNIQUE');
+      await session.run('CREATE CONSTRAINT group_connection_id IF NOT EXISTS FOR (gc:GroupConnection) REQUIRE gc.id IS UNIQUE');
       
-      await session.run(`
-        CREATE CONSTRAINT connection_id IF NOT EXISTS
-        FOR ()-[c:CONNECTS_TO]-() REQUIRE c.id IS UNIQUE
-      `);
-      
-      // Create composite constraint for verse references (book, chapter, verse)
-      try {
-        await session.run(`
-          CREATE CONSTRAINT verse_reference IF NOT EXISTS
-          FOR (v:Verse) REQUIRE (v.book, v.chapter, v.verse) IS UNIQUE
-        `);
-      } catch (error) {
-        // For Neo4j versions that don't support composite constraints
-        console.warn('Could not create composite constraint, creating index instead:', error);
-        
-        // Create fallback index
-        await session.run(`
-          CREATE INDEX verse_reference IF NOT EXISTS
-          FOR (v:Verse) ON (v.book, v.chapter, v.verse)
-        `);
-      }
-      
-      console.debug('Database schema initialized');
+      console.debug('Neo4j database indexes and constraints created');
     } catch (error) {
-      console.error('Error initializing database schema:', error);
+      console.error('Error initializing database:', error);
       throw error;
     } finally {
       await session.close();
@@ -1354,6 +1333,114 @@ class Neo4jDriver {
       }));
     } finally {
       session.close();
+    }
+  }
+
+  // User methods
+  public async createUser(name: string, email: string, password: string): Promise<any> {
+    const session = this.getSession();
+    try {
+      // First check if the user already exists
+      const checkResult = await session.run(`
+        MATCH (u:User {email: $email})
+        RETURN u
+      `, { email });
+      
+      if (checkResult.records.length > 0) {
+        throw new Error('User with this email already exists');
+      }
+      
+      // Create a unique ID for the new user
+      const userId = `user_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+      const now = new Date().toISOString();
+      
+      // In a production environment, you would hash the password here
+      
+      // Create the user in the database
+      const result = await session.run(`
+        CREATE (u:User {
+          id: $userId,
+          name: $name,
+          email: $email,
+          password: $password,
+          createdAt: $now,
+          updatedAt: $now
+        })
+        RETURN u
+      `, { userId, name, email, password, now });
+      
+      const userNode = result.records[0].get('u').properties;
+      
+      return {
+        id: userNode.id.toString(),
+        name: userNode.name,
+        email: userNode.email,
+        createdAt: userNode.createdAt,
+        updatedAt: userNode.updatedAt,
+      };
+    } catch (error) {
+      console.error('Error creating user:', error);
+      throw error;
+    } finally {
+      await session.close();
+    }
+  }
+  
+  public async getUserByEmailAndPassword(email: string, password: string): Promise<any> {
+    const session = this.getSession();
+    try {
+      const result = await session.run(`
+        MATCH (u:User {email: $email, password: $password})
+        RETURN u
+      `, { email, password });
+      
+      if (result.records.length === 0) {
+        throw new Error('Invalid email or password');
+      }
+      
+      const userNode = result.records[0].get('u').properties;
+      
+      return {
+        id: userNode.id.toString(),
+        name: userNode.name,
+        email: userNode.email,
+        createdAt: userNode.createdAt,
+        updatedAt: userNode.updatedAt,
+      };
+    } catch (error) {
+      console.error('Error authenticating user:', error);
+      throw error;
+    } finally {
+      await session.close();
+    }
+  }
+  
+  public async getUserById(userId: string): Promise<any> {
+    const session = this.getSession();
+    try {
+      const result = await session.run(`
+        MATCH (u:User {id: $userId})
+        RETURN u
+      `, { userId });
+      
+      if (result.records.length === 0) {
+        return null;
+      }
+      
+      const userNode = result.records[0].get('u').properties;
+      
+      return {
+        id: userNode.id.toString(),
+        name: userNode.name,
+        email: userNode.email,
+        createdAt: userNode.createdAt,
+        updatedAt: userNode.updatedAt,
+      };
+    } catch (error) {
+      console.error('Error fetching user:', error);
+      throw error;
+    } finally {
+      await session.close();
     }
   }
 }

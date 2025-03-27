@@ -19,7 +19,7 @@ interface NoteEditorModalProps {
   visible: boolean;
   note: Note | null;
   onClose: () => void;
-  onSave: (content: string, tags: string[]) => void;
+  onSave: (content: string, tags: string[], noteId?: string, isNew?: boolean) => void;
   availableTags: string[];
 }
 
@@ -76,7 +76,8 @@ const NoteEditorModal: React.FC<NoteEditorModalProps> = ({
       return;
     }
     
-    onSave(content, tags);
+    // Pass the noteId and isNew flag to the onSave handler
+    onSave(content, tags, note?.id, !note);
   };
 
   const handleCancel = () => {

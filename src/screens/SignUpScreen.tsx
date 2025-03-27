@@ -27,6 +27,14 @@ interface SignUpForm {
   confirmPassword: string;
 }
 
+interface FormError {
+  name?: string;
+  email?: string;
+  password?: string;
+  confirmPassword?: string;
+  general?: string;
+}
+
 const SignUpScreen: React.FC = () => {
   const navigation = useNavigation<SignUpScreenNavigationProp>();
   const [form, setForm] = useState<SignUpForm>({
@@ -35,33 +43,50 @@ const SignUpScreen: React.FC = () => {
     password: '',
     confirmPassword: '',
   });
+  const [errors, setErrors] = useState<FormError>({});
   const [isLoading, setIsLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   const validateForm = (): boolean => {
-    if (!form.name || !form.email || !form.password || !form.confirmPassword) {
-      Alert.alert('Error', 'Please fill in all fields');
-      return false;
+    const newErrors: FormError = {};
+    let isValid = true;
+
+    // Name validation
+    if (!form.name.trim()) {
+      newErrors.name = 'Name is required';
+      isValid = false;
     }
 
-    if (form.password !== form.confirmPassword) {
-      Alert.alert('Error', 'Passwords do not match');
-      return false;
+    // Email validation
+    if (!form.email.trim()) {
+      newErrors.email = 'Email is required';
+      isValid = false;
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) {
+      newErrors.email = 'Please enter a valid email address';
+      isValid = false;
     }
 
-    if (form.password.length < 8) {
-      Alert.alert('Error', 'Password must be at least 8 characters long');
-      return false;
+    // Password validation
+    if (!form.password) {
+      newErrors.password = 'Password is required';
+      isValid = false;
+    } else if (form.password.length < 8) {
+      newErrors.password = 'Password must be at least 8 characters long';
+      isValid = false;
     }
 
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(form.email)) {
-      Alert.alert('Error', 'Please enter a valid email address');
-      return false;
+    // Confirm password validation
+    if (!form.confirmPassword) {
+      newErrors.confirmPassword = 'Please confirm your password';
+      isValid = false;
+    } else if (form.password !== form.confirmPassword) {
+      newErrors.confirmPassword = 'Passwords do not match';
+      isValid = false;
     }
 
-    return true;
+    setErrors(newErrors);
+    return isValid;
   };
 
   const handleSignUp = async () => {
@@ -70,12 +95,30 @@ const SignUpScreen: React.FC = () => {
     setIsLoading(true);
     try {
       await authService.signUp(form.name, form.email, form.password);
-      navigation.replace('Main');
+      // Don't navigate directly, let the AppNavigator handle it based on auth state
+      // This will trigger the conditional rendering in AppNavigator
     } catch (error) {
       console.error('Registration error:', error);
-      Alert.alert('Error', 'Failed to create account. Please try again.');
+      
+      // Handle specific error messages
+      const errorMessage = error instanceof Error ? error.message : 'Failed to create account. Please try again.';
+      
+      if (errorMessage.includes('User with this email already exists')) {
+        setErrors({ email: 'This email is already in use' });
+      } else {
+        setErrors({ general: 'Failed to create account. Please try again.' });
+      }
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const updateFormField = (field: keyof SignUpForm, value: string) => {
+    setForm({ ...form, [field]: value });
+    
+    // Clear the error for this field when the user types
+    if (errors[field]) {
+      setErrors({ ...errors, [field]: undefined });
     }
   };
 
@@ -98,37 +141,46 @@ const SignUpScreen: React.FC = () => {
           </View>
 
           <View style={styles.form}>
-            <View style={styles.inputContainer}>
+            {errors.general && (
+              <View style={styles.errorContainer}>
+                <Ionicons name="alert-circle-outline" size={20} color="#d32f2f" />
+                <Text style={styles.errorText}>{errors.general}</Text>
+              </View>
+            )}
+
+            <View style={[styles.inputContainer, errors.name && styles.inputError]}>
               <Ionicons name="person-outline" size={20} color="#666" style={styles.inputIcon} />
               <TextInput
                 style={styles.input}
                 placeholder="Full Name"
                 value={form.name}
-                onChangeText={(text) => setForm({ ...form, name: text })}
+                onChangeText={(text) => updateFormField('name', text)}
                 autoCapitalize="words"
               />
             </View>
+            {errors.name && <Text style={styles.fieldErrorText}>{errors.name}</Text>}
 
-            <View style={styles.inputContainer}>
+            <View style={[styles.inputContainer, errors.email && styles.inputError]}>
               <Ionicons name="mail-outline" size={20} color="#666" style={styles.inputIcon} />
               <TextInput
                 style={styles.input}
                 placeholder="Email"
                 value={form.email}
-                onChangeText={(text) => setForm({ ...form, email: text })}
+                onChangeText={(text) => updateFormField('email', text)}
                 keyboardType="email-address"
                 autoCapitalize="none"
                 autoCorrect={false}
               />
             </View>
+            {errors.email && <Text style={styles.fieldErrorText}>{errors.email}</Text>}
 
-            <View style={styles.inputContainer}>
+            <View style={[styles.inputContainer, errors.password && styles.inputError]}>
               <Ionicons name="lock-closed-outline" size={20} color="#666" style={styles.inputIcon} />
               <TextInput
                 style={[styles.input, { flex: 1 }]}
                 placeholder="Password"
                 value={form.password}
-                onChangeText={(text) => setForm({ ...form, password: text })}
+                onChangeText={(text) => updateFormField('password', text)}
                 secureTextEntry={!showPassword}
               />
               <TouchableOpacity
@@ -142,14 +194,15 @@ const SignUpScreen: React.FC = () => {
                 />
               </TouchableOpacity>
             </View>
+            {errors.password && <Text style={styles.fieldErrorText}>{errors.password}</Text>}
 
-            <View style={styles.inputContainer}>
+            <View style={[styles.inputContainer, errors.confirmPassword && styles.inputError]}>
               <Ionicons name="lock-closed-outline" size={20} color="#666" style={styles.inputIcon} />
               <TextInput
                 style={[styles.input, { flex: 1 }]}
                 placeholder="Confirm Password"
                 value={form.confirmPassword}
-                onChangeText={(text) => setForm({ ...form, confirmPassword: text })}
+                onChangeText={(text) => updateFormField('confirmPassword', text)}
                 secureTextEntry={!showConfirmPassword}
               />
               <TouchableOpacity
@@ -163,6 +216,7 @@ const SignUpScreen: React.FC = () => {
                 />
               </TouchableOpacity>
             </View>
+            {errors.confirmPassword && <Text style={styles.fieldErrorText}>{errors.confirmPassword}</Text>}
 
             <TouchableOpacity
               style={[styles.button, isLoading && styles.buttonDisabled]}
@@ -224,9 +278,12 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#ddd',
     borderRadius: 8,
-    marginBottom: 16,
+    marginBottom: 8,
     paddingHorizontal: 12,
     height: 50,
+  },
+  inputError: {
+    borderColor: '#d32f2f',
   },
   inputIcon: {
     marginRight: 8,
@@ -245,7 +302,7 @@ const styles = StyleSheet.create({
     height: 50,
     justifyContent: 'center',
     alignItems: 'center',
-    marginTop: 8,
+    marginTop: 16,
   },
   buttonDisabled: {
     opacity: 0.7,
@@ -268,6 +325,25 @@ const styles = StyleSheet.create({
     color: '#007AFF',
     fontSize: 14,
     fontWeight: '600',
+  },
+  errorContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#ffebee',
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 16,
+  },
+  errorText: {
+    color: '#d32f2f',
+    fontSize: 14,
+    marginLeft: 8,
+  },
+  fieldErrorText: {
+    color: '#d32f2f',
+    fontSize: 12,
+    marginBottom: 12,
+    marginLeft: 8,
   },
 });
 

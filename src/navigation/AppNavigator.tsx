@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
@@ -7,6 +7,7 @@ import { authService } from '../services/auth';
 import LoadingScreen from '../components/LoadingScreen';
 import { Ionicons } from '@expo/vector-icons';
 import { useTranslation } from 'react-i18next';
+import { useFocusEffect } from '@react-navigation/native';
 
 // Auth Screens
 import LoginScreen from '../screens/LoginScreen';
@@ -81,11 +82,8 @@ const AppNavigator: React.FC = () => {
   const { t } = useTranslation(['navigation', 'common']);
   const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
 
-  useEffect(() => {
-    checkAuthStatus();
-  }, []);
-
-  const checkAuthStatus = async () => {
+  // Check auth status on component mount and whenever the app gains focus
+  const checkAuthStatus = useCallback(async () => {
     try {
       const isAuth = await authService.isAuthenticated();
       setIsAuthenticated(isAuth);
@@ -93,7 +91,20 @@ const AppNavigator: React.FC = () => {
       console.error('Error checking auth status:', error);
       setIsAuthenticated(false);
     }
-  };
+  }, []);
+
+  // Check on component mount
+  useEffect(() => {
+    checkAuthStatus();
+    
+    // Subscribe to auth state changes
+    const unsubscribe = authService.addAuthStateListener((isAuth) => {
+      setIsAuthenticated(isAuth);
+    });
+    
+    // Cleanup subscription on unmount
+    return () => unsubscribe();
+  }, [checkAuthStatus]);
 
   if (isAuthenticated === null) {
     return <LoadingScreen />;

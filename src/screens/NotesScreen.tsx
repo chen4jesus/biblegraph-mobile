@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useImperativeHandle, forwardRef } from 'react';
 import {
   View,
   Text,
@@ -9,6 +9,8 @@ import {
   SafeAreaView,
   ScrollView,
   ActivityIndicator,
+  Animated,
+  Platform,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -27,7 +29,18 @@ interface NoteWithVerse extends Note {
 
 const NOTES_PER_PAGE = 20;
 
-const NotesScreen: React.FC = () => {
+// Add interface for animated notes to track which notes should be animated
+interface AnimatedNoteInfo {
+  id: string;
+  timestamp: number;
+}
+
+// Define the ref interface
+export interface NotesScreenRef {
+  updateSingleNote: (noteId: string, isNew: boolean) => Promise<void>;
+}
+
+const NotesScreen = forwardRef<NotesScreenRef, {}>((props, ref) => {
   const { t } = useTranslation(['notes', 'common']);
   const navigation = useNavigation<NotesScreenNavigationProp>();
   const [notes, setNotes] = useState<NoteWithVerse[]>([]);
@@ -45,6 +58,12 @@ const NotesScreen: React.FC = () => {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [hasMoreData, setHasMoreData] = useState(true);
 
+  // Add state for tracking recently updated notes
+  const [recentlyUpdatedNote, setRecentlyUpdatedNote] = useState<AnimatedNoteInfo | null>(null);
+  
+  // Animation value for the highlight effect
+  const highlightAnimation = useRef(new Animated.Value(0)).current;
+
   useEffect(() => {
     loadNotes();
   }, []);
@@ -60,6 +79,33 @@ const NotesScreen: React.FC = () => {
     );
     setAllTags(uniqueTags);
   }, [notes]);
+
+  // Run animation when a note is updated
+  useEffect(() => {
+    if (recentlyUpdatedNote) {
+      // Reset animation value
+      highlightAnimation.setValue(0);
+      
+      // Run animation sequence
+      Animated.sequence([
+        // Quick fade in of highlight
+        Animated.timing(highlightAnimation, {
+          toValue: 1,
+          duration: 300,
+          useNativeDriver: Platform.OS !== 'web', // Native driver doesn't work well with backgroundColor on web
+        }),
+        // Slower fade out
+        Animated.timing(highlightAnimation, {
+          toValue: 0,
+          duration: 1500,
+          useNativeDriver: Platform.OS !== 'web',
+        }),
+      ]).start(() => {
+        // Clear the updated note reference after animation completes
+        setRecentlyUpdatedNote(null);
+      });
+    }
+  }, [recentlyUpdatedNote, highlightAnimation]);
 
   const loadNotes = async (refresh = true) => {
     if (refresh) {
@@ -212,44 +258,89 @@ const NotesScreen: React.FC = () => {
     setIsWebViewVisible(true);
   };
 
-  // Render note content with proper handling of URLs
-  const renderNoteContent = (note: NoteWithVerse) => {
-    const urls = detectUrls(note.content);
-    const hasUrls = urls !== null;
-    const truncateLength = 120;
-    const shouldTruncate = note.content.length > truncateLength;
-    
-    // Get displayed text (truncated or full)
-    const displayedText = shouldTruncate 
-      ? note.content.substring(0, truncateLength) + "..." 
-      : note.content;
-    
-    return (
-      <>
-        <Text style={styles.noteContent}>
-          {displayedText}
-        </Text>
-        {(shouldTruncate || hasUrls) && (
-          <TouchableOpacity onPress={() => toggleNoteExpansion(note.id)}>
-            <Text style={styles.toggleButtonText}>
-              {t('notes:readMore')}
-              <Ionicons 
-                name='chevron-down'
-                size={16} 
-                color="#007AFF"
-                style={{ marginLeft: 4 }}
-              />
-            </Text>
-          </TouchableOpacity>
-        )}
-      </>
-    );
+  // Add this new method to update a single note
+  const updateSingleNote = async (noteId: string, isNew = false) => {
+    try {
+      // If it's a new note, we'll add it to the top of the list after fetching
+      if (isNew) {
+        // For new notes, get just the latest note and add it to the existing list
+        const latestNotes = await neo4jService.getNotes(0, 1);
+        if (latestNotes.length > 0) {
+          const newNote = latestNotes[0];
+          
+          // Fetch the verse for this note if it has one
+          let verse = null;
+          if (newNote.verseId) {
+            verse = await neo4jService.getVerse(newNote.verseId);
+          }
+          
+          const noteWithVerse: NoteWithVerse = {
+            ...newNote,
+            verse: verse || undefined
+          };
+          
+          // Add the new note to the top of the list
+          setNotes(prevNotes => [noteWithVerse, ...prevNotes]);
+          
+          // Set it as recently updated for animation
+          setRecentlyUpdatedNote({
+            id: newNote.id,
+            timestamp: Date.now(),
+          });
+        }
+      } else {
+        // For existing notes, fetch just that specific note and update it in the list
+        const updatedNote = await neo4jService.getNote(noteId);
+        if (updatedNote) {
+          // Fetch the verse for this note if it has one
+          let verse = null;
+          if (updatedNote.verseId) {
+            verse = await neo4jService.getVerse(updatedNote.verseId);
+          }
+          
+          const noteWithVerse: NoteWithVerse = {
+            ...updatedNote,
+            verse: verse || undefined
+          };
+          
+          // Update only this note in the list
+          setNotes(prevNotes => 
+            prevNotes.map(note => 
+              note.id === noteId ? noteWithVerse : note
+            )
+          );
+          
+          // Set it as recently updated for animation
+          setRecentlyUpdatedNote({
+            id: noteId,
+            timestamp: Date.now(),
+          });
+        }
+      }
+      
+      // Re-filter notes with updated data
+      filterNotes();
+    } catch (error) {
+      console.error('Error updating single note:', error);
+    }
   };
 
+  // Modify the render function to include the animation
   const renderNoteItem = ({ item }: { item: NoteWithVerse }) => {
     const isExpanded = expandedNotes[item.id] || false;
     const shouldTruncate = isTextTruncated(item.content);
     const containsUrls = hasUrls(item.content);
+    
+    // Check if this item should be animated
+    const isRecentlyUpdated = recentlyUpdatedNote?.id === item.id;
+    
+    // Interpolate animation value for background color
+    const backgroundColor = isRecentlyUpdated
+      ? highlightAnimation.interpolate({
+          inputRange: [0, 1],
+          outputRange: ['#ffffff', '#e6f7ff'] // white to light blue
+        })
+      : '#ffffff';
     
     // Always show toggle button if note contains URLs or is truncated
     const showToggleButton = shouldTruncate || containsUrls;
@@ -258,7 +349,15 @@ const NotesScreen: React.FC = () => {
     const isStandaloneUrl = item.content.trim().match(/^https?:\/\/[^\s]+/);
     
     return (
-      <View style={styles.noteItem}>
+      <Animated.View 
+        style={[
+          styles.noteItem,
+          { backgroundColor },
+          // On web, we need to use style directly since Animated.View interpolation doesn't work well
+          Platform.OS === 'web' && isRecentlyUpdated ? 
+            { backgroundColor: recentlyUpdatedNote ? '#e6f7ff' : '#ffffff' } : null
+        ]}
+      >
         <View style={styles.noteHeader}>
           {item.verse && (
             <TouchableOpacity
@@ -341,7 +440,7 @@ const NotesScreen: React.FC = () => {
             ))}
           </View>
         )}
-      </View>
+      </Animated.View>
     );
   };
 
@@ -415,7 +514,30 @@ const NotesScreen: React.FC = () => {
     const urlRegex = /^https?:\/\/\S+$/;
     
     if (urlRegex.test(item.content.trim())) {
-      return renderUrlItem(info);
+      // For URL-only notes, we need to wrap in Animated.View
+      const isRecentlyUpdated = recentlyUpdatedNote?.id === item.id;
+      
+      // Interpolate animation value for background color
+      const backgroundColor = isRecentlyUpdated
+        ? highlightAnimation.interpolate({
+            inputRange: [0, 1],
+            outputRange: ['#ffffff', '#e6f7ff']
+          })
+        : '#ffffff';
+      
+      return (
+        <Animated.View
+          style={[
+            styles.noteItem,
+            { backgroundColor },
+            // On web, we need to use style directly
+            Platform.OS === 'web' && isRecentlyUpdated ? 
+              { backgroundColor: recentlyUpdatedNote ? '#e6f7ff' : '#ffffff' } : null
+          ]}
+        >
+          {renderUrlItem({ item }).props.children}
+        </Animated.View>
+      );
     }
     
     return renderNoteItem(info);
@@ -431,6 +553,24 @@ const NotesScreen: React.FC = () => {
       </View>
     );
   };
+
+  // Expose the updateSingleNote method via ref
+  useImperativeHandle(ref, () => ({
+    updateSingleNote,
+  }), [updateSingleNote]);
+
+  // Set the screen options to include our ref
+  useEffect(() => {
+    // Set the screen options with our ref
+    navigation.setOptions({
+      // Use type assertion to allow our custom property
+      ...(navigation.getParent()?.getState().routes.find(r => r.name === 'Notes')?.params || {}),
+      // @ts-ignore - Custom property for our ref
+      notesScreenRef: {
+        updateSingleNote,
+      },
+    });
+  }, [navigation, updateSingleNote]);
 
   return (
     <SafeAreaView style={styles.container}>
@@ -542,7 +682,7 @@ const NotesScreen: React.FC = () => {
       />
     </SafeAreaView>
   );
-};
+});
 
 const styles = StyleSheet.create({
   container: {

@@ -989,25 +989,87 @@ const VerseDetailScreen: React.FC = () => {
     setNoteModalVisible(true);
   };
 
-  // Add function for saving new notes from modal
-  const handleSaveNewNote = async (content: string, tags: string[]) => {
-    if (!verse || !content.trim()) {
-      setNoteModalVisible(false);
-      setCurrentNote(null);
-      return;
-    }
-
+  const handleSaveNoteFromModal = async (content: string, tags: string[], noteId?: string, isNew?: boolean) => {
     try {
-      const note = await neo4jService.createNote(verse.id, content, tags);
-      setNotes([...notes, note]);
-      
-      // Close the modal
       setNoteModalVisible(false);
-      setCurrentNote(null);
+      
+      if (noteId) {
+        // Editing existing note
+        const updatedNote = await neo4jService.updateNote(noteId, {
+          content,
+          tags,
+        });
+        
+        // Update local notes state
+        setNotes(prevNotes => 
+          prevNotes.map(note => 
+            note.id === noteId ? { ...note, content, tags } : note
+          )
+        );
+        
+        // Try to update the note in the NotesScreen if it's in the navigation stack
+        const notesScreen = getNotesScreenRef();
+        if (notesScreen) {
+          notesScreen.updateSingleNote(noteId, false);
+        }
+      } else {
+        // Creating new note
+        const newNote = await neo4jService.createNote(verse!.id, content, tags);
+        
+        // Add to local notes state
+        setNotes(prevNotes => [newNote, ...prevNotes]);
+        
+        // Try to update the NotesScreen if it's in the navigation stack
+        const notesScreen = getNotesScreenRef();
+        if (notesScreen) {
+          notesScreen.updateSingleNote(newNote.id, true);
+        }
+      }
     } catch (error) {
-      console.error('Error adding note:', error);
-      Alert.alert(t('common:error'), t('verseDetail:failedToAddNote'));
+      console.error('Error saving note:', error);
+      Alert.alert(t('common:error'), t('verseDetail:errorSavingNote'));
     }
+  };
+  
+  // Helper function to get the NotesScreen ref if available
+  const getNotesScreenRef = () => {
+    // Navigate through the navigation hierarchy to find the NotesScreen
+    try {
+      // Try to get NotesScreen directly from tab navigation
+      const mainNavigation = navigation.getParent();
+      if (mainNavigation && mainNavigation.getState) {
+        const mainState = mainNavigation.getState();
+        
+        // Look for the NotesScreen in the navigation state
+        for (const route of mainState.routes) {
+          if (route.name === 'Notes') {
+            // Type assertion for the params
+            const params = route.params as { notesScreenRef?: { updateSingleNote: (noteId: string, isNew: boolean) => void } };
+            if (params?.notesScreenRef) {
+              return params.notesScreenRef;
+            }
+          }
+          
+          // Check nested navigators like tabs
+          if (route.name === 'MainTabs' && route.state) {
+            const tabRoutes = route.state.routes;
+            for (const tabRoute of tabRoutes) {
+              if (tabRoute.name === 'Notes') {
+                // Type assertion for nested params
+                const params = tabRoute.params as { notesScreenRef?: { updateSingleNote: (noteId: string, isNew: boolean) => void } };
+                if (params?.notesScreenRef) {
+                  return params.notesScreenRef;
+                }
+              }
+            }
+          }
+        }
+      }
+    } catch (error) {
+      console.log('Could not find NotesScreen reference:', error);
+    }
+    
+    return null;
   };
 
   // Add toggle function for note expansion
@@ -1274,13 +1336,7 @@ const VerseDetailScreen: React.FC = () => {
           setNoteModalVisible(false);
           setCurrentNote(null);
         }}
-        onSave={(content, tags) => {
-          if (currentNote?.id.startsWith('temp-')) {
-            handleSaveNewNote(content, tags);
-          } else {
-            handleSaveNote(content, tags);
-          }
-        }}
+        onSave={handleSaveNoteFromModal}
         availableTags={allTags}
       />
 
@@ -1289,6 +1345,7 @@ const VerseDetailScreen: React.FC = () => {
         visible={isWebViewVisible}
         url={webViewUrl}
         onClose={() => setIsWebViewVisible(false)}
+        id="verse-detail-webview"
       />
     </SafeAreaView>
   );

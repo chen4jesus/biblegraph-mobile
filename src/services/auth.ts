@@ -5,7 +5,8 @@ export interface User {
   id: string;
   name: string;
   email: string;
-  createdAt: Date;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface AuthResponse {
@@ -13,9 +14,13 @@ export interface AuthResponse {
   token: string;
 }
 
+// Auth state change listeners
+type AuthStateListener = (isAuthenticated: boolean) => void;
+
 class AuthService {
   private static instance: AuthService;
   private currentUser: User | null = null;
+  private listeners: AuthStateListener[] = [];
 
   private constructor() {}
 
@@ -26,10 +31,32 @@ class AuthService {
     return AuthService.instance;
   }
 
+  // Add listener for auth state changes
+  public addAuthStateListener(listener: AuthStateListener): () => void {
+    this.listeners.push(listener);
+    
+    // Return function to remove this listener
+    return () => {
+      this.listeners = this.listeners.filter(l => l !== listener);
+    };
+  }
+
+  // Notify all listeners of auth state change
+  private notifyAuthStateChanged(isAuthenticated: boolean): void {
+    this.listeners.forEach(listener => {
+      try {
+        listener(isAuthenticated);
+      } catch (error) {
+        console.error('Error in auth state listener:', error);
+      }
+    });
+  }
+
   async login(email: string, password: string): Promise<AuthResponse> {
     try {
       const response = await neo4jService.login(email, password);
       await this.setSession(response);
+      this.notifyAuthStateChanged(true);
       return response;
     } catch (error) {
       console.error('Login error:', error);
@@ -41,6 +68,7 @@ class AuthService {
     try {
       const response = await neo4jService.signUp(name, email, password);
       await this.setSession(response);
+      this.notifyAuthStateChanged(true);
       return response;
     } catch (error) {
       console.error('Sign up error:', error);
@@ -53,6 +81,7 @@ class AuthService {
       await AsyncStorage.removeItem('userToken');
       await AsyncStorage.removeItem('userData');
       this.currentUser = null;
+      this.notifyAuthStateChanged(false);
     } catch (error) {
       console.error('Logout error:', error);
       throw error;

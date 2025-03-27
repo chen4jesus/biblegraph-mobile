@@ -87,7 +87,9 @@ const ProfileScreen: React.FC = () => {
           onPress: async () => {
             try {
               await authService.logout();
-              navigation.replace('Login');
+              // Don't use navigation.replace here as it may cause issues
+              // The AppNavigator will automatically redirect to the Login screen 
+              // due to the auth state listener system we implemented
             } catch (error) {
               console.error('Error logging out:', error);
               Alert.alert('Error', 'Failed to logout. Please try again.');

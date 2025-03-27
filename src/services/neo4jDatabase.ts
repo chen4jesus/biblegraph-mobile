@@ -41,16 +41,11 @@ class Neo4jDatabaseService {
     try {
       await this.ensureInitialized();
       
-      // In a real app, you would validate credentials against a user store in Neo4j
-      // For demo purposes, we'll simulate a successful login
-      const token = `demo_token_${Date.now()}`;
-      const user: User = {
-        id: '1',
-        name: 'Demo User',
-        email,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      };
+      // Use the driver method to authenticate user
+      const user = await neo4jDriverService.getUserByEmailAndPassword(email, password);
+      
+      // Generate a token for the user
+      const token = `auth_token_${Date.now()}_${user.id}`;
       
       // Store the token
       await AsyncStorage.setItem(TOKEN_KEY, token);
@@ -59,7 +54,7 @@ class Neo4jDatabaseService {
       return { token, user };
     } catch (error) {
       console.error('Login failed:', error);
-      throw new Error('Authentication failed. Please check your credentials.');
+      throw error;
     }
   }
 
@@ -67,16 +62,11 @@ class Neo4jDatabaseService {
     try {
       await this.ensureInitialized();
       
-      // In a real app, you would create a new user in Neo4j
-      // For demo purposes, we'll simulate a successful registration
-      const token = `demo_token_${Date.now()}`;
-      const user: User = {
-        id: '1',
-        name,
-        email,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      };
+      // Use the driver method to create a new user
+      const user = await neo4jDriverService.createUser(name, email, password);
+      
+      // Generate a token for the user
+      const token = `auth_token_${Date.now()}_${user.id}`;
       
       // Store the token
       await AsyncStorage.setItem(TOKEN_KEY, token);
@@ -85,7 +75,7 @@ class Neo4jDatabaseService {
       return { token, user };
     } catch (error) {
       console.error('Sign up failed:', error);
-      throw new Error('Registration failed. Please try again.');
+      throw error;
     }
   }
 
@@ -114,21 +104,22 @@ class Neo4jDatabaseService {
       return this.user;
     }
 
-    // In a real app, you would fetch the user from Neo4j based on the stored token
-    // For demo purposes, we'll return a mock user if we have a token
     try {
       const token = await AsyncStorage.getItem(TOKEN_KEY);
-      if (token) {
-        this.user = {
-          id: '1',
-          name: 'Demo User',
-          email: 'demo@example.com',
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        };
-        return this.user;
-      }
-      return null;
+      if (!token) return null;
+      
+      // Extract user ID from token
+      const tokenParts = token.split('_');
+      if (tokenParts.length < 3) return null;
+      
+      const userId = tokenParts[2]; // Assuming token format is 'auth_token_timestamp_userId'
+      
+      // Fetch the user from the database using the userId
+      const user = await neo4jDriverService.getUserById(userId);
+      if (!user) return null;
+      
+      this.user = user;
+      return this.user;
     } catch (error) {
       console.error('Error getting current user:', error);
       return null;
