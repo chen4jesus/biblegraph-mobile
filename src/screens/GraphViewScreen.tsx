@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View,
   StyleSheet,
@@ -10,17 +10,23 @@ import {
   Alert,
   ToastAndroid,
   Platform,
+  Button,
+  Pressable,
 } from 'react-native';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import BibleGraph from '../components/BibleGraph';
 import { useBibleGraph } from '../hooks/useBibleGraph';
-import { Verse, Connection } from '../types/bible';
+import { Verse, Connection, GraphNode, GraphEdge } from '../types/bible';
 import { RootStackParamList } from '../navigation/types';
 import { useTranslation } from 'react-i18next';
 import { neo4jService } from '../services/neo4j';
 import { syncService } from '../services/sync';
+import ForceGraph from '../components/ForceGraph';
+import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
+import theme from '../theme';
+import { showNotification } from '../utils/notifications';
 
 type GraphViewScreenRouteProp = RouteProp<RootStackParamList, 'GraphView'>;
 type GraphViewNavigationProp = NativeStackNavigationProp<RootStackParamList>;
@@ -40,11 +46,15 @@ const GraphViewScreen: React.FC = () => {
   const errorShownRef = useRef(false);
   
   // Create a state to hold the verse IDs for the useBibleGraph hook
-  const [bibleGraphVerseIds, setBibleGraphVerseIds] = useState<string[]>(initialVerseIds);
+  const [bibleGraphVerseIds, setBibleGraphVerseIds] = useState<string[]>(
+    initialVerseId ? [initialVerseId] : initialVerseIds || []
+  );
   // Use a ref to track if initialVerses has been processed
   const initialVersesProcessedRef = useRef(false);
+  // Add a ref to track the last processed initialVerseIds
+  const lastProcessedIdsRef = useRef<string | null>(null);
   
-  // Update the bibleGraphVerseIds whenever initialVerses changes
+  // Update the bibleGraphVerseIds whenever initialVerses changes - simplified to run only once per change
   useEffect(() => {
     if (initialVerses.length > 0 && !initialVersesProcessedRef.current) {
       const newIds = initialVerses.map(v => v.id);
@@ -54,26 +64,32 @@ const GraphViewScreen: React.FC = () => {
     }
   }, [initialVerses]);
   
-  // Reset the processed flag when initialVerseIds changes
+  // Reset the processed flag only when initialVerseIds actually changes
   useEffect(() => {
-    initialVersesProcessedRef.current = false;
+    const newIdsString = initialVerseIds && initialVerseIds.length > 0 
+      ? JSON.stringify([...initialVerseIds].sort())
+      : null;
+      
+    if (newIdsString !== lastProcessedIdsRef.current) {
+      initialVersesProcessedRef.current = false;
+    }
   }, [initialVerseIds]);
   
-  // Load initial verses if verseIds is provided
+  // Load initial verses if verseIds is provided - removed initialVerses from dependencies
   useEffect(() => {
     console.log('GraphViewScreen - initialVerseIds changed:', initialVerseIds);
     
-    // Skip empty or already processed verse IDs
+    // Skip empty verse IDs
     if (!initialVerseIds || initialVerseIds.length === 0) {
       return;
     }
     
-    // Compare with current initialVerses to avoid redundant loading
-    const currentIds = new Set(initialVerses.map(v => v.id));
-    const hasAllIds = initialVerseIds.every(id => currentIds.has(id));
+    // Use a stable string representation for comparison
+    const currentIdsString = JSON.stringify([...initialVerseIds].sort());
     
-    if (hasAllIds) {
-      console.log('All verse IDs already loaded, skipping fetch');
+    // If we've already processed these exact IDs, don't reload
+    if (currentIdsString === lastProcessedIdsRef.current) {
+      console.log('These IDs were already processed, skipping fetch');
       return;
     }
     
@@ -92,6 +108,8 @@ const GraphViewScreen: React.FC = () => {
         console.log(`Loaded ${verses.length} verses from ${initialVerseIds.length} IDs`);
         if (verses.length > 0) {
           setInitialVerses(verses);
+          // Store the processed IDs
+          lastProcessedIdsRef.current = currentIdsString;
         }
       } catch (error) {
         console.error('Error loading initial verses:', error);
@@ -102,7 +120,7 @@ const GraphViewScreen: React.FC = () => {
     };
     
     loadVerses();
-  }, [initialVerseIds, initialVerses]);
+  }, [initialVerseIds]); // Removed initialVerses from dependencies
   
   // Helper function to show notifications cross-platform
   const showNotification = (message: string, title?: string) => {
@@ -121,36 +139,36 @@ const GraphViewScreen: React.FC = () => {
   };
   
   const {
-    verses,
-    connections,
-    loading,
-    error,
-    selectedVerse,
-    selectedConnection,
-    handleVersePress,
-    handleConnectionPress,
-    refreshGraph,
+    nodes,
+    edges,
+    isLoading,
+    isFetching,
+    expandNode,
+    currentVerseId,
+    setCurrentVerseId,
+    zoomToNode,
+    error
   } = useBibleGraph({
-    initialVerseId: initialVerseId || (initialVerses.length > 0 ? initialVerses[0].id : undefined),
-    initialVerseIds: bibleGraphVerseIds,
-    onVersePress: (verse) => {
-      // Navigate to verse detail when a verse is pressed
-      navigation.navigate('VerseDetail', { verseId: verse.id });
-    },
-    onConnectionError: () => {
-      setConnectionErrors(true);
-      // Show toast/alert only once
-      if (!errorShownRef.current) {
-        errorShownRef.current = true;
-        showNotification('部分连接加载失败，显示部分图形', '警告');
-      }
-    }
+    initialVerseId,
+    initialVerseIds: bibleGraphVerseIds
   });
+
+  // When a node is selected, navigate to verse detail
+  const handleNodePress = useCallback((node: GraphNode) => {
+    if (node.type === 'VERSE') {
+      navigation.navigate('VerseDetail', { verseId: node.id });
+    } else if (node.type === 'GROUP') {
+      // For group nodes, we could either:
+      // 1. Show a list of all verses in the group
+      // 2. Navigate to a special group detail screen
+      navigation.navigate('GroupDetail', { groupId: node.id });
+    }
+  }, [navigation]);
 
   const handleRefresh = async () => {
     setConnectionErrors(false);
     errorShownRef.current = false;
-    await refreshGraph();
+    await zoomToNode(currentVerseId);
   };
 
   const handleResetSync = () => {
@@ -168,7 +186,7 @@ const GraphViewScreen: React.FC = () => {
             syncService.resetSyncState();
             setConnectionErrors(false);
             errorShownRef.current = false;
-            await refreshGraph();
+            await zoomToNode(currentVerseId);
             showNotification('同步状态已重置', '成功');
           },
           style: 'destructive',
@@ -177,10 +195,22 @@ const GraphViewScreen: React.FC = () => {
     );
   };
 
-  if (loading || loadingInitialVerses) {
+  // Create a custom connection handler
+  const handleValidatedConnectionPress = (connection: Connection) => {
+    // Add additional validation before handling the connection press
+    if (!connection || !connection.id || !connection.sourceVerseId || !connection.targetVerseId) {
+      console.warn('Invalid connection in GraphViewScreen:', connection);
+      return;
+    }
+    
+    // Now it's safe to handle the connection
+    setCurrentVerseId(connection.sourceVerseId);
+  };
+
+  if (isLoading || loadingInitialVerses) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#007AFF" />
+        <ActivityIndicator size="large" color={theme.colors.primary} />
         <Text style={styles.loadingText}>{t('graph:loading')}</Text>
       </View>
     );
@@ -190,7 +220,7 @@ const GraphViewScreen: React.FC = () => {
     return (
       <View style={styles.errorContainer}>
         <Ionicons name="alert-circle-outline" size={48} color="#FF3B30" />
-        <Text style={styles.errorText}>Error: {error}</Text>
+        <Text style={styles.errorText}>Error: {error.message || String(error)}</Text>
         <View style={styles.errorButtonContainer}>
           <TouchableOpacity style={styles.retryButton} onPress={handleRefresh}>
             <Text style={styles.retryButtonText}>{t('graph:retry')}</Text>
@@ -203,16 +233,29 @@ const GraphViewScreen: React.FC = () => {
     );
   }
 
+  // Make sure we have nodes before rendering
+  if (nodes.length === 0) {
+    console.log('No nodes to display yet');
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color={theme.colors.primary} />
+        <Text style={styles.loadingText}>{t('graph:preparingGraph')}</Text>
+      </View>
+    );
+  }
+
+  console.log(`Rendering graph with ${nodes.length} nodes and ${edges.length} edges`);
+
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.title}>{t('graph:title')}</Text>
-        {selectedVerse && (
+        {currentVerseId && (
           <Text style={styles.subtitle}>
-            {selectedVerse.book} {selectedVerse.chapter}:{selectedVerse.verse}
+            {initialVerses.find(v => v.id === currentVerseId)?.book} {initialVerses.find(v => v.id === currentVerseId)?.chapter}:{initialVerses.find(v => v.id === currentVerseId)?.verse}
           </Text>
         )}
-        {!selectedVerse && initialVerses.length > 0 && (
+        {!currentVerseId && initialVerses.length > 0 && (
           <Text style={styles.subtitle}>
             {`已选择 ${initialVerses.length} 个经文`}
           </Text>
@@ -229,7 +272,7 @@ const GraphViewScreen: React.FC = () => {
         )}
       </View>
       
-      {verses.length === 0 || connections.length === 0 ? (
+      {nodes.length === 0 || edges.length === 0 ? (
         <View style={styles.emptyContainer}>
           <Ionicons name="map-outline" size={64} color="#8E8E93" />
           <Text style={styles.emptyText}>{t('graph:noData')}</Text>
@@ -244,11 +287,11 @@ const GraphViewScreen: React.FC = () => {
         </View>
       ) : (
         <View style={styles.graphContainer}>
-          <BibleGraph
-            verses={verses}
-            connections={connections}
-            onVersePress={handleVersePress}
-            onConnectionPress={handleConnectionPress}
+          <ForceGraph
+            nodes={nodes}
+            links={edges}
+            onNodePress={handleNodePress}
+            showLabels={true}
           />
         </View>
       )}
@@ -278,14 +321,17 @@ const GraphViewScreen: React.FC = () => {
         </View>
       )}
       
-      {selectedConnection && (
-        <View style={styles.connectionInfo}>
-          <Text style={styles.connectionType}>
-            {selectedConnection.type.replace('_', ' ')}
-          </Text>
-          <Text style={styles.connectionDescription}>
-            {selectedConnection.description}
-          </Text>
+      {!isLoading && !loadingInitialVerses && (
+        <View style={styles.actionContainer}>
+          {isFetching && (
+            <ActivityIndicator size="small" color={theme.colors.primary} style={styles.fetchingIndicator} />
+          )}
+          <Pressable
+            style={styles.actionButton}
+            onPress={() => navigation.goBack()}
+          >
+            <Icon name="arrow-left" size={24} color={theme.colors.text} />
+          </Pressable>
         </View>
       )}
     </SafeAreaView>
@@ -295,7 +341,7 @@ const GraphViewScreen: React.FC = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: theme.colors.background,
   },
   header: {
     padding: 16,
@@ -417,29 +463,31 @@ const styles = StyleSheet.create({
   controlButton: {
     padding: 8,
   },
-  connectionInfo: {
+  graph: {
+    flex: 1,
+  },
+  actionContainer: {
     position: 'absolute',
-    top: 80,
+    top: 40,
     left: 20,
-    right: 20,
-    backgroundColor: 'rgba(255, 255, 255, 0.9)',
-    borderRadius: 12,
-    padding: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    flexDirection: 'row',
+    alignItems: 'center',
   },
-  connectionType: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#007AFF',
-    marginBottom: 8,
-  },
-  connectionDescription: {
-    fontSize: 14,
-    color: '#333',
+  actionButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: theme.colors.surface,
+    justifyContent: 'center',
+    alignItems: 'center',
+    elevation: 4,
+    shadowColor: "#000",
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
   },
   errorBanner: {
     flexDirection: 'row',
@@ -475,6 +523,9 @@ const styles = StyleSheet.create({
     color: 'white',
     fontSize: 12,
     fontWeight: 'bold',
+  },
+  fetchingIndicator: {
+    marginRight: 10,
   },
 });
 

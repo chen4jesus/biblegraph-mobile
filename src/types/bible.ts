@@ -18,21 +18,43 @@ export interface Verse {
   updatedAt: string;
 }
 
+export interface VerseGroup {
+  id: string;
+  name: string;
+  description?: string;
+  verseIds: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface Connection {
   id: string;
   sourceVerseId: string;
   targetVerseId: string;
   type: ConnectionType;
-  description: string;
+  description?: string;
+  groupConnectionId?: string;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface GroupConnection {
+  id: string;
+  name?: string;
+  connectionIds: string[];
+  type: ConnectionType;
+  description?: string;
+  createdAt: string;
+  updatedAt: string;
+  sourceType?: NodeType;
+  targetType?: NodeType;
 }
 
 export interface Note {
   id: string;
   verseId: string;
   content: string;
-  tags: string[];
+  tags?: string[];
   createdAt: string;
   updatedAt: string;
 }
@@ -58,18 +80,31 @@ export interface Tag {
   id: string;
   name: string;
   color: string;
+  createdAt: string;
+  updatedAt: string;
 }
+
+export interface VerseTag {
+  id: string;
+  verseId: string;
+  tagId: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type NodeType = 'VERSE' | 'GROUP' | 'NOTE' | 'TAG';
 
 export interface GraphNode {
   id: string;
-  type: 'VERSE' | 'NOTE' | 'TAG';
-  data: Verse | Note | Tag;
+  type: NodeType;
+  label: string;
+  data: Verse | VerseGroup | GroupConnection | Tag | Note;
 }
 
 export interface GraphEdge {
   id: string;
   source: string;
   target: string;
-  type: ConnectionType;
-  data: Connection;
+  type: ConnectionType | 'GROUP_MEMBER';
+  data: Connection | GroupConnection | { type: 'GROUP_MEMBER' };
 } 

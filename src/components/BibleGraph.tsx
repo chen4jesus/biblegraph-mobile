@@ -367,10 +367,23 @@ const BibleGraph: React.FC<BibleGraphProps> = ({
   };
 
   const handleEdgePress = (edge: Edge) => {
+    // First check if this is a valid edge
+    if (!edge || !edge.id || !edge.source || !edge.target) {
+      console.warn('Invalid edge object in handleEdgePress');
+      return;
+    }
+    
+    // Toggle the selection state
     setSelectedEdge(prevSelected => prevSelected?.id === edge.id ? null : edge);
+    
+    // Find the corresponding connection
     const connection = connections.find(c => c.id === edge.id);
-    if (connection) {
+    
+    // Only call onConnectionPress if we have a valid connection
+    if (connection && connection.sourceVerseId && connection.targetVerseId) {
       onConnectionPress?.(connection);
+    } else {
+      console.warn('Could not find valid connection for edge:', edge.id);
     }
   };
 
@@ -650,19 +663,6 @@ const BibleGraph: React.FC<BibleGraphProps> = ({
                 </TouchableOpacity>
               </View>
               <Text style={styles.modalText}>{modalContent.content}</Text>
-              <View style={styles.modalActions}>
-                <TouchableOpacity 
-                  style={styles.modalButton}
-                  onPress={() => {
-                    if (selectedNode) {
-                      centerOnNode(selectedNode.id);
-                      setModalVisible(false);
-                    }
-                  }}
-                >
-                  <Text style={styles.modalButtonText}>Center on Graph</Text>
-                </TouchableOpacity>
-              </View>
             </View>
           </TouchableWithoutFeedback>
         </View>

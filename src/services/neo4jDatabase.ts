@@ -1,5 +1,5 @@
 import { neo4jDriverService } from './neo4jDriver';
-import { Verse, Connection, Note, ConnectionType, User } from '../types/bible';
+import { Verse, Connection, Note, ConnectionType, User, VerseGroup, GroupConnection } from '../types/bible';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // Token storage key
@@ -136,9 +136,9 @@ class Neo4jDatabaseService {
   }
 
   // Verse methods
-  public async getVerses(signal?: AbortSignal): Promise<Verse[]> {
+  public async getVerses(signal?: AbortSignal, verseIds?: string[]): Promise<Verse[]> {
     await this.ensureInitialized();
-    return neo4jDriverService.getVerses(signal);
+    return neo4jDriverService.getVerses(signal, verseIds);
   }
 
   public async getVerse(id: string, signal?: AbortSignal): Promise<Verse | null> {
@@ -188,9 +188,9 @@ class Neo4jDatabaseService {
   }
 
   // Note methods
-  public async getNotes(signal?: AbortSignal): Promise<Note[]> {
+  public async getNotes(skip: number = 0, limit: number = 20): Promise<Note[]> {
     await this.ensureInitialized();
-    return neo4jDriverService.getNotes(signal);
+    return neo4jDriverService.getNotes(skip, limit);
   }
 
   public async getNotesForVerse(verseId: string): Promise<Note[]> {
@@ -218,6 +218,42 @@ class Neo4jDatabaseService {
     if (!this.isInitialized) {
       await this.initialize();
     }
+  }
+
+  public async createConnectionsBatch(
+    connections: Array<Omit<Connection, 'id' | 'createdAt' | 'updatedAt'>>
+  ): Promise<Connection[]> {
+    await this.ensureInitialized();
+    return neo4jDriverService.createConnectionsBatch(connections);
+  }
+
+  public async createVerseGroup(
+    name: string, 
+    verseIds: string[], 
+    description: string = ''
+  ): Promise<VerseGroup> {
+    return neo4jDriverService.createVerseGroup(name, verseIds, description);
+  }
+
+  public async getVerseGroup(groupId: string): Promise<VerseGroup | null> {
+    return neo4jDriverService.getVerseGroup(groupId);
+  }
+
+  public async getVerseGroups(): Promise<VerseGroup[]> {
+    return neo4jDriverService.getVerseGroups();
+  }
+
+  public async createGroupConnection(
+    sourceIds: string[], 
+    targetIds: string[], 
+    type: ConnectionType, 
+    description: string = ''
+  ): Promise<GroupConnection> {
+    return neo4jDriverService.createGroupConnection(sourceIds, targetIds, type, description);
+  }
+
+  public async getGroupConnectionsByVerseId(verseId: string): Promise<GroupConnection[]> {
+    return neo4jDriverService.getGroupConnectionsByVerseId(verseId);
   }
 }
 

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -8,6 +8,7 @@ import {
   TextInput,
   SafeAreaView,
   ScrollView,
+  ActivityIndicator,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -23,6 +24,8 @@ interface NoteWithVerse extends Note {
   verse?: Verse;
 }
 
+const NOTES_PER_PAGE = 20;
+
 const NotesScreen: React.FC = () => {
   const { t } = useTranslation(['notes', 'common']);
   const navigation = useNavigation<NotesScreenNavigationProp>();
@@ -31,6 +34,12 @@ const NotesScreen: React.FC = () => {
   const [filteredNotes, setFilteredNotes] = useState<NoteWithVerse[]>([]);
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
   const [allTags, setAllTags] = useState<string[]>([]);
+  
+  // Pagination states
+  const [page, setPage] = useState(0);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [hasMoreData, setHasMoreData] = useState(true);
 
   useEffect(() => {
     loadNotes();
@@ -48,10 +57,22 @@ const NotesScreen: React.FC = () => {
     setAllTags(uniqueTags);
   }, [notes]);
 
-  const loadNotes = async () => {
+  const loadNotes = async (refresh = true) => {
+    if (refresh) {
+      setPage(0);
+      setIsRefreshing(true);
+      setHasMoreData(true);
+    }
+
     try {
-      // Fetch notes from the Neo4j database
-      const fetchedNotes = await neo4jService.getNotes();
+      // Fetch notes from the Neo4j database with pagination
+      const skip = refresh ? 0 : page * NOTES_PER_PAGE;
+      const fetchedNotes = await neo4jService.getNotes(skip, NOTES_PER_PAGE);
+      
+      // If we got fewer notes than requested, there are no more to load
+      if (fetchedNotes.length < NOTES_PER_PAGE) {
+        setHasMoreData(false);
+      }
       
       // Create an array to store notes with their associated verses
       const notesWithVerses: NoteWithVerse[] = [];
@@ -69,11 +90,36 @@ const NotesScreen: React.FC = () => {
         });
       }
       
-      setNotes(notesWithVerses);
+      // If refreshing, replace notes, otherwise append
+      if (refresh) {
+        setNotes(notesWithVerses);
+      } else {
+        setNotes(prev => [...prev, ...notesWithVerses]);
+      }
+      
+      // If we successfully loaded data, increment the page
+      if (!refresh && fetchedNotes.length > 0) {
+        setPage(prev => prev + 1);
+      }
     } catch (error) {
       console.error('Error loading notes:', error);
+    } finally {
+      setIsRefreshing(false);
+      setIsLoadingMore(false);
     }
   };
+
+  const loadMoreNotes = useCallback(() => {
+    if (!isLoadingMore && hasMoreData && !searchQuery && !selectedTag) {
+      setIsLoadingMore(true);
+      loadNotes(false);
+    }
+  }, [isLoadingMore, hasMoreData, searchQuery, selectedTag]);
+
+  const handleRefresh = useCallback(() => {
+    setIsRefreshing(true);
+    loadNotes(true);
+  }, []);
 
   const filterNotes = () => {
     let filtered = notes;
@@ -161,6 +207,17 @@ const NotesScreen: React.FC = () => {
       )}
     </TouchableOpacity>
   );
+
+  const renderFooter = () => {
+    if (!isLoadingMore) return null;
+    
+    return (
+      <View style={styles.footerLoader}>
+        <ActivityIndicator size="small" color="#007AFF" />
+        <Text style={styles.loadingText}>{t('common:loading')}</Text>
+      </View>
+    );
+  };
 
   return (
     <SafeAreaView style={styles.container}>
@@ -257,6 +314,11 @@ const NotesScreen: React.FC = () => {
             </Text>
           </View>
         }
+        onEndReached={loadMoreNotes}
+        onEndReachedThreshold={0.2}
+        ListFooterComponent={renderFooter}
+        refreshing={isRefreshing}
+        onRefresh={handleRefresh}
       />
     </SafeAreaView>
   );
@@ -393,6 +455,17 @@ const styles = StyleSheet.create({
   },
   tagFilterTextSelected: {
     color: '#fff',
+  },
+  footerLoader: {
+    paddingVertical: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+  },
+  loadingText: {
+    marginLeft: 10,
+    fontSize: 14,
+    color: '#666',
   },
 });
 

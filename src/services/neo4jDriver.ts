@@ -1,5 +1,5 @@
 import neo4j, { Driver, Session, Result } from 'neo4j-driver';
-import { Verse, Connection, Note, ConnectionType } from '../types/bible';
+import { Verse, Connection, Note, ConnectionType, VerseGroup, GroupConnection } from '../types/bible';
 import { v4 as uuidv4 } from 'uuid';
 
 // Type for creating a new connection
@@ -70,6 +70,11 @@ class Neo4jDriver {
     return this.driver.session();
   }
 
+  // Helper method to ensure integers for Neo4j parameters
+  private ensureInteger(value: number): number {
+    return Math.floor(value);
+  }
+
   // Verse methods
   public async getVerses(signal?: AbortSignal, verseIds?: string[]): Promise<Verse[]> {
     if (signal?.aborted) {
@@ -117,16 +122,33 @@ class Neo4jDriver {
         return {
           id: verseProps.id.toString(),
           book: verseProps.book,
-          chapter: parseInt(verseProps.chapter.toString()),
-          verse: parseInt(verseProps.verse.toString()),
+          // Use integer conversion for chapter and verse as they are Long types in Neo4j
+          chapter: this.toLongInt(verseProps.chapter),
+          verse: this.toLongInt(verseProps.verse),
           text: verseProps.text,
-          translation: verseProps.translation || 'NIV',
+          translation: verseProps.translation || 'ESV',
           createdAt: verseProps.createdAt || new Date().toISOString(),
           updatedAt: verseProps.updatedAt || new Date().toISOString(),
         };
       });
     } finally {
       await session.close();
+    }
+  }
+
+  // Helper method to convert Neo4j Long values to JavaScript integers
+  private toLongInt(value: any): number {
+    if (value === null || value === undefined) {
+      return 0;
+    }
+    // Handle both string numbers and Neo4j integer objects
+    try {
+      return typeof value.toNumber === 'function' 
+        ? value.toNumber() 
+        : parseInt(value.toString(), 10);
+    } catch (e) {
+      console.warn('Error converting to integer:', e);
+      return 0;
     }
   }
 
@@ -160,10 +182,10 @@ class Neo4jDriver {
       return {
         id: verseProps.id.toString(),
         book: verseProps.book,
-        chapter: parseInt(verseProps.chapter.toString()),
-        verse: parseInt(verseProps.verse.toString()),
+        chapter: this.toLongInt(verseProps.chapter),
+        verse: this.toLongInt(verseProps.verse),
         text: verseProps.text,
-        translation: verseProps.translation || 'NIV',
+        translation: verseProps.translation || 'ESV',
         createdAt: verseProps.createdAt || new Date().toISOString(),
         updatedAt: verseProps.updatedAt || new Date().toISOString(),
       };
@@ -175,6 +197,13 @@ class Neo4jDriver {
   public async createVerse(verse: Verse): Promise<Verse> {
     const session = this.getSession();
     try {
+      // Ensure chapter and verse are integers
+      const verseWithIntegerValues = {
+        ...verse,
+        chapter: Math.floor(verse.chapter),
+        verse: Math.floor(verse.verse)
+      };
+      
       // Use MERGE instead of CREATE to handle existing verses
       const result = await session.run(`
         MERGE (v:Verse {book: $book, chapter: $chapter, verse: $verse})
@@ -189,7 +218,7 @@ class Neo4jDriver {
           v.translation = CASE WHEN v.translation IS NULL THEN $translation ELSE v.translation END,
           v.updatedAt = $updatedAt
         RETURN v
-      `, verse);
+      `, verseWithIntegerValues);
       
       if (result.records.length === 0) {
         throw new Error('Failed to create verse');
@@ -202,7 +231,7 @@ class Neo4jDriver {
         chapter: parseInt(verseProps.chapter.toString()),
         verse: parseInt(verseProps.verse.toString()),
         text: verseProps.text,
-        translation: verseProps.translation || 'NIV',
+        translation: verseProps.translation || 'ESV',
         createdAt: verseProps.createdAt || new Date().toISOString(),
         updatedAt: verseProps.updatedAt || new Date().toISOString(),
       };
@@ -234,7 +263,7 @@ class Neo4jDriver {
           chapter: parseInt(verseProps.chapter.toString()),
           verse: parseInt(verseProps.verse.toString()),
           text: verseProps.text,
-          translation: verseProps.translation || 'NIV',
+          translation: verseProps.translation || 'ESV',
           createdAt: verseProps.createdAt || new Date().toISOString(),
           updatedAt: verseProps.updatedAt || new Date().toISOString(),
         };
@@ -318,25 +347,43 @@ class Neo4jDriver {
       const recordsToProcess = result.records.slice(0, 100);
       
       recordsToProcess.forEach(record => {
-        const connectionProps = record.get('c').properties;
-        const sourceId = record.get('sourceId');
-        const targetId = record.get('targetId');
-        const type = connectionProps.type as ConnectionType;
-        
-        // Create a unique key based on source, target, and type
-        const uniqueKey = `${sourceId}-${targetId}-${type}`;
-        
-        // Only add if not already in the map
-        if (!uniqueConnections.has(uniqueKey)) {
-          uniqueConnections.set(uniqueKey, {
-            id: connectionProps.id.toString(),
-            sourceVerseId: sourceId,
-            targetVerseId: targetId,
-            type: type,
-            description: connectionProps.description || '',
-            createdAt: connectionProps.createdAt || new Date().toISOString(),
-            updatedAt: connectionProps.updatedAt || new Date().toISOString(),
-          });
+        try {
+          const connectionProps = record.get('c')?.properties;
+          // Skip this record if connection or properties are undefined
+          if (!connectionProps) {
+            console.warn('Connection properties undefined in record:', record);
+            return;
+          }
+          
+          const sourceId = record.get('sourceId');
+          const targetId = record.get('targetId');
+          // Skip this record if source or target ID is undefined
+          if (!sourceId || !targetId) {
+            console.warn('Source or target ID undefined in record:', record);
+            return;
+          }
+          
+          const type = connectionProps.type as ConnectionType;
+          
+          // Create a unique key based on source, target, and type
+          const uniqueKey = `${sourceId}-${targetId}-${type}`;
+          
+          // Only add if not already in the map
+          if (!uniqueConnections.has(uniqueKey)) {
+            // Make sure all properties exist before accessing them
+            uniqueConnections.set(uniqueKey, {
+              id: connectionProps.id ? connectionProps.id.toString() : `temp-${Date.now()}`,
+              sourceVerseId: sourceId,
+              targetVerseId: targetId,
+              type: type,
+              description: connectionProps.description || '',
+              createdAt: connectionProps.createdAt || new Date().toISOString(),
+              updatedAt: connectionProps.updatedAt || new Date().toISOString(),
+            });
+          }
+        } catch (error) {
+          console.error('Error processing connection record:', error);
+          // Continue with next record
         }
       });
       
@@ -498,31 +545,22 @@ class Neo4jDriver {
   }
 
   // Note methods
-  public async getNotes(signal?: AbortSignal): Promise<Note[]> {
-    if (signal?.aborted) {
-      throw new DOMException('Aborted', 'AbortError');
-    }
-
+  public async getNotes(skip: number = 0, limit: number = 20): Promise<Note[]> {
     const session = this.getSession();
     try {
-      // Check if aborted before executing query
-      if (signal?.aborted) {
-        throw new DOMException('Aborted', 'AbortError');
-      }
-
+      // Ensure skip and limit are integers
+      const skipInt = Math.max(0, Math.floor(skip));
+      const limitInt = Math.max(1, Math.floor(limit));
+      
       const result = await session.run(`
         MATCH (n:Note)-[:ABOUT]->(v:Verse)
         RETURN n, v.id as verseId, 
                CASE WHEN n.tags IS NOT NULL THEN n.tags ELSE [] END as tags
         ORDER BY n.updatedAt DESC
-        LIMIT 100
-      `);
+        SKIP toInteger($skipInt)
+        LIMIT toInteger($limitInt)
+      `, { skipInt, limitInt });
       
-      // Check if aborted after query
-      if (signal?.aborted) {
-        throw new DOMException('Aborted', 'AbortError');
-      }
-
       return result.records.map(record => {
         const noteProps = record.get('n').properties;
         const tags = record.get('tags') || [];
@@ -530,7 +568,8 @@ class Neo4jDriver {
           id: noteProps.id.toString(),
           verseId: record.get('verseId'),
           content: noteProps.content,
-          tags: Array.isArray(tags) ? tags : [],
+          // Ensure tags is always an array of strings
+          tags: Array.isArray(tags) ? tags.map(tag => tag.toString()) : [],
           createdAt: noteProps.createdAt,
           updatedAt: noteProps.updatedAt,
         };
@@ -543,13 +582,18 @@ class Neo4jDriver {
   public async getNotesForVerse(verseId: string): Promise<Note[]> {
     const session = this.getSession();
     try {
+      const limitValue = 100; // Use a constant integer
+      
       const result = await session.run(`
         MATCH (n:Note)-[:ABOUT]->(v:Verse {id: $verseId})
         RETURN n, 
                CASE WHEN n.tags IS NOT NULL THEN n.tags ELSE [] END as tags
         ORDER BY n.updatedAt DESC
-        LIMIT 100
-      `, { verseId });
+        LIMIT toInteger($limit)
+      `, { 
+        verseId,
+        limit: limitValue 
+      });
       
       return result.records.map(record => {
         const noteProps = record.get('n').properties;
@@ -558,7 +602,8 @@ class Neo4jDriver {
           id: noteProps.id.toString(),
           verseId: verseId,
           content: noteProps.content,
-          tags: Array.isArray(tags) ? tags : [],
+          // Ensure tags is always an array of strings
+          tags: Array.isArray(tags) ? tags.map(tag => tag.toString()) : [],
           createdAt: noteProps.createdAt,
           updatedAt: noteProps.updatedAt,
         };
@@ -584,8 +629,10 @@ class Neo4jDriver {
         throw new Error(`Verse with id ${verseId} not found`);
       }
 
-      // Ensure tags is an array
-      const tagsArray = Array.isArray(tags) ? tags : [];
+      // Ensure tags is a proper string array
+      const tagsArray = Array.isArray(tags) 
+        ? tags.filter(tag => tag && typeof tag === 'string').map(tag => tag.trim())
+        : [];
 
       const result = await session.run(`
         MATCH (v:Verse {id: $verseId})
@@ -653,7 +700,10 @@ class Neo4jDriver {
       };
       
       if (updates.tags) {
-        params.tags = updates.tags;
+        // Ensure tags is a proper string array before updating
+        params.tags = Array.isArray(updates.tags) 
+          ? updates.tags.filter(tag => tag && typeof tag === 'string').map(tag => tag.trim())
+          : [];
       }
       
       const result = await session.run(query, params);
@@ -671,7 +721,8 @@ class Neo4jDriver {
         id: noteProps.id.toString(),
         verseId,
         content: noteProps.content,
-        tags: Array.isArray(tags) ? tags : [],
+        // Ensure tags is returned as an array of strings
+        tags: Array.isArray(tags) ? tags.map(tag => tag.toString()) : [],
         createdAt: noteProps.createdAt,
         updatedAt: noteProps.updatedAt
       };
@@ -776,29 +827,33 @@ class Neo4jDriver {
   public async getVerseByReference(book: string, chapter: number, verse: number): Promise<Verse | null> {
     const session = this.getSession();
     try {
+      // Ensure chapter and verse are integers
+      const chapterInt = Math.floor(chapter);
+      const verseInt = Math.floor(verse);
+      
       const result = await session.run(`
         MATCH (v:Verse)
         WHERE v.book = $book AND v.chapter = $chapter AND v.verse = $verse
         RETURN v
       `, { 
         book, 
-        chapter, 
-        verse 
+        chapter: chapterInt, 
+        verse: verseInt
       });
       
       if (result.records.length === 0) {
         // If no exact match, try a more flexible search
-        return this.findVerseWithFlexibleBookName(book, chapter, verse);
+        return this.findVerseWithFlexibleBookName(book, chapterInt, verseInt);
       }
       
       const verseProps = result.records[0].get('v').properties;
       return {
         id: verseProps.id.toString(),
         book: verseProps.book,
-        chapter: parseInt(verseProps.chapter.toString()),
-        verse: parseInt(verseProps.verse.toString()),
+        chapter: this.toLongInt(verseProps.chapter),
+        verse: this.toLongInt(verseProps.verse),
         text: verseProps.text,
-        translation: verseProps.translation || 'NIV',
+        translation: verseProps.translation || 'ESV',
         createdAt: verseProps.createdAt || new Date().toISOString(),
         updatedAt: verseProps.updatedAt || new Date().toISOString(),
       };
@@ -812,6 +867,10 @@ class Neo4jDriver {
     console.log(`Trying flexible search for: ${bookName} ${chapter}:${verse}`);
     const session = this.getSession();
     try {
+      // Ensure we're using integer values
+      const chapterInt = Math.floor(chapter);
+      const verseInt = Math.floor(verse);
+      
       // Try case-insensitive match
       const result = await session.run(`
         MATCH (v:Verse)
@@ -819,8 +878,8 @@ class Neo4jDriver {
         RETURN v
       `, { 
         book: bookName, 
-        chapter, 
-        verse 
+        chapter: chapterInt, 
+        verse: verseInt 
       });
       
       if (result.records.length === 0) {
@@ -831,13 +890,400 @@ class Neo4jDriver {
       return {
         id: verseProps.id.toString(),
         book: verseProps.book,
-        chapter: parseInt(verseProps.chapter.toString()),
-        verse: parseInt(verseProps.verse.toString()),
+        chapter: this.toLongInt(verseProps.chapter),
+        verse: this.toLongInt(verseProps.verse),
         text: verseProps.text,
-        translation: verseProps.translation || 'NIV',
+        translation: verseProps.translation || 'ESV',
         createdAt: verseProps.createdAt || new Date().toISOString(),
         updatedAt: verseProps.updatedAt || new Date().toISOString(),
       };
+    } finally {
+      session.close();
+    }
+  }
+
+  // Batch create multiple connections
+  public async createConnectionsBatch(connections: ConnectionCreateInput[]): Promise<Connection[]> {
+    if (!connections || connections.length === 0) {
+      return [];
+    }
+    
+    const session = this.getSession();
+    const now = new Date().toISOString();
+    const results: Connection[] = [];
+    
+    try {
+      // Use a transaction to ensure all-or-nothing creation
+      const txc = session.beginTransaction();
+      
+      try {
+        for (const connection of connections) {
+          const id = uuidv4();
+          
+          // Verify both verses exist within the transaction
+          const versesResult = await txc.run(`
+            MATCH (source:Verse {id: $sourceId})
+            MATCH (target:Verse {id: $targetId}) 
+            RETURN source, target
+          `, { 
+            sourceId: connection.sourceVerseId,
+            targetId: connection.targetVerseId
+          });
+  
+          if (versesResult.records.length === 0) {
+            console.warn(`Skipping connection: One or both verses not found: ${connection.sourceVerseId} -> ${connection.targetVerseId}`);
+            continue;
+          }
+          
+          // Check if connection already exists
+          const existingResult = await txc.run(`
+            MATCH (v1:Verse {id: $sourceId})-[c:CONNECTS_TO]->(v2:Verse {id: $targetId})
+            WHERE c.type = $type
+            RETURN c
+          `, {
+            sourceId: connection.sourceVerseId,
+            targetId: connection.targetVerseId,
+            type: connection.type
+          });
+          
+          // If connection already exists, add it to results
+          if (existingResult.records.length > 0) {
+            const existingProps = existingResult.records[0].get('c').properties;
+            results.push({
+              id: existingProps.id.toString(),
+              sourceVerseId: connection.sourceVerseId,
+              targetVerseId: connection.targetVerseId,
+              type: connection.type,
+              description: existingProps.description,
+              createdAt: existingProps.createdAt,
+              updatedAt: existingProps.updatedAt,
+            });
+            continue;
+          }
+          
+          // Create new connection
+          const result = await txc.run(`
+            MATCH (v1:Verse {id: $sourceId})
+            MATCH (v2:Verse {id: $targetId})
+            CREATE (v1)-[c:CONNECTS_TO {
+              id: $id,
+              type: $type,
+              description: $description,
+              createdAt: $now,
+              updatedAt: $now
+            }]->(v2)
+            RETURN c, v1.id as sourceId, v2.id as targetId
+          `, {
+            id,
+            sourceId: connection.sourceVerseId,
+            targetId: connection.targetVerseId,
+            type: connection.type,
+            description: connection.description,
+            now
+          });
+          
+          if (result.records.length > 0) {
+            const record = result.records[0];
+            const connectionProps = record.get('c').properties;
+            
+            results.push({
+              id: connectionProps.id.toString(),
+              sourceVerseId: record.get('sourceId'),
+              targetVerseId: record.get('targetId'),
+              type: connectionProps.type as ConnectionType,
+              description: connectionProps.description,
+              createdAt: connectionProps.createdAt,
+              updatedAt: connectionProps.updatedAt,
+            });
+          }
+        }
+        
+        // Commit the transaction if all operations were successful
+        await txc.commit();
+        return results;
+        
+      } catch (error) {
+        // Rollback the transaction if there was an error
+        await txc.rollback();
+        console.error('Error in batch connection creation:', error);
+        throw error;
+      }
+    } finally {
+      await session.close();
+    }
+  }
+
+  // Create a verse group
+  public async createVerseGroup(name: string, verseIds: string[], description: string = ''): Promise<VerseGroup> {
+    const session = this.getSession();
+    const id = uuidv4();
+    const now = new Date().toISOString();
+    
+    try {
+      // First verify all verses exist
+      const verseCheckResult = await session.run(`
+        MATCH (v:Verse)
+        WHERE v.id IN $verseIds
+        RETURN count(v) as verseCount
+      `, { verseIds });
+      
+      const foundCount = verseCheckResult.records[0].get('verseCount').toNumber();
+      if (foundCount !== verseIds.length) {
+        throw new Error(`Not all verses exist: found ${foundCount} of ${verseIds.length} requested verses`);
+      }
+      
+      // Create the verse group node
+      const result = await session.run(`
+        CREATE (g:VerseGroup {
+          id: $id,
+          name: $name,
+          description: $description,
+          verseIds: $verseIds,
+          createdAt: $now,
+          updatedAt: $now
+        })
+        RETURN g
+      `, { id, name, description, verseIds, now });
+      
+      // Create relationships between group and verses for faster querying
+      await session.run(`
+        MATCH (g:VerseGroup {id: $groupId})
+        MATCH (v:Verse)
+        WHERE v.id IN $verseIds
+        CREATE (g)-[:CONTAINS]->(v)
+      `, { groupId: id, verseIds });
+      
+      const groupNode = result.records[0].get('g');
+      const groupProps = groupNode.properties;
+      
+      return {
+        id: groupProps.id,
+        name: groupProps.name,
+        description: groupProps.description,
+        verseIds: groupProps.verseIds,
+        createdAt: groupProps.createdAt,
+        updatedAt: groupProps.updatedAt
+      };
+    } finally {
+      session.close();
+    }
+  }
+
+  // Get a verse group by ID
+  public async getVerseGroup(groupId: string): Promise<VerseGroup | null> {
+    const session = this.getSession();
+    
+    try {
+      const result = await session.run(`
+        MATCH (g:VerseGroup {id: $groupId})
+        RETURN g
+      `, { groupId });
+      
+      if (result.records.length === 0) {
+        return null;
+      }
+      
+      const groupNode = result.records[0].get('g');
+      const groupProps = groupNode.properties;
+      
+      return {
+        id: groupProps.id,
+        name: groupProps.name,
+        description: groupProps.description,
+        verseIds: groupProps.verseIds,
+        createdAt: groupProps.createdAt,
+        updatedAt: groupProps.updatedAt
+      };
+    } finally {
+      session.close();
+    }
+  }
+
+  // Get all verse groups
+  public async getVerseGroups(): Promise<VerseGroup[]> {
+    const session = this.getSession();
+    
+    try {
+      const result = await session.run(`
+        MATCH (g:VerseGroup)
+        RETURN g
+        ORDER BY g.createdAt DESC
+      `);
+      
+      return result.records.map(record => {
+        const groupNode = record.get('g');
+        const groupProps = groupNode.properties;
+        
+        return {
+          id: groupProps.id,
+          name: groupProps.name,
+          description: groupProps.description,
+          verseIds: groupProps.verseIds,
+          createdAt: groupProps.createdAt,
+          updatedAt: groupProps.updatedAt
+        };
+      });
+    } finally {
+      session.close();
+    }
+  }
+
+  // Update createGroupConnection method
+  public async createGroupConnection(
+    connections: Connection[], 
+    type: ConnectionType, 
+    name?: string,
+    description: string = ''
+  ): Promise<GroupConnection> {
+    const session = this.getSession();
+    const id = uuidv4();
+    const now = new Date().toISOString();
+    
+    try {
+      // Start transaction
+      const txc = session.beginTransaction();
+      try {
+        // Create the group connection node
+        const result = await txc.run(`
+          CREATE (gc:GroupConnection {
+            id: $id,
+            name: $name,
+            connectionIds: $connectionIds,
+            type: $type,
+            description: $description,
+            createdAt: $now,
+            updatedAt: $now
+          })
+          RETURN gc
+        `, { 
+          id, 
+          name: name || '', 
+          connectionIds: connections.map(c => c.id),
+          type, 
+          description, 
+          now 
+        });
+        
+        // Update or create each individual connection with the group ID
+        for (const connection of connections) {
+          // Set the groupConnectionId on each connection
+          await txc.run(`
+            MATCH (source:Verse {id: $sourceId})
+            MATCH (target:Verse {id: $targetId})
+            MERGE (source)-[c:CONNECTS_TO {id: $connectionId}]->(target)
+            SET c.groupConnectionId = $groupConnectionId,
+                c.type = $type,
+                c.description = $description,
+                c.updatedAt = $now
+          `, {
+            sourceId: connection.sourceVerseId,
+            targetId: connection.targetVerseId,
+            connectionId: connection.id || uuidv4(),
+            groupConnectionId: id,
+            type,
+            description,
+            now
+          });
+        }
+        
+        await txc.commit();
+        
+        const gcNode = result.records[0].get('gc');
+        const gcProps = gcNode.properties;
+        
+        return {
+          id: gcProps.id,
+          name: gcProps.name,
+          connectionIds: gcProps.connectionIds,
+          type: gcProps.type,
+          description: gcProps.description,
+          createdAt: gcProps.createdAt,
+          updatedAt: gcProps.updatedAt
+        };
+      } catch (error) {
+        await txc.rollback();
+        throw error;
+      }
+    } finally {
+      session.close();
+    }
+  }
+
+  // Add a method to get connections by group ID
+  public async getConnectionsByGroupId(groupId: string): Promise<Connection[]> {
+    const session = this.getSession();
+    
+    try {
+      const result = await session.run(`
+        MATCH (v1:Verse)-[c:CONNECTS_TO]->(v2:Verse)
+        WHERE c.groupConnectionId = $groupId
+        RETURN c, v1.id as sourceId, v2.id as targetId
+      `, { groupId });
+      
+      return result.records.map(record => {
+        const connectionProps = record.get('c').properties;
+        return {
+          id: connectionProps.id.toString(),
+          sourceVerseId: record.get('sourceId'),
+          targetVerseId: record.get('targetId'),
+          type: connectionProps.type as ConnectionType,
+          description: connectionProps.description || '',
+          groupConnectionId: connectionProps.groupConnectionId,
+          createdAt: connectionProps.createdAt || new Date().toISOString(),
+          updatedAt: connectionProps.updatedAt || new Date().toISOString(),
+        };
+      });
+    } finally {
+      session.close();
+    }
+  }
+
+  // Update getGroupConnectionsByVerseId to use the new model
+  public async getGroupConnectionsByVerseId(verseId: string): Promise<GroupConnection[]> {
+    const session = this.getSession();
+    
+    try {
+      // First get all connections involving this verse
+      const connectionResult = await session.run(`
+        MATCH (v:Verse {id: $verseId})-[c:CONNECTS_TO]->(otherV:Verse)
+        WHERE c.groupConnectionId IS NOT NULL
+        RETURN DISTINCT c.groupConnectionId as gcId
+        UNION
+        MATCH (otherV:Verse)-[c:CONNECTS_TO]->(v:Verse {id: $verseId})
+        WHERE c.groupConnectionId IS NOT NULL
+        RETURN DISTINCT c.groupConnectionId as gcId
+      `, { verseId });
+      
+      // Extract the distinct group connection IDs
+      const groupIds = connectionResult.records.map(record => record.get('gcId'));
+      
+      if (groupIds.length === 0) {
+        return [];
+      }
+      
+      // Now fetch the group connections
+      const result = await session.run(`
+        MATCH (gc:GroupConnection)
+        WHERE gc.id IN $groupIds
+        RETURN gc
+      `, { groupIds });
+      
+      return await Promise.all(result.records.map(async record => {
+        const gcProps = record.get('gc').properties;
+        
+        // Get all connections for this group
+        const connections = await this.getConnectionsByGroupId(gcProps.id);
+        
+        return {
+          id: gcProps.id,
+          name: gcProps.name || '',
+          connectionIds: connections.map(c => c.id),
+          type: gcProps.type,
+          description: gcProps.description || '',
+          createdAt: gcProps.createdAt,
+          updatedAt: gcProps.updatedAt
+        };
+      }));
     } finally {
       session.close();
     }

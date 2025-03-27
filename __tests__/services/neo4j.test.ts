@@ -34,7 +34,7 @@ describe('Neo4jService', () => {
         chapter: 3,
         verse: 16,
         text: 'For God so loved the world...',
-        translation: 'NIV',
+        translation: 'ESV',
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString()
       };
@@ -74,7 +74,7 @@ describe('Neo4jService', () => {
         chapter: 3,
         verse: 16,
         text: 'For God so loved the world...',
-        translation: 'NIV',
+        translation: 'ESV',
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString()
       };

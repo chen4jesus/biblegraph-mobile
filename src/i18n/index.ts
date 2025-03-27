@@ -20,7 +20,7 @@ const resources = {
   zh: zhTranslation
 };
 
-export const NAMESPACES = ['common', 'home', 'navigation', 'verses', 'notes', 'connections', 'verseDetail', 'graph', 'settings', 'auth'];
+export const NAMESPACES = ['common', 'home', 'navigation', 'verses', 'notes', 'connections', 'verseDetail', 'graph', 'settings', 'auth', 'group'];
 
 // Custom language detector
 const languageDetector = {

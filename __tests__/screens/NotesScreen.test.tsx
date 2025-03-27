@@ -22,7 +22,7 @@ jest.mock('../../src/services/neo4j', () => ({
       chapter: 3,
       verse: 16,
       text: 'For God so loved the world...',
-      translation: 'NIV',
+      translation: 'ESV',
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
     })
@@ -57,7 +57,7 @@ describe('NotesScreen', () => {
       chapter: 3,
       verse: 16,
       text: 'For God so loved the world...',
-      translation: 'NIV',
+      translation: 'ESV',
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
     });
@@ -113,7 +113,7 @@ describe('NotesScreen', () => {
           chapter: 3,
           verse: 16,
           text: 'For God so loved the world...',
-          translation: 'NIV',
+          translation: 'ESV',
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString()
         };
@@ -124,7 +124,7 @@ describe('NotesScreen', () => {
           chapter: 8,
           verse: 28,
           text: 'And we know that in all things God works for the good...',
-          translation: 'NIV',
+          translation: 'ESV',
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString()
         };

@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
-import { Verse, Connection, Note, ConnectionType } from '../types/bible';
+import { Verse, Connection, Note, ConnectionType, GraphNode, GraphEdge, VerseGroup, GroupConnection } from '../types/bible';
 import { neo4jService } from '../services/neo4j';
 import { storageService } from '../services/storage';
 import { syncService } from '../services/sync';
@@ -14,15 +14,17 @@ interface UseBibleGraphProps {
 }
 
 interface UseBibleGraphReturn {
-  verses: Verse[];
-  connections: Connection[];
-  loading: boolean;
-  error: string | null;
-  selectedVerse: Verse | null;
-  selectedConnection: Connection | null;
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+  isLoading: boolean;
+  isFetching: boolean;
+  error: Error | null;
+  expandNode: (nodeId: string) => Promise<void>;
+  currentVerseId: string | null;
+  setCurrentVerseId: (verseId: string | null) => void;
+  zoomToNode: (nodeId: string | null) => Promise<void>;
   handleVersePress: (verse: Verse) => void;
   handleConnectionPress: (connection: Connection) => void;
-  refreshGraph: () => Promise<void>;
 }
 
 export const useBibleGraph = ({
@@ -33,12 +35,12 @@ export const useBibleGraph = ({
   onConnectionError,
   timeoutMs = 10000, // Default timeout of 10 seconds
 }: UseBibleGraphProps = {}): UseBibleGraphReturn => {
-  const [verses, setVerses] = useState<Verse[]>([]);
-  const [connections, setConnections] = useState<Connection[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [selectedVerse, setSelectedVerse] = useState<Verse | null>(null);
-  const [selectedConnection, setSelectedConnection] = useState<Connection | null>(null);
+  const [nodes, setNodes] = useState<GraphNode[]>([]);
+  const [edges, setEdges] = useState<GraphEdge[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isFetching, setIsFetching] = useState(false);
+  const [error, setError] = useState<Error | null>(null);
+  const [currentVerseId, setCurrentVerseId] = useState<string | null>(initialVerseId || null);
   
   // Use a ref to prevent multiple fetch operations running concurrently
   const isFetchingRef = useRef(false);
@@ -50,6 +52,8 @@ export const useBibleGraph = ({
   const isMountedRef = useRef(true);
   // Add a ref to track the last processed verse IDs
   const lastProcessedVerseIdsRef = useRef<string | null>(null);
+  // Add a ref to track processed nodes
+  const processedNodes = useRef<Set<string>>(new Set());
 
   const resetFetchingState = useCallback(() => {
     isFetchingRef.current = false;
@@ -61,283 +65,416 @@ export const useBibleGraph = ({
       abortControllerRef.current.abort();
       abortControllerRef.current = null;
     }
+    setNodes([]);
+    setEdges([]);
+    setError(null);
+    processedNodes.current.clear();
   }, []);
 
   const fetchGraphData = useCallback(async () => {
-    // Prevent concurrent fetches
-    if (isFetchingRef.current) {
-      console.log('Data fetch already in progress, skipping');
+    if ((!initialVerseId && (!initialVerseIds || initialVerseIds.length === 0)) || isFetchingRef.current) {
       return;
     }
+
+    console.log("Starting fetchGraphData with initialVerseIds:", initialVerseIds);
+    isFetchingRef.current = true;
+    setIsFetching(true);
     
-    // If component is unmounted, don't proceed
-    if (!isMountedRef.current) {
-      console.log('Component unmounted, skipping fetch');
-      return;
-    }
-    
-    // If no verses are selected, just display an empty graph
-    if (!initialVerseId && (!initialVerseIds || initialVerseIds.length === 0)) {
-      console.log('No verses selected, skipping data fetch');
-      if (isMountedRef.current) {
-        setLoading(false);
-        setVerses([]);
-        setConnections([]);
-      }
-      return;
-    }
-    
-    // Reset any previous aborts and create new abort controller
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort();
-    }
+    // Set up abort controller for cancellation
     abortControllerRef.current = new AbortController();
     const signal = abortControllerRef.current.signal;
     
-    // Set fetching flag
-    isFetchingRef.current = true;
+    // Set up timeout to prevent hung operations
+    if (fetchTimeoutRef.current) {
+      clearTimeout(fetchTimeoutRef.current);
+    }
     
-    // Set a timeout to automatically reset the fetching flag
     fetchTimeoutRef.current = setTimeout(() => {
-      console.warn(`Fetch operation timed out after ${timeoutMs}ms, resetting fetch state`);
+      console.warn(`fetchGraphData timed out after ${timeoutMs}ms`);
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+      isFetchingRef.current = false;
+      setIsFetching(false);
+      setIsLoading(false);
       if (isMountedRef.current) {
-        resetFetchingState();
-        setLoading(false);
-        setError('Operation timed out. Please try again.');
+        setError(new Error("Loading timed out. Please try again."));
       }
     }, timeoutMs);
     
     try {
-      // Check if operation was aborted before starting
-      if (signal.aborted) {
-        throw new Error('Operation was aborted');
-      }
+      // Create node and edge collections
+      const nodeMap = new Map<string, GraphNode>();
+      const edgeMap = new Map<string, GraphEdge>();
       
-      if (isMountedRef.current) {
-        setLoading(true);
-        setError(null);
-      }
-
-      // Try to fetch from online service first
-      const [onlineVerses, onlineNotes] = await Promise.all([
-        neo4jService.getVerses(signal),
-        neo4jService.getNotes(signal),
-      ]);
-
-      // Check if operation was aborted during fetch or component unmounted
-      if (signal.aborted || !isMountedRef.current) {
-        throw new Error('Operation was aborted');
-      }
-
-      // Get offline data
-      const [offlineVerses, offlineConnections, offlineNotes] = await Promise.all([
-        storageService.getVerses(),
-        storageService.getConnections(),
-        storageService.getNotes(),
-      ]);
+      const startingIds = initialVerseId ? [initialVerseId] : initialVerseIds;
+      console.log(`Processing ${startingIds.length} initial verse IDs`);
       
-      // Check if operation was aborted or component unmounted
-      if (signal.aborted || !isMountedRef.current) {
-        throw new Error('Operation was aborted');
-      }
-
-      // Merge online and offline verses
-      const mergedVerses = mergeVerses(onlineVerses, offlineVerses);
-      
-      // Only use online notes - they're the source of truth for what's been deleted
-      const mergedNotes = onlineNotes;
-
-      // Collect all verse IDs to fetch connections for
-      const verseIds = new Set<string>();
-      
-      // If we have initialVerseIds, prioritize those
-      if (initialVerseIds && initialVerseIds.length > 0) {
-        initialVerseIds.forEach(id => verseIds.add(id));
-      } 
-      // If we have an initialVerseId, add that too
-      else if (initialVerseId) {
-        verseIds.add(initialVerseId);
-      } 
-      // We've already checked earlier that we have initial verses, so no need for a fallback here
-      
-      // Convert to array and limit to prevent too many requests
-      const verseIdsArray = Array.from(verseIds).slice(0, 10);
-
-      // Get connections for verses with error handling
-      let allOnlineConnections: Connection[] = [];
-      let hasConnectionErrors = false;
-      
-      try {
-        // Use Promise.all with a timeout - this is crucial to prevent hanging
-        const connectionPromises = verseIdsArray.map(id => 
-          Promise.race([
-            neo4jService.getConnectionsForVerse(id, signal).catch(err => {
-              console.warn(`Error fetching connections for verse ${id}:`, err);
-              hasConnectionErrors = true;
-              return [] as Connection[];
-            }),
-            // Add individual timeouts for each connection fetch
-            new Promise<Connection[]>((_, reject) => 
-              setTimeout(() => reject(new Error(`Connection fetch for verse ${id} timed out`)), 
-              timeoutMs / 2)) // Use half the main timeout for individual connection fetches
-          ])
-        );
+      // Fetch verses
+      for (const id of startingIds) {
+        if (signal.aborted) break;
+        if (processedNodes.current.has(id)) continue;
         
         try {
-          const onlineConnectionsResults = await Promise.all(connectionPromises);
-          allOnlineConnections = onlineConnectionsResults.flat();
-        } catch (timeoutErr) {
-          console.warn('Some connection fetches timed out:', timeoutErr);
-          hasConnectionErrors = true;
+          const verse = await neo4jService.getVerse(id, signal);
+          if (verse) {
+            const node: GraphNode = {
+              id: verse.id,
+              type: 'VERSE',
+              label: `${verse.book} ${verse.chapter}:${verse.verse}`,
+              data: verse
+            };
+            nodeMap.set(verse.id, node);
+            processedNodes.current.add(verse.id);
+          }
+        } catch (err) {
+          if (err.name === 'AbortError') {
+            console.log('Verse fetch aborted');
+            break;
+          }
+          console.error(`Error fetching verse ${id}:`, err);
+        }
+      }
+      
+      // Fetch connections
+      for (const id of startingIds) {
+        if (signal.aborted) break;
+        
+        try {
+          const connections = await neo4jService.getConnectionsForVerse(id, signal);
+          
+          for (const connection of connections) {
+            if (signal.aborted) break;
+            
+            // Add source verse to nodes if not already present
+            if (!nodeMap.has(connection.sourceVerseId) && !processedNodes.current.has(connection.sourceVerseId)) {
+              try {
+                const sourceVerse = await neo4jService.getVerse(connection.sourceVerseId, signal);
+                if (sourceVerse) {
+                  const node: GraphNode = {
+                    id: sourceVerse.id,
+                    type: 'VERSE',
+                    label: `${sourceVerse.book} ${sourceVerse.chapter}:${sourceVerse.verse}`,
+                    data: sourceVerse
+                  };
+                  nodeMap.set(sourceVerse.id, node);
+                  processedNodes.current.add(sourceVerse.id);
+                }
+              } catch (err) {
+                if (err.name === 'AbortError') break;
+                console.error(`Error fetching source verse ${connection.sourceVerseId}:`, err);
+              }
+            }
+            
+            // Add target verse to nodes if not already present
+            if (!nodeMap.has(connection.targetVerseId) && !processedNodes.current.has(connection.targetVerseId)) {
+              try {
+                const targetVerse = await neo4jService.getVerse(connection.targetVerseId, signal);
+                if (targetVerse) {
+                  const node: GraphNode = {
+                    id: targetVerse.id,
+                    type: 'VERSE',
+                    label: `${targetVerse.book} ${targetVerse.chapter}:${targetVerse.verse}`,
+                    data: targetVerse
+                  };
+                  nodeMap.set(targetVerse.id, node);
+                  processedNodes.current.add(targetVerse.id);
+                }
+              } catch (err) {
+                if (err.name === 'AbortError') break;
+                console.error(`Error fetching target verse ${connection.targetVerseId}:`, err);
+              }
+            }
+            
+            // Add edge for the connection
+            const edgeId = `${connection.sourceVerseId}-${connection.targetVerseId}-${connection.type}`;
+            if (!edgeMap.has(edgeId)) {
+              const edge: GraphEdge = {
+                id: edgeId,
+                source: connection.sourceVerseId,
+                target: connection.targetVerseId,
+                type: connection.type,
+                data: connection
+              };
+              edgeMap.set(edgeId, edge);
+            }
+          }
+        } catch (err) {
+          if (err.name === 'AbortError') {
+            console.log('Connections fetch aborted');
+            break;
+          }
+          console.error(`Error fetching connections for verse ${id}:`, err);
+        }
+      }
+      
+      console.log(`Graph data loaded: ${nodeMap.size} nodes, ${edgeMap.size} edges`);
+      
+      // Update state with all nodes and edges at once
+      if (isMountedRef.current && !signal.aborted) {
+        setNodes(Array.from(nodeMap.values()));
+        setEdges(Array.from(edgeMap.values()));
+      }
+      
+      if (!currentVerseId && startingIds.length > 0) {
+        setCurrentVerseId(startingIds[0]);
+      }
+    } catch (err) {
+      console.error("Error fetching graph data:", err);
+      if (isMountedRef.current) {
+        setError(err instanceof Error ? err : new Error(String(err)));
+      }
+    } finally {
+      clearTimeout(fetchTimeoutRef.current!);
+      fetchTimeoutRef.current = null;
+      
+      if (isMountedRef.current) {
+        setIsLoading(false);
+        setIsFetching(false);
+      }
+      isFetchingRef.current = false;
+      console.log("Finished fetchGraphData");
+    }
+  }, [initialVerseId, initialVerseIds, currentVerseId, timeoutMs]);
+
+  // Initial data fetch
+  useEffect(() => {
+    isMountedRef.current = true;
+    
+    if ((initialVerseId || (initialVerseIds && initialVerseIds.length > 0)) && isMountedRef.current) {
+      const currentVerseIdsKey = JSON.stringify(initialVerseIds.sort());
+      if (!isFetchingRef.current && currentVerseIdsKey !== lastProcessedVerseIdsRef.current) {
+        lastProcessedVerseIdsRef.current = currentVerseIdsKey;
+        resetFetchingState();
+        fetchGraphData();
+      }
+    }
+    
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, [initialVerseId, initialVerseIds, fetchGraphData, resetFetchingState]);
+
+  // Expand a node (verse or group) to fetch its connections
+  const expandNode = useCallback(async (nodeId: string) => {
+    if (isFetchingRef.current) return;
+    
+    setIsFetching(true);
+    isFetchingRef.current = true;
+    
+    try {
+      const node = nodes.find(n => n.id === nodeId);
+      
+      if (!node) {
+        throw new Error(`Node with ID ${nodeId} not found`);
+      }
+      
+      if (node.type === 'VERSE') {
+        // Handle verse node expansion
+        const connections = await neo4jService.getConnectionsForVerse(nodeId);
+        
+        for (const connection of connections) {
+          // Add target verse to nodes if not already present
+          const targetId = connection.targetVerseId === nodeId 
+            ? connection.sourceVerseId
+            : connection.targetVerseId;
+          
+          if (!processedNodes.current.has(targetId)) {
+            const targetVerse = await neo4jService.getVerse(targetId);
+            if (targetVerse) {
+              setNodes(prevNodes => {
+                if (prevNodes.some(node => node.id === targetVerse.id)) {
+                  return prevNodes;
+                }
+                return [...prevNodes, {
+                  id: targetVerse.id,
+                  type: 'VERSE',
+                  label: `${targetVerse.book} ${targetVerse.chapter}:${targetVerse.verse}`,
+                  data: targetVerse
+                }];
+              });
+              processedNodes.current.add(targetVerse.id);
+            }
+          }
+          
+          // Add edge for the connection
+          const edgeId = `${connection.sourceVerseId}-${connection.targetVerseId}-${connection.type}`;
+          setEdges(prevEdges => {
+            if (prevEdges.some(edge => edge.id === edgeId)) {
+              return prevEdges;
+            }
+            return [...prevEdges, {
+              id: edgeId,
+              source: connection.sourceVerseId,
+              target: connection.targetVerseId,
+              type: connection.type,
+              data: connection
+            }];
+          });
         }
         
-        // Notify if there were any connection errors
-        if (hasConnectionErrors && onConnectionError && isMountedRef.current) {
-          onConnectionError();
-        }
-      } catch (err) {
-        console.error('Error fetching connections:', err);
-        if (onConnectionError && isMountedRef.current) {
-          onConnectionError();
-        }
-        // Don't throw here, we'll continue with whatever data we have
-      }
-      
-      // Check if operation was aborted or component unmounted
-      if (signal.aborted || !isMountedRef.current) {
-        throw new Error('Operation was aborted');
-      }
-      
-      // Flatten and deduplicate connections
-      const uniqueConnectionsMap = new Map<string, Connection>();
-      
-      // Process online connections
-      allOnlineConnections.forEach(connection => {
-        const uniqueKey = `${connection.sourceVerseId}-${connection.targetVerseId}-${connection.type}`;
-        if (!uniqueConnectionsMap.has(uniqueKey) || 
-            new Date(connection.updatedAt) > new Date(uniqueConnectionsMap.get(uniqueKey)!.updatedAt)) {
-          uniqueConnectionsMap.set(uniqueKey, connection);
-        }
-      });
-      
-      // Process offline connections
-      offlineConnections.forEach(connection => {
-        const uniqueKey = `${connection.sourceVerseId}-${connection.targetVerseId}-${connection.type}`;
-        if (!uniqueConnectionsMap.has(uniqueKey) || 
-            new Date(connection.updatedAt) > new Date(uniqueConnectionsMap.get(uniqueKey)!.updatedAt)) {
-          uniqueConnectionsMap.set(uniqueKey, connection);
-        }
-      });
-
-      // Convert map to array
-      const allConnections = Array.from(uniqueConnectionsMap.values());
-      
-      // Get unique set of verse IDs from connections
-      const connectedVerseIds = new Set<string>();
-      allConnections.forEach(conn => {
-        connectedVerseIds.add(conn.sourceVerseId);
-        connectedVerseIds.add(conn.targetVerseId);
-      });
-      
-      // Add initial verse IDs
-      if (initialVerseId) connectedVerseIds.add(initialVerseId);
-      if (initialVerseIds) initialVerseIds.forEach(id => connectedVerseIds.add(id));
-      
-      // Filter verses to only include those in connections or initially selected
-      let filteredVerses = mergedVerses.filter(verse => connectedVerseIds.has(verse.id));
-      
-      // If no verses with connections, use initial verses at minimum
-      if (filteredVerses.length === 0 && initialVerseIds && initialVerseIds.length > 0) {
-        filteredVerses = mergedVerses.filter(v => initialVerseIds.includes(v.id));
-      } else if (filteredVerses.length === 0 && initialVerseId) {
-        const initialVerse = mergedVerses.find(v => v.id === initialVerseId);
-        if (initialVerse) {
-          filteredVerses = [initialVerse];
-        }
-      }
-      
-      // No need to show fallback verses if no search criteria was provided
-      // If we have explicit search criteria but still no verses, show a message through an empty list
-
-      // Only update state if component is still mounted
-      if (isMountedRef.current) {
-        setVerses(filteredVerses);
-        setConnections(allConnections);
-
-        // Select initial verse if provided
-        if (initialVerseId) {
-          const initialVerse = filteredVerses.find(v => v.id === initialVerseId);
-          if (initialVerse) {
-            setSelectedVerse(initialVerse);
-          }
-        } else if (initialVerseIds && initialVerseIds.length > 0 && filteredVerses.length > 0) {
-          // If multiple verses, select the first one that exists
-          for (const id of initialVerseIds) {
-            const verse = filteredVerses.find(v => v.id === id);
-            if (verse) {
-              setSelectedVerse(verse);
-              break;
+        // Fetch group connections for this verse
+        const groupConnections = await neo4jService.getGroupConnectionsByVerseId(nodeId);
+        
+        for (const groupConnection of groupConnections) {
+          // Add group node if not present
+          const groupId = groupConnection.id;
+          if (!processedNodes.current.has(groupId)) {
+            setNodes(prevNodes => {
+              if (prevNodes.some(node => node.id === groupId)) {
+                return prevNodes;
+              }
+              return [...prevNodes, {
+                id: groupId,
+                type: 'GROUP',
+                label: groupConnection.type,
+                data: groupConnection
+              }];
+            });
+            processedNodes.current.add(groupId);
+            
+            // Process all verses in the group connection
+            const allVerseIds = [...new Set([...groupConnection.sourceIds, ...groupConnection.targetIds])];
+            
+            for (const verseId of allVerseIds) {
+              if (verseId !== nodeId && !processedNodes.current.has(verseId)) {
+                const verse = await neo4jService.getVerse(verseId);
+                if (verse) {
+                  setNodes(prevNodes => {
+                    if (prevNodes.some(node => node.id === verse.id)) {
+                      return prevNodes;
+                    }
+                    return [...prevNodes, {
+                      id: verse.id,
+                      type: 'VERSE',
+                      label: `${verse.book} ${verse.chapter}:${verse.verse}`,
+                      data: verse
+                    }];
+                  });
+                  processedNodes.current.add(verse.id);
+                }
+              }
+              
+              // Add edges between verses and group
+              const isSource = groupConnection.sourceIds.includes(verseId);
+              
+              if (isSource) {
+                const edgeId = `${verseId}-${groupId}-SOURCE`;
+                setEdges(prevEdges => {
+                  if (prevEdges.some(edge => edge.id === edgeId)) {
+                    return prevEdges;
+                  }
+                  return [...prevEdges, {
+                    id: edgeId,
+                    source: verseId,
+                    target: groupId,
+                    type: 'GROUP_MEMBER',
+                    data: { type: 'GROUP_MEMBER' }
+                  }];
+                });
+              } else {
+                const edgeId = `${groupId}-${verseId}-TARGET`;
+                setEdges(prevEdges => {
+                  if (prevEdges.some(edge => edge.id === edgeId)) {
+                    return prevEdges;
+                  }
+                  return [...prevEdges, {
+                    id: edgeId,
+                    source: groupId,
+                    target: verseId,
+                    type: 'GROUP_MEMBER',
+                    data: { type: 'GROUP_MEMBER' }
+                  }];
+                });
+              }
             }
           }
         }
+      } else if (node.type === 'GROUP') {
+        // Handle group node expansion
+        const groupConnection = node.data as GroupConnection;
+        
+        // Process all verses in the group
+        const allVerseIds = [...new Set([...groupConnection.sourceIds, ...groupConnection.targetIds])];
+        
+        for (const verseId of allVerseIds) {
+          if (!processedNodes.current.has(verseId)) {
+            const verse = await neo4jService.getVerse(verseId);
+            if (verse) {
+              setNodes(prevNodes => {
+                if (prevNodes.some(node => node.id === verse.id)) {
+                  return prevNodes;
+                }
+                return [...prevNodes, {
+                  id: verse.id,
+                  type: 'VERSE',
+                  label: `${verse.book} ${verse.chapter}:${verse.verse}`,
+                  data: verse
+                }];
+              });
+              processedNodes.current.add(verse.id);
+            }
+          }
+          
+          // Add edges between verses and group
+          const isSource = groupConnection.sourceIds.includes(verseId);
+          
+          if (isSource) {
+            const edgeId = `${verseId}-${node.id}-SOURCE`;
+            setEdges(prevEdges => {
+              if (prevEdges.some(edge => edge.id === edgeId)) {
+                return prevEdges;
+              }
+              return [...prevEdges, {
+                id: edgeId,
+                source: verseId,
+                target: node.id,
+                type: 'GROUP_MEMBER',
+                data: { type: 'GROUP_MEMBER' }
+              }];
+            });
+          } else {
+            const edgeId = `${node.id}-${verseId}-TARGET`;
+            setEdges(prevEdges => {
+              if (prevEdges.some(edge => edge.id === edgeId)) {
+                return prevEdges;
+              }
+              return [...prevEdges, {
+                id: edgeId,
+                source: node.id,
+                target: verseId,
+                type: 'GROUP_MEMBER',
+                data: { type: 'GROUP_MEMBER' }
+              }];
+            });
+          }
+        }
       }
-
-      // Update local storage with latest notes to prevent future sync issues
-      if (isMountedRef.current) {
-        await storageService.saveNotes(onlineNotes);
-      }
-
-      // Skip background sync to prevent potential infinite loops
-      // syncService.syncData().catch(console.error);
-    } catch (err) {
-      // Only update state if component is still mounted
-      if (isMountedRef.current) {
-        setError(err instanceof Error ? err.message : 'Failed to fetch graph data');
-      }
-    } finally {
-      // Clear timeout and reset fetching state only if still mounted
-      if (isMountedRef.current) {
-        setLoading(false);
-      }
-      // Always reset the fetching state
-      resetFetchingState();
-    }
-  }, [initialVerseId, initialVerseIds, onConnectionError, resetFetchingState, timeoutMs]);
-
-  useEffect(() => {
-    // Set mounted flag to true when component mounts
-    isMountedRef.current = true;
-    
-    // Initial load
-    fetchGraphData();
-    
-    // Clean-up function to prevent memory leaks and abort ongoing requests
-    return () => {
-      isMountedRef.current = false;
-      resetFetchingState();
-    };
-  }, [fetchGraphData, resetFetchingState]);
-
-  // Add an effect that responds to changes in initialVerseId or initialVerseIds
-  useEffect(() => {
-    console.log('useBibleGraph - initialVerseIds changed:', initialVerseIds);
-    // Only trigger if we have initialVerseId or initialVerseIds
-    if ((initialVerseId || (initialVerseIds && initialVerseIds.length > 0)) && isMountedRef.current) {
-      // Use JSON.stringify to compare arrays properly
-      const currentVerseIdsKey = JSON.stringify(initialVerseIds.sort());
       
-      // Store this in a ref to avoid additional renders
-      if (!isFetchingRef.current && currentVerseIdsKey !== lastProcessedVerseIdsRef.current) {
-        lastProcessedVerseIdsRef.current = currentVerseIdsKey;
-        resetFetchingState(); // Reset any ongoing operations
-        fetchGraphData();    // Fetch with new verse IDs
+      setCurrentVerseId(nodeId);
+    } catch (err) {
+      console.error("Error expanding node:", err);
+      setError(err instanceof Error ? err : new Error(String(err)));
+    } finally {
+      setIsFetching(false);
+      isFetchingRef.current = false;
+    }
+  }, [nodes]);
+
+  // Zoom to a specific node (implemented by UI components)
+  const zoomToNode = useCallback(async (nodeId: string | null) => {
+    if (nodeId) {
+      setCurrentVerseId(nodeId);
+      // If the node hasn't been loaded yet, expand it
+      if (!processedNodes.current.has(nodeId)) {
+        await expandNode(nodeId);
       }
     }
-  }, [initialVerseId, initialVerseIds, fetchGraphData, resetFetchingState]);
+  }, [expandNode]);
 
   const handleVersePress = useCallback(
     (verse: Verse) => {
-      setSelectedVerse(verse);
+      setCurrentVerseId(verse.id);
       onVersePress?.(verse);
     },
     [onVersePress]
@@ -345,29 +482,30 @@ export const useBibleGraph = ({
 
   const handleConnectionPress = useCallback(
     (connection: Connection) => {
-      setSelectedConnection(connection);
+      // Don't proceed if connection is not valid (missing properties)
+      if (!connection || !connection.id || !connection.sourceVerseId || !connection.targetVerseId) {
+        console.warn('Invalid connection object received in handleConnectionPress:', connection);
+        return;
+      }
+
+      setCurrentVerseId(connection.sourceVerseId);
       onConnectionPress?.(connection);
     },
     [onConnectionPress]
   );
 
-  const refreshGraph = useCallback(async () => {
-    // Forcibly reset fetching state before refreshing
-    resetFetchingState();
-    //await fetchGraphData();
-    await fetchGraphData();
-  }, [fetchGraphData, resetFetchingState]);
-
   return {
-    verses,
-    connections,
-    loading,
+    nodes,
+    edges,
+    isLoading,
+    isFetching,
     error,
-    selectedVerse,
-    selectedConnection,
+    expandNode,
+    currentVerseId,
+    setCurrentVerseId,
+    zoomToNode,
     handleVersePress,
     handleConnectionPress,
-    refreshGraph,
   };
 };
 

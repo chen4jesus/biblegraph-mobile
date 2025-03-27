@@ -22,6 +22,8 @@ import NotesScreen from '../screens/NotesScreen';
 import ProfileScreen from '../screens/ProfileScreen';
 import SettingsScreen from '../screens/SettingsScreen';
 import LanguageSettingsScreen from '../screens/LanguageSettingsScreen';
+import GroupDetailScreen from '../screens/GroupDetailScreen';
+import TagsManagementScreen from '../screens/TagsManagementScreen';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 const Tab = createBottomTabNavigator<MainTabParamList>();
@@ -144,6 +146,16 @@ const AppNavigator: React.FC = () => {
               name="GraphView" 
               component={GraphViewScreen}
               options={{ title: t('graph') }} 
+            />
+            <Stack.Screen 
+              name="GroupDetail" 
+              component={GroupDetailScreen}
+              options={{ title: t('group:detail') }} 
+            />
+            <Stack.Screen 
+              name="TagsManagement" 
+              component={TagsManagementScreen}
+              options={{ title: t('tags:title') }} 
             />
             <Stack.Screen 
               name="Settings" 

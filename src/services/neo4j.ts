@@ -1,6 +1,11 @@
 import { Verse, Connection, Note, User } from '../types/bible';
 import { neo4jDatabaseService } from './neo4jDatabase';
 import { storageService } from './storage';
+import { 
+  ConnectionType, 
+  VerseGroup, 
+  GroupConnection 
+} from '../types/bible';
 
 class Neo4jService {
   private static instance: Neo4jService;
@@ -53,9 +58,9 @@ class Neo4jService {
   }
 
   // Bible verse methods
-  async getVerses(signal?: AbortSignal): Promise<Verse[]> {
+  async getVerses(signal?: AbortSignal, verseIds?: string[]): Promise<Verse[]> {
     try {
-      return await neo4jDatabaseService.getVerses(signal);
+      return await neo4jDatabaseService.getVerses(signal, verseIds);
     } catch (error) {
       if (error instanceof DOMException && error.name === 'AbortError') {
         console.log('Verse fetch aborted');
@@ -67,15 +72,18 @@ class Neo4jService {
   }
 
   async getVerse(id: string, signal?: AbortSignal): Promise<Verse | null> {
+    console.log(`[Neo4jService] Getting verse with id: ${id}`);
     try {
-      return await neo4jDatabaseService.getVerse(id, signal);
-    } catch (error) {
-      if (error instanceof DOMException && error.name === 'AbortError') {
-        console.log(`Verse ${id} fetch aborted`);
-        return null;
+      const result = await neo4jDatabaseService.getVerse(id, signal);
+      if (result) {
+        console.log(`[Neo4jService] Successfully fetched verse: ${result.book} ${result.chapter}:${result.verse}`);
+      } else {
+        console.warn(`[Neo4jService] Verse with id ${id} not found`);
       }
-      console.error(`Error fetching verse ${id}:`, error);
-      return null;
+      return result;
+    } catch (error) {
+      console.error(`[Neo4jService] Error getting verse: ${error}`, error);
+      return null; // Return null instead of throwing to handle gracefully in UI
     }
   }
 
@@ -133,6 +141,12 @@ class Neo4jService {
     }
   }
 
+  // Add getConnectionsByVerseId as an alias for getConnectionsForVerse
+  async getConnectionsByVerseId(verseId: string, signal?: AbortSignal): Promise<Connection[]> {
+    // This is just an alias for getConnectionsForVerse for backward compatibility
+    return this.getConnectionsForVerse(verseId, signal);
+  }
+
   async createConnection(connection: Omit<Connection, 'id' | 'createdAt' | 'updatedAt'>): Promise<Connection> {
     try {
       return await neo4jDatabaseService.createConnection(connection);
@@ -161,14 +175,10 @@ class Neo4jService {
   }
 
   // Note methods
-  async getNotes(signal?: AbortSignal): Promise<Note[]> {
+  async getNotes(skip: number = 0, limit: number = 20): Promise<Note[]> {
     try {
-      return await neo4jDatabaseService.getNotes(signal);
+      return await neo4jDatabaseService.getNotes(skip, limit);
     } catch (error) {
-      if (error instanceof DOMException && error.name === 'AbortError') {
-        console.log('Notes fetch aborted');
-        return [];
-      }
       console.error('Error fetching notes:', error);
       return [];
     }
@@ -269,6 +279,83 @@ class Neo4jService {
       console.error('Error checking authentication status:', error);
       return false;
     }
+  }
+
+  async createConnectionsBatch(connections: Array<Omit<Connection, 'id' | 'createdAt' | 'updatedAt'>>): Promise<Connection[]> {
+    try {
+      return await neo4jDatabaseService.createConnectionsBatch(connections);
+    } catch (error) {
+      console.error('Error creating connections batch:', error);
+      return [];
+    }
+  }
+
+  async createVerseGroup(
+    name: string, 
+    verseIds: string[], 
+    description: string = ''
+  ): Promise<VerseGroup> {
+    return await neo4jDatabaseService.createVerseGroup(name, verseIds, description);
+  }
+
+  async getVerseGroup(groupId: string): Promise<VerseGroup> {
+    console.log(`[Neo4jService] Getting verse group with id: ${groupId}`);
+    try {
+      const result = await neo4jDatabaseService.getVerseGroup(groupId);
+      console.log(`[Neo4jService] Successfully fetched verse group: ${JSON.stringify(result)}`);
+      
+      // Validate the verse group structure
+      if (!result) {
+        console.error(`[Neo4jService] Verse group with id ${groupId} not found`);
+        throw new Error(`Verse group with id ${groupId} not found`);
+      }
+      
+      if (!result.verseIds || !Array.isArray(result.verseIds)) {
+        console.error(`[Neo4jService] Verse group missing verseIds array: ${JSON.stringify(result)}`);
+        // Initialize empty array if missing to prevent crashes
+        result.verseIds = [];
+      } else {
+        console.log(`[Neo4jService] Verse group has ${result.verseIds.length} verses`);
+      }
+      
+      return result;
+    } catch (error) {
+      console.error(`[Neo4jService] Error getting verse group: ${error}`, error);
+      throw error;
+    }
+  }
+
+  async getVerseGroups(): Promise<VerseGroup[]> {
+    console.log(`[Neo4jService] Getting all verse groups`);
+    try {
+      const result = await neo4jDatabaseService.getVerseGroups();
+      console.log(`[Neo4jService] Successfully fetched ${result.length} verse groups`);
+      
+      // Validate each verse group
+      return result.map(group => {
+        if (!group.verseIds || !Array.isArray(group.verseIds)) {
+          console.warn(`[Neo4jService] Verse group ${group.id} missing verseIds array, initializing empty array`);
+          group.verseIds = [];
+        }
+        return group;
+      });
+    } catch (error) {
+      console.error(`[Neo4jService] Error getting verse groups: ${error}`, error);
+      return [];
+    }
+  }
+
+  async createGroupConnection(
+    sourceIds: string[], 
+    targetIds: string[], 
+    type: ConnectionType, 
+    description: string = ''
+  ): Promise<GroupConnection> {
+    return await neo4jDatabaseService.createGroupConnection(sourceIds, targetIds, type, description);
+  }
+
+  async getGroupConnectionsByVerseId(verseId: string): Promise<GroupConnection[]> {
+    return await neo4jDatabaseService.getGroupConnectionsByVerseId(verseId);
   }
 }
 

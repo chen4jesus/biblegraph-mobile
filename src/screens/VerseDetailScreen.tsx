@@ -10,15 +10,19 @@ import {
   SafeAreaView,
   Switch,
   FlatList,
+  Modal,
 } from 'react-native';
 import { useRoute, RouteProp, useNavigation } from '@react-navigation/native';
 import { RootStackParamList } from '../navigation/types';
-import { Verse, Note, Connection, ConnectionType } from '../types/bible';
+import { Verse, Note, Connection, ConnectionType, VerseGroup, GroupConnection } from '../types/bible';
 import { neo4jService } from '../services/neo4j';
 import { Ionicons } from '@expo/vector-icons';
 import { useTranslation } from 'react-i18next';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import MultiConnectionSelector from '../components/MultiConnectionSelector';
+import VerseGroupSelector from '../components/VerseGroupSelector';
+import theme from 'theme';
 
 type VerseDetailScreenRouteProp = RouteProp<RootStackParamList, 'VerseDetail'>;
 type VerseDetailNavigationProp = NativeStackNavigationProp<RootStackParamList>;
@@ -39,7 +43,11 @@ const CONNECTION_COLORS = {
 
 // Add this type near the top of the file after the existing types
 interface ConnectionWithVerse extends Connection {
-  connectedVerse?: Verse | null;
+  connectedVerse: Verse | null;
+  isGrouped?: boolean; // Flag for grouped connections
+  groupedConnections?: Connection[]; // Holds all connections in the group
+  connectedVerseCount?: number; // How many verses are in this group
+  isExpanded?: boolean; // Controls UI expansion state
 }
 
 const VerseDetailScreen: React.FC = () => {
@@ -59,12 +67,21 @@ const VerseDetailScreen: React.FC = () => {
   const [editedNoteContent, setEditedNoteContent] = useState('');
   const [editedNoteTags, setEditedNoteTags] = useState<string[]>([]);
   const [allTags, setAllTags] = useState<string[]>([]);
-  const [activeTab, setActiveTab] = useState<'notes' | 'connections'>('notes');
+  const [activeTab, setActiveTab] = useState<'notes' | 'connections'>(
+    route.params.activeTab || 'notes'
+  );
+  const [showMultiConnectionSelector, setShowMultiConnectionSelector] = useState(false);
+  const [isGroupSelectorVisible, setIsGroupSelectorVisible] = useState(false);
 
   useEffect(() => {
     loadVerseDetails();
     loadLabelPreference();
-  }, [route.params.verseId]);
+    
+    // Update active tab if provided in route params
+    if (route.params.activeTab) {
+      setActiveTab(route.params.activeTab);
+    }
+  }, [route.params.verseId, route.params.activeTab]);
 
   // Extract all unique tags from notes
   useEffect(() => {
@@ -149,37 +166,136 @@ const VerseDetailScreen: React.FC = () => {
         // Load connections for this verse
         const verseConnections = await neo4jService.getConnectionsForVerse(verseToDisplay.id);
         
-        // Deduplicate connections by source-target-type
+        // Process and group connections
         const uniqueConnectionsMap = new Map<string, Connection>();
+        const groupedConnectionsMap = new Map<string, Connection[]>();
+        
+        // Group connections by their common source and target pattern
+        // First, organize connections by source book/chapter and target book/chapter
+        const connectionsBySourceAndTarget = new Map<string, Connection[]>();
         
         verseConnections.forEach(connection => {
-          const uniqueKey = `${connection.sourceVerseId}-${connection.targetVerseId}-${connection.type}`;
-          if (!uniqueConnectionsMap.has(uniqueKey) || 
-              new Date(connection.updatedAt) > new Date(uniqueConnectionsMap.get(uniqueKey)!.updatedAt)) {
-            uniqueConnectionsMap.set(uniqueKey, connection);
+          if (connection.groupConnectionId) {
+            // If this connection already has a groupConnectionId, use it
+            if (!groupedConnectionsMap.has(connection.groupConnectionId)) {
+              groupedConnectionsMap.set(connection.groupConnectionId, []);
+            }
+            groupedConnectionsMap.get(connection.groupConnectionId)!.push(connection);
+          } else {
+            // For connections without a groupConnectionId, try to detect patterns
+            // Like multiple connections from the same verse to sequential verses
+            const sourceId = connection.sourceVerseId;
+            const targetId = connection.targetVerseId;
+            
+            // Parse verse IDs to check for sequential verses
+            const sourceParts = sourceId.split('-');
+            const targetParts = targetId.split('-');
+            
+            if (sourceParts.length >= 3 && targetParts.length >= 3) {
+              const sourceBook = sourceParts[0];
+              const sourceChapter = sourceParts[1];
+              const targetBook = targetParts[0];
+              const targetChapter = targetParts[1];
+              
+              // Group by source book/chapter and target book/chapter
+              const groupKey = `${sourceBook}-${sourceChapter}-to-${targetBook}-${targetChapter}`;
+              
+              if (!connectionsBySourceAndTarget.has(groupKey)) {
+                connectionsBySourceAndTarget.set(groupKey, []);
+              }
+              connectionsBySourceAndTarget.get(groupKey)!.push(connection);
+            } else {
+              // Handle regular connections as before
+              const uniqueKey = `${connection.sourceVerseId}-${connection.targetVerseId}-${connection.type}`;
+              if (!uniqueConnectionsMap.has(uniqueKey) ||
+                  new Date(connection.updatedAt) > new Date(uniqueConnectionsMap.get(uniqueKey)!.updatedAt)) {
+                uniqueConnectionsMap.set(uniqueKey, connection);
+              }
+            }
           }
         });
         
-        const dedupedConnections = Array.from(uniqueConnectionsMap.values()) as ConnectionWithVerse[];
+        // Check each potential group to see if it should be grouped
+        connectionsBySourceAndTarget.forEach((connections, groupKey) => {
+          if (connections.length >= 3) {
+            // If we have 3+ connections with the same source/target pattern, group them
+            // Create a synthetic group ID
+            const groupId = `auto-group-${groupKey}-${Date.now()}`;
+            groupedConnectionsMap.set(groupId, connections);
+          } else {
+            // Otherwise, treat them as individual connections
+            connections.forEach(connection => {
+              const uniqueKey = `${connection.sourceVerseId}-${connection.targetVerseId}-${connection.type}`;
+              if (!uniqueConnectionsMap.has(uniqueKey) ||
+                  new Date(connection.updatedAt) > new Date(uniqueConnectionsMap.get(uniqueKey)!.updatedAt)) {
+                uniqueConnectionsMap.set(uniqueKey, connection);
+              }
+            });
+          }
+        });
         
-        // Fetch verse content for each connection
+        // Convert maps to arrays
+        const regularConnections = Array.from(uniqueConnectionsMap.values()) as ConnectionWithVerse[];
+        const groupedConnections = Array.from(groupedConnectionsMap.entries()).map(([groupId, connections]) => ({
+          id: groupId,
+          isGrouped: true,
+          groupedConnections: connections,
+          type: connections[0]?.type || ConnectionType.THEMATIC,
+          description: connections[0]?.description || '',
+          sourceVerseId: verseToDisplay.id, // Use current verse as reference
+          targetVerseId: '', // This will be filled when fetching connected verses
+          createdAt: connections[0]?.createdAt || new Date().toISOString(),
+          updatedAt: connections[0]?.updatedAt || new Date().toISOString(),
+        })) as ConnectionWithVerse[];
+        
+        // Combine regular and grouped connections
+        const allConnections = [...regularConnections, ...groupedConnections];
+        
+        // Continue with fetching verse content for connections...
         const connectionsWithVerses = await Promise.all(
-          dedupedConnections.map(async (connection) => {
-            const isOutgoing = connection.sourceVerseId === verseToDisplay!.id;
-            const connectedVerseId = isOutgoing ? connection.targetVerseId : connection.sourceVerseId;
-            
-            try {
-              const connectedVerse = await neo4jService.getVerse(connectedVerseId);
-              return {
-                ...connection,
-                connectedVerse
-              } as ConnectionWithVerse;
-            } catch (error) {
-              console.error(`Error fetching verse ${connectedVerseId}:`, error);
-              return {
-                ...connection,
-                connectedVerse: null
-              } as ConnectionWithVerse;
+          allConnections.map(async (connection) => {
+            if (connection.isGrouped) {
+              // Handle grouped connection (first one is enough for display)
+              const groupConns = (connection as any).groupedConnections || [];
+              const firstConn = groupConns[0];
+              if (firstConn) {
+                const connectedVerseId = firstConn.targetVerseId === verseToDisplay.id ? 
+                  firstConn.sourceVerseId : firstConn.targetVerseId;
+                
+                try {
+                  const connectedVerse = await neo4jService.getVerse(connectedVerseId);
+                  return {
+                    ...connection,
+                    connectedVerse,
+                    connectedVerseCount: groupConns.length
+                  };
+                } catch (error) {
+                  console.error(`Error fetching verse ${connectedVerseId}:`, error);
+                  return {
+                    ...connection,
+                    connectedVerse: null
+                  };
+                }
+              }
+              return connection;
+            } else {
+              // Handle regular connection as before
+              const isOutgoing = connection.sourceVerseId === verseToDisplay.id;
+              const connectedVerseId = isOutgoing ? connection.targetVerseId : connection.sourceVerseId;
+              
+              try {
+                const connectedVerse = await neo4jService.getVerse(connectedVerseId);
+                return {
+                  ...connection,
+                  connectedVerse
+                };
+              } catch (error) {
+                console.error(`Error fetching verse ${connectedVerseId}:`, error);
+                return {
+                  ...connection,
+                  connectedVerse: null
+                };
+              }
             }
           })
         );
@@ -370,14 +486,18 @@ const VerseDetailScreen: React.FC = () => {
         return;
       }
       
-      const connection: Connection = {
-        id: Date.now().toString(),
+      // Create a truly unique ID with a random component
+      const uniqueId = `conn-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+      
+      const connection: ConnectionWithVerse = {
+        id: uniqueId,
         sourceVerseId: verse.id,
         targetVerseId: targetVerse.id,
         type,
         description: '',
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
+        connectedVerse: targetVerse
       };
       
       await neo4jService.createConnection(connection);
@@ -395,7 +515,32 @@ const VerseDetailScreen: React.FC = () => {
   };
 
   const navigateToConnectedVerse = (verseId: string) => {
-    navigation.navigate('VerseDetail', { verseId });
+    // Pass the active tab parameter to preserve the tab state
+    navigation.push('VerseDetail', { 
+      verseId,
+      activeTab: 'connections' 
+    });
+  };
+
+  const handleConnectionsCreated = async (newConnections: Array<Connection | GroupConnection>) => {
+    // Reload connections after batch creation
+    if (newConnections.length > 0 && verse) {
+      // Show success notification
+      Alert.alert(
+        t('common:success'),
+        t('verseDetail:connectionsAdded').replace('{count}', String(newConnections.length)),
+        [{ text: t('common:ok'), style: 'default' }]
+      );
+      
+      // Refresh connections list
+      await loadVerseDetails();
+      
+      // Switch to connections tab
+      setActiveTab('connections');
+      
+      // Hide the selector
+      setShowMultiConnectionSelector(false);
+    }
   };
 
   const getTagColor = (tag: string) => {
@@ -482,6 +627,329 @@ const VerseDetailScreen: React.FC = () => {
       </View>
     </View>
   );
+
+  const renderConnectionItem = ({ item }: { item: ConnectionWithVerse }) => {
+    // Skip if the connection is a self-connection
+    if (item.sourceVerseId === item.targetVerseId || !verse) {
+      return null;
+    }
+    
+    // Handle grouped connections differently
+    if (item.isGrouped && item.groupedConnections?.length) {
+      return renderGroupedConnection(item);
+    }
+    
+    // Regular connection rendering (existing code)
+    const isOutgoing = item.sourceVerseId === verse.id;
+    const connectedVerseId = isOutgoing ? item.targetVerseId : item.sourceVerseId;
+    const connectionColor = isOutgoing ? CONNECTION_COLORS.OUTGOING : CONNECTION_COLORS.INCOMING;
+    
+    // Check if this is a protected "Consecutive verses" connection
+    const isProtectedConnection = item.type === ConnectionType.PARALLEL && item.description === 'Consecutive verses';
+    
+    return (
+      <View style={styles.connectionItemContainer}>
+        <TouchableOpacity
+          style={[styles.connectionItem, { borderLeftColor: connectionColor, borderLeftWidth: 4 }]}
+          onPress={() => navigateToConnectedVerse(connectedVerseId)}
+        >
+          <View style={styles.connectionIconContainer}>
+            <Ionicons
+              name={
+                item.type === ConnectionType.THEMATIC
+                  ? 'link'
+                  : item.type === ConnectionType.PROPHECY
+                  ? 'star'
+                  : 'git-compare'
+              }
+              size={20}
+              color={connectionColor}
+            />
+          </View>
+          <View style={styles.connectionContent}>
+            <View style={styles.connectionHeader}>
+              {item.connectedVerse && (
+                <Text style={[styles.connectionText, { color: connectionColor }]}>
+                  {item.connectedVerse.book} {item.connectedVerse.chapter}:{item.connectedVerse.verse}
+                </Text>
+              )}
+              {isOutgoing ? (
+                <Ionicons name="arrow-forward" size={14} color={connectionColor} />
+              ) : (
+                <Ionicons name="arrow-back" size={14} color={connectionColor} />
+              )}
+            </View>
+            
+            {item.connectedVerse && (
+              <Text style={styles.connectionVerseText} numberOfLines={2}>
+                {item.connectedVerse.text}
+              </Text>
+            )}
+            
+            {showLabels && (
+              <View style={styles.connectionLabels}>
+                <Text style={[styles.connectionTypeLabel, { backgroundColor: isOutgoing ? '#E1F0FF' : '#FFF5E6' }]}>
+                  {item.type === ConnectionType.THEMATIC
+                    ? t('verseDetail:thematic')
+                    : item.type === ConnectionType.PROPHECY
+                    ? t('verseDetail:prophecy')
+                    : t('verseDetail:crossReference')}
+                </Text>
+                <Text style={[styles.connectionDirectionLabel, { backgroundColor: isOutgoing ? '#E1F0FF' : '#FFF5E6' }]}>
+                  {isOutgoing ? t('verseDetail:connectsTo') : t('verseDetail:connectedBy')}
+                </Text>
+                {isProtectedConnection && (
+                  <Text style={[styles.protectedLabel, { backgroundColor: '#E9FFF0' }]}>
+                    {t('verseDetail:systemProtected')}
+                  </Text>
+                )}
+              </View>
+            )}
+          </View>
+        </TouchableOpacity>
+        
+        {!isProtectedConnection && (
+          // Simplified delete button implementation
+          <TouchableOpacity
+            style={[styles.deleteConnectionButton, { padding: 12 }]}
+            onPress={() => {
+              console.log('Directly deleting connection with ID:', item.id);
+              neo4jService.deleteConnection(item.id);
+              console.log('Connection deleted from database');
+              
+              // Update the connections state to remove this connection
+              setConnections(prev => prev.filter(c => c.id !== item.id));
+              
+              // Show success message
+              showNotification(t('verseDetail:connectionDeleted'));
+            }}
+          >
+            <Ionicons name="trash" size={26} color="#FF3B30" />
+          </TouchableOpacity>
+        )}
+      </View>
+    );
+  };
+
+  // Add a new function to render grouped connections
+  const renderGroupedConnection = (item: ConnectionWithVerse) => {
+    const [isExpanded, setIsExpanded] = useState(false);
+    const groupedConnections = item.groupedConnections || [];
+    const connectionColor = '#5B8FF9'; // Special color for grouped connections
+    
+    // Get the common book/chapter for displaying a better group title
+    let groupTitle = t('verseDetail:groupedConnection');
+    
+    if (groupedConnections.length > 0) {
+      // Extract target verse IDs
+      const verseIds = groupedConnections.map(conn => {
+        return conn.sourceVerseId === verse?.id ? conn.targetVerseId : conn.sourceVerseId;
+      });
+      
+      // Parse the first verse ID to extract book/chapter
+      const firstParts = verseIds[0].split('-');
+      if (firstParts.length >= 3) {
+        const book = firstParts[0];
+        const chapter = firstParts[1];
+        groupTitle = `${book} ${chapter}`;
+      }
+    }
+    
+    const toggleExpand = () => {
+      setIsExpanded(!isExpanded);
+    };
+    
+    const deleteGroupedConnection = async () => {
+      try {
+        console.log('Deleting group connection with ID:', item.id);
+        
+        // Confirm deletion
+        Alert.alert(
+          t('common:confirm'),
+          t('verseDetail:confirmDeleteGroupConnection').replace('{count}', 
+            String(groupedConnections.length)),
+          [
+            { text: t('common:cancel'), style: 'cancel' },
+            {
+              text: t('common:delete'),
+              style: 'destructive',
+              onPress: async () => {
+                try {
+                  // Delete all connections in the group
+                  for (const conn of groupedConnections) {
+                    await neo4jService.deleteConnection(conn.id);
+                  }
+                  
+                  // Update local state
+                  setConnections(prevConnections => 
+                    prevConnections.filter(conn => conn.id !== item.id)
+                  );
+                  
+                  showNotification(t('verseDetail:groupConnectionDeleted'));
+                } catch (error) {
+                  console.error('Error deleting group connection:', error);
+                  showNotification(t('verseDetail:failedToDeleteConnection'));
+                }
+              }
+            }
+          ]
+        );
+      } catch (error) {
+        console.error('Error displaying delete confirmation:', error);
+      }
+    };
+    
+    return (
+      <View style={styles.groupedConnectionContainer}>
+        <View style={styles.groupedConnectionHeader}>
+          <TouchableOpacity 
+            style={styles.groupedConnectionToggle}
+            onPress={toggleExpand}
+          >
+            <Ionicons 
+              name={isExpanded ? "chevron-down" : "chevron-forward"} 
+              size={22} 
+              color={connectionColor} 
+            />
+            <Text style={[styles.groupedConnectionTitle, {color: connectionColor}]}>
+              {groupTitle}
+              <Text style={styles.groupCount}> ({groupedConnections.length} verses)</Text>
+            </Text>
+          </TouchableOpacity>
+          
+          <TouchableOpacity
+            style={styles.deleteConnectionButton}
+            onPress={deleteGroupedConnection}
+          >
+            <Ionicons name="trash" size={26} color="#FF3B30" />
+          </TouchableOpacity>
+        </View>
+        
+        {isExpanded && (
+          <View style={styles.expandedGroupContent}>
+            {groupedConnections.map((conn, index) => {
+              const isOutgoing = conn.sourceVerseId === verse?.id;
+              const connectedVerseId = isOutgoing ? conn.targetVerseId : conn.sourceVerseId;
+              
+              // Format the verse reference for better display
+              let formattedReference = connectedVerseId;
+              const parts = connectedVerseId.split('-');
+              if (parts.length >= 3) {
+                formattedReference = `${parts[0]} ${parts[1]}:${parts[2]}`;
+              }
+              
+              return (
+                <TouchableOpacity
+                  key={`group-conn-${conn.id}`}
+                  style={styles.groupConnectionItem}
+                  onPress={() => navigateToConnectedVerse(connectedVerseId)}
+                >
+                  <View style={styles.groupConnectionDetails}>
+                    <Ionicons 
+                      name={isOutgoing ? "arrow-forward" : "arrow-back"}
+                      size={16}
+                      color={connectionColor}
+                      style={{marginRight: 8}}
+                    />
+                    <Text style={styles.groupConnectionText}>
+                      {formattedReference}
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        )}
+      </View>
+    );
+  };
+
+  const renderConnectionsTab = () => (
+    <View style={styles.tabContent}>
+      <View style={styles.connectionActions}>
+        <TouchableOpacity
+          style={styles.addButton}
+          onPress={() => setShowMultiConnectionSelector(!showMultiConnectionSelector)}
+        >
+          <Text style={styles.addButtonText}>
+            {showMultiConnectionSelector ? t('common:cancel') : t('verseDetail:addMultipleConnections')}
+          </Text>
+          <Ionicons
+            name={showMultiConnectionSelector ? "close-circle" : "add-circle"}
+            size={20}
+            color="#fff"
+          />
+        </TouchableOpacity>
+        
+        {!showMultiConnectionSelector && connections.length > 0 && (
+          <TouchableOpacity
+            style={styles.labelToggleButton}
+            onPress={() => toggleLabels(!showLabels)}
+          >
+            <Text style={styles.labelToggleText}>
+              {showLabels ? t('verseDetail:hideLabels') : t('verseDetail:showLabels')}
+            </Text>
+            <Ionicons
+              name={showLabels ? "eye-off-outline" : "eye-outline"}
+              size={20}
+              color="#007AFF"
+            />
+          </TouchableOpacity>
+        )}
+      </View>
+      
+      {showMultiConnectionSelector && verse ? (
+        <View style={styles.multiConnectionContainer}>
+          <Text style={styles.multiConnectionHint}>{t('verseDetail:multiConnectionHint')}</Text>
+          <View style={styles.separator} />
+          <MultiConnectionSelector
+            targetVerseId={verse.id}
+            targetVerse={verse}
+            onConnectionsCreated={handleConnectionsCreated}
+          />
+        </View>
+      ) : (
+        <>
+          {connections.length === 0 ? (
+            <View style={styles.emptyContainer}>
+              <Text style={styles.emptyText}>{t('verseDetail:noConnections')}</Text>
+              <Text style={styles.emptyHint}>{t('verseDetail:addConnectionHint')}</Text>
+            </View>
+          ) : (
+            <FlatList
+              data={connections}
+              keyExtractor={(item) => `connection-${item.id}-${item.sourceVerseId}-${item.targetVerseId}`}
+              renderItem={renderConnectionItem}
+              
+            />
+          )}
+        </>
+      )}
+    </View>
+  );
+
+  // Add a function to toggle the verse group selector
+  const toggleGroupSelector = () => {
+    setIsGroupSelectorVisible(!isGroupSelectorVisible);
+  };
+
+  // Add a function to handle selecting a verse group
+  const handleGroupSelect = (groupId: string) => {
+    navigation.navigate('GroupDetail', { groupId });
+  };
+
+  // Add a function to handle creating a new verse group
+  const handleCreateGroup = (group: VerseGroup) => {
+    showNotification(t('verseDetail:groupCreated'));
+    setIsGroupSelectorVisible(false);
+    // Optionally navigate to the new group
+    navigation.navigate('GroupDetail', { groupId: group.id });
+  };
+
+  // Add a function to show notifications
+  const showNotification = (message: string) => {
+    Alert.alert('', message);
+  };
 
   if (isLoading) {
     return (
@@ -652,129 +1120,43 @@ const VerseDetailScreen: React.FC = () => {
 
         {/* Connections Tab Content */}
         {activeTab === 'connections' && (
-          <>
-            <View style={styles.section}>
-              <View style={styles.sectionHeader}>
-                <Text style={styles.sectionTitle}>{t('verseDetail:connections')}</Text>
-                <View style={styles.labelToggle}>
-                  <Text style={styles.labelToggleText}>{t('verseDetail:showLabels')}</Text>
-                  <Switch
-                    value={showLabels}
-                    onValueChange={toggleLabels}
-                    trackColor={{ false: '#767577', true: '#81b0ff' }}
-                    thumbColor={showLabels ? '#007AFF' : '#f4f3f4'}
-                  />
-                </View>
-              </View>
-              
-              {connections.length === 0 ? (
-                <Text style={styles.emptyMessage}>{t('verseDetail:noConnections')}</Text>
-              ) : (
-                connections.map((connection) => {
-                  // Skip if the connection is a self-connection
-                  if (connection.sourceVerseId === connection.targetVerseId) {
-                    return null;
-                  }
-                  
-                  // Determine if this is an outgoing or incoming connection
-                  const isOutgoing = connection.sourceVerseId === verse.id;
-                  const connectedVerseId = isOutgoing ? connection.targetVerseId : connection.sourceVerseId;
-                  const connectionColor = isOutgoing ? CONNECTION_COLORS.OUTGOING : CONNECTION_COLORS.INCOMING;
-                  
-                  return (
-                    <TouchableOpacity
-                      key={connection.id}
-                      style={[styles.connectionItem, { borderLeftColor: connectionColor, borderLeftWidth: 4 }]}
-                      onPress={() => navigateToConnectedVerse(connectedVerseId)}
-                    >
-                      <View style={styles.connectionIconContainer}>
-                        <Ionicons
-                          name={
-                            connection.type === ConnectionType.THEMATIC
-                              ? 'link'
-                              : connection.type === ConnectionType.PROPHECY
-                              ? 'star'
-                              : 'git-compare'
-                          }
-                          size={20}
-                          color={connectionColor}
-                        />
-                      </View>
-                      <View style={styles.connectionContent}>
-                        <View style={styles.connectionHeader}>
-                          {connection.connectedVerse && (<Text style={[styles.connectionText, { color: connectionColor }]}>
-                            {connection.connectedVerse?.book} {connection.connectedVerse?.chapter}:{connection.connectedVerse?.verse}
-                          </Text>
-                          )}
-                          {isOutgoing ? (
-                            <Ionicons name="arrow-forward" size={14} color={connectionColor} />
-                          ) : (
-                            <Ionicons name="arrow-back" size={14} color={connectionColor} />
-                          )}
-                        </View>
-                        
-                        {connection.connectedVerse && (
-                          <Text style={styles.connectionVerseText} numberOfLines={2}>
-                            {connection.connectedVerse.text}
-                          </Text>
-                        )}
-                        
-                        {showLabels && (
-                          <View style={styles.connectionLabels}>
-                            <Text style={[styles.connectionTypeLabel, { backgroundColor: isOutgoing ? '#E1F0FF' : '#FFF5E6' }]}>
-                              {connection.type === ConnectionType.THEMATIC
-                                ? t('verseDetail:thematic')
-                                : connection.type === ConnectionType.PROPHECY
-                                ? t('verseDetail:prophecy')
-                                : t('verseDetail:crossReference')}
-                            </Text>
-                            <Text style={[styles.connectionDirectionLabel, { backgroundColor: isOutgoing ? '#E1F0FF' : '#FFF5E6' }]}>
-                              {isOutgoing ? t('verseDetail:connectsTo') : t('verseDetail:connectedBy')}
-                            </Text>
-                          </View>
-                        )}
-                      </View>
-                    </TouchableOpacity>
-                  );
-                })
-              )}
-            </View>
-
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>{t('verseDetail:addConnection')}</Text>
-              <TextInput
-                style={styles.connectionInput}
-                placeholder={t('verseDetail:enterVerseReference')}
-                value={targetVerseRef}
-                onChangeText={setTargetVerseRef}
-              />
-              <View style={styles.connectionTypeContainer}>
-                <TouchableOpacity
-                  style={styles.connectionTypeButton}
-                  onPress={() => handleAddConnection(ConnectionType.THEMATIC)}
-                >
-                  <Ionicons name="link" size={20} color="#007AFF" />
-                  <Text style={styles.connectionTypeText}>{t('verseDetail:thematic')}</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.connectionTypeButton}
-                  onPress={() => handleAddConnection(ConnectionType.CROSS_REFERENCE)}
-                >
-                  <Ionicons name="git-compare" size={20} color="#007AFF" />
-                  <Text style={styles.connectionTypeText}>{t('verseDetail:crossReference')}</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.connectionTypeButton}
-                  onPress={() => handleAddConnection(ConnectionType.PROPHECY)}
-                >
-                  <Ionicons name="star" size={20} color="#007AFF" />
-                  <Text style={styles.connectionTypeText}>{t('verseDetail:prophecy')}</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          </>
+          renderConnectionsTab()
         )}
       </ScrollView>
+      
+      <View style={styles.actionsContainer}>
+        <TouchableOpacity
+          style={styles.actionButton}
+          onPress={toggleGroupSelector}
+        >
+          <Text style={styles.actionButtonText}>{t('verseDetail:manageGroups')}</Text>
+        </TouchableOpacity>
+      </View>
+      
+      {/* Add the verse group selector modal */}
+      <Modal
+        visible={isGroupSelectorVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setIsGroupSelectorVisible(false)}
+      >
+        <View style={styles.modalContainer}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>{t('verseDetail:verseGroups')}</Text>
+              <TouchableOpacity onPress={() => setIsGroupSelectorVisible(false)}>
+                <Text style={styles.closeButton}>✕</Text>
+              </TouchableOpacity>
+            </View>
+            
+            <VerseGroupSelector
+              selectedVerses={[verse]}
+              onSelect={handleGroupSelect}
+              onCreateGroup={handleCreateGroup}
+            />
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 };
@@ -832,13 +1214,16 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: 'bold',
   },
-  labelToggle: {
+  labelToggleButton: {
     flexDirection: 'row',
     alignItems: 'center',
+    padding: 4,
+    borderRadius: 4,
+    backgroundColor: '#f0f0f0',
   },
   labelToggleText: {
     fontSize: 14,
-    color: '#666',
+    color: '#007AFF',
     marginRight: 8,
   },
   noteItem: {
@@ -992,13 +1377,19 @@ const styles = StyleSheet.create({
     color: 'white',
     fontSize: 12,
   },
-  connectionItem: {
+  connectionItemContainer: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
+    alignItems: 'center',
     backgroundColor: '#f8f8f8',
     padding: 12,
     borderRadius: 8,
     marginBottom: 12,
+    marginHorizontal: 12,
+  },
+  connectionItem: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
   },
   connectionIconContainer: {
     marginRight: 8,
@@ -1049,6 +1440,18 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
     borderRadius: 4,
     alignSelf: 'flex-end',
+  },
+  protectedLabel: {
+    fontSize: 12,
+    color: '#666',
+    backgroundColor: '#e8e8e8',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+    alignSelf: 'flex-end',
+  },
+  deleteConnectionButton: {
+    padding: 4,
   },
   emptyMessage: {
     fontSize: 14,
@@ -1121,6 +1524,176 @@ const styles = StyleSheet.create({
   activeTabText: {
     color: '#007AFF',
     fontWeight: '600',
+  },
+  tabContent: {
+    flex: 1,
+  },
+  connectionActions: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 12,
+    backgroundColor: '#f8f8f8',
+    borderBottomWidth: 1,
+    borderBottomColor: '#e0e0e0',
+  },
+  addButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 8,
+    borderRadius: 8,
+    backgroundColor: '#007AFF',
+  },
+  addButtonText: {
+    fontSize: 14,
+    color: '#fff',
+    marginRight: 8,
+    fontWeight: '500',
+  },
+  emptyContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  emptyText: {
+    fontSize: 16,
+    color: '#666',
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  emptyHint: {
+    fontSize: 14,
+    color: '#999',
+    textAlign: 'center',
+  },
+  singleConnectionSection: {
+    padding: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#eee',
+    marginTop: 10,
+  },
+  multiConnectionContainer: {
+    padding: 16,
+  },
+  multiConnectionHint: {
+    fontSize: 14,
+    color: '#666',
+    marginBottom: 8,
+  },
+  separator: {
+    height: 1,
+    backgroundColor: '#eee',
+    marginVertical: 16,
+  },
+  actionsContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 12,
+    backgroundColor: '#f8f8f8',
+    borderTopWidth: 1,
+    borderTopColor: '#e0e0e0',
+  },
+  actionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 8,
+    borderRadius: 8,
+    backgroundColor: '#007AFF',
+  },
+  actionButtonText: {
+    fontSize: 14,
+    color: '#fff',
+    marginRight: 8,
+    fontWeight: '500',
+  },
+  modalContainer: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+  },
+  modalContent: {
+    flex: 1,
+    marginTop: 50,
+    backgroundColor: theme.colors.background,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    paddingTop: 16,
+    paddingBottom: 30,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e0e0e0',
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: theme.colors.text,
+  },
+  closeButton: {
+    fontSize: 20,
+    color: theme.colors.text,
+    padding: 4,
+  },
+  groupedConnectionContainer: {
+    backgroundColor: '#f0f8ff',
+    borderRadius: 8,
+    marginBottom: 12,
+    marginHorizontal: 12,
+    overflow: 'hidden',
+    borderLeftWidth: 4,
+    borderLeftColor: '#5B8FF9',
+    elevation: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 1,
+  },
+  expandedGroupContent: {
+    padding: 8,
+    backgroundColor: '#f8f8f8',
+    borderTopWidth: 1,
+    borderTopColor: '#e0e0e0',
+  },
+  groupedConnectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 12,
+  },
+  groupedConnectionToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  groupedConnectionTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginLeft: 8,
+  },
+  groupCount: {
+    fontWeight: 'normal',
+    fontSize: 14,
+  },
+  groupConnectionItem: {
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e0e0e0',
+  },
+  groupConnectionDetails: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingLeft: 12,
+  },
+  groupConnectionText: {
+    fontSize: 14,
+    color: '#333',
   },
 });
 
