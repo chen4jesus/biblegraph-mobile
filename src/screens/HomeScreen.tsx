@@ -260,7 +260,7 @@ const HomeScreen: React.FC = () => {
           style={styles.actionButton}
           onPress={() => setIsBibleSelectorVisible(true)}
         >
-          <Ionicons name="book" size={24} color="#007AFF" />
+          <Ionicons name="book-outline" size={24} color="#007AFF" />
           <Text style={styles.actionText}>{t('navigation:bible')}</Text>
         </TouchableOpacity>
         <TouchableOpacity
@@ -274,7 +274,7 @@ const HomeScreen: React.FC = () => {
           style={styles.actionButton}
           onPress={() => navigation.navigate('Notes')}
         >
-          <Ionicons name="document-text" size={24} color="#007AFF" />
+          <Ionicons name="document-text-outline" size={24} color="#007AFF" />
           <Text style={styles.actionText}>{t('navigation:notes')}</Text>
         </TouchableOpacity>
       </View>

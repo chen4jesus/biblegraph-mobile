@@ -47,7 +47,7 @@ const MainTabs = () => {
           } else if (route.name === 'Graph') {
             iconName = focused ? 'git-network' : 'git-network-outline';
           } else if (route.name === 'Notes') {
-            iconName = focused ? 'book' : 'book-outline';
+            iconName = focused ? 'document-text' : 'document-text-outline';
           } else if (route.name === 'Profile') {
             iconName = focused ? 'person' : 'person-outline';
           }
