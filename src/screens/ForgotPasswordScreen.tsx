@@ -75,7 +75,7 @@ const ForgotPasswordScreen: React.FC = () => {
             style={styles.backButton}
             onPress={() => navigation.goBack()}
           >
-            <Ionicons name="arrow-back" size={24} color="#007AFF" />
+            <Ionicons name="chevron-back" size={24} color="#007AFF" />
           </TouchableOpacity>
           <Text style={styles.title}>Reset Password</Text>
           <Text style={styles.subtitle}>

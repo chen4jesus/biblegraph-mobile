@@ -319,7 +319,7 @@ const GraphViewScreen: React.FC = () => {
             style={styles.controlButton}
             onPress={() => navigation.goBack()}
           >
-            <Ionicons name="close" size={22} color="#007AFF" />
+            <Ionicons name="chevron-back" size={24} color="#007AFF" />
           </TouchableOpacity>
         </View>
       )}

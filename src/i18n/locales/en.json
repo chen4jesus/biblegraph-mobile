@@ -11,7 +11,14 @@
     "search": "Search Bible verses...",
     "all": "All",
     "ok": "OK",
-    "confirm": "Confirm"
+    "confirm": "Confirm",
+    "enterAtLeast2Chars": "Enter at least 2 characters to search",
+    "tryDifferentSearchTerm": "Try a different search term or check your spelling",
+    "noVersesFound": "No verses found",
+    "noVersesFoundFor": "No verses found for '{query}'",
+    "pleaseCheckInternetConnection": "Please check your internet connection",
+    "someFeaturesMayNotWorkInWebBrowsers": "Some features may not work in web browsers",
+    "databasePerformance": "Due to performance reasons, database operations are limited to 100 records per query."
   },
   "home": {
     "title": "Bible Graph",

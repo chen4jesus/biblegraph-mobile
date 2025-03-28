@@ -288,8 +288,12 @@ const TagsManagementScreen: React.FC = () => {
       >
         <View style={styles.header}>
           <Text style={styles.headerTitle}>{t('tags:manageTags')}</Text>
-          <TouchableOpacity onPress={animateOut} style={styles.closeButton}>
-            <Text style={styles.closeButtonText}>×</Text>
+          <TouchableOpacity
+            style={styles.closeButton}
+            onPress={closeModal}
+            accessibilityLabel={t('common:close')}
+          >
+            <Ionicons name="chevron-back" size={24} color="#007AFF" />
           </TouchableOpacity>
         </View>
         

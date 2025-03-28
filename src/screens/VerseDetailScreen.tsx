@@ -863,7 +863,7 @@ const VerseDetailScreen: React.FC = () => {
   // Function to handle pressing on a node (verse, note, tag, etc.)
   const handleNodePress = (nodeId: string, nodeType: NodeType) => {
     if (nodeType === 'VERSE') {
-      navigation.navigate('VerseDetail', { verseId: nodeId });
+      navigation.navigate('VerseDetail', { verseId: nodeId, activeTab: 'connections' });
     } else if (nodeType === 'NOTE') {
       // Navigate to note detail screen if you have one
       Alert.alert('Note', `Navigate to note with ID: ${nodeId}`);
@@ -1359,6 +1359,20 @@ const VerseDetailScreen: React.FC = () => {
     }
   }, [recentlyUpdatedNote, highlightAnimation]);
 
+  // Add a useEffect hook to set up header options with custom back button behavior
+  useEffect(() => {
+    navigation.setOptions({
+      headerLeft: () => (
+        <TouchableOpacity
+          style={{ marginLeft: 16 }}
+          onPress={() => navigation.navigate('MainTabs')}
+        >
+          <Ionicons name="chevron-back" size={24} color="#007AFF" />
+        </TouchableOpacity>
+      ),
+    });
+  }, [navigation]);
+
   if (isLoading) {
     return (
       <View style={styles.loadingContainer}>
@@ -1380,12 +1394,6 @@ const VerseDetailScreen: React.FC = () => {
       {/* Fixed Header Section */}
       <View style={styles.fixedHeaderContainer}>
         <View style={styles.verseHeader}>
-          <TouchableOpacity
-            style={styles.homeButton}
-            onPress={() => navigation.navigate('MainTabs')}
-          >
-            <Ionicons name="home" size={24} color="#007AFF" />
-          </TouchableOpacity>
           <Text style={styles.reference}>
             {verse.book} {verse.chapter}:{verse.verse}
           </Text>

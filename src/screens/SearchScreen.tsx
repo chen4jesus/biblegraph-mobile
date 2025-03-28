@@ -8,6 +8,7 @@ import {
   Text,
   ActivityIndicator,
   SafeAreaView,
+  Alert,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -38,12 +39,18 @@ const SearchScreen: React.FC = () => {
       try {
         const verses = await neo4jService.searchVerses(searchQuery);
         setResults(verses);
+        
+        console.debug(`Search returned ${verses.length} results`);
+        if (verses.length > 0) {
+          console.debug('First verse:', verses[0]);
+        }
       } catch (error) {
         console.error('Search error:', error);
+        Alert.alert('Search Error', 'There was a problem with your search. Please try again.');
       } finally {
         setIsLoading(false);
       }
-    }, 300),
+    }, 500),
     []
   );
 
@@ -59,14 +66,31 @@ const SearchScreen: React.FC = () => {
     >
       <View style={styles.verseHeader}>
         <Text style={styles.verseReference}>
-          {item.book} {item.chapter}:{item.verse}
+          {item.book || 'Unknown'} {item.chapter || '?'}:{item.verse || '?'}
         </Text>
         <Ionicons name="chevron-forward" size={20} color="#666" />
       </View>
       <Text style={styles.verseText} numberOfLines={2}>
-        {item.text}
+        {item.text || 'No verse text available'}
       </Text>
+      {item.translation && (
+        <Text style={styles.translation}>{item.translation}</Text>
+      )}
     </TouchableOpacity>
+  );
+
+  const EmptyState = ({ query }: { query: string }) => (
+    <View style={styles.emptyContainer}>
+      <Ionicons name="search-outline" size={50} color="#ddd" />
+      {query.length > 0 ? (
+        <>
+          <Text style={styles.emptyText}>{t('common:noVersesFound')}</Text>
+          <Text style={styles.emptySubtext}>{t('common:tryDifferentSearchTerm')}</Text>
+        </>
+      ) : (
+        <Text style={styles.emptyText}>{t('common:enterAtLeast2Chars')}</Text>
+      )}
+    </View>
   );
 
   return (
@@ -76,7 +100,7 @@ const SearchScreen: React.FC = () => {
           style={styles.closeButton}
           onPress={() => navigation.goBack()}
         >
-          <Ionicons name="close" size={24} color="#007AFF" />
+          <Ionicons name="chevron-back" size={24} color="#007AFF" />
         </TouchableOpacity>
         
         <View style={styles.searchContainer}>
@@ -108,13 +132,12 @@ const SearchScreen: React.FC = () => {
         <FlatList
           data={results}
           renderItem={renderVerseItem}
-          keyExtractor={(item) => item.id}
-          contentContainerStyle={styles.resultsList}
-          ListEmptyComponent={
-            query.length > 0 ? (
-              <Text style={styles.emptyText}>{t('verses:noVersesFound')}</Text>
-            ) : null
-          }
+          keyExtractor={(item) => item.id || `temp-${Math.random()}`}
+          contentContainerStyle={[
+            styles.resultsList,
+            results.length === 0 && styles.emptyResultsList
+          ]}
+          ListEmptyComponent={<EmptyState query={query} />}
         />
       )}
     </SafeAreaView>
@@ -192,11 +215,33 @@ const styles = StyleSheet.create({
     color: '#666',
     lineHeight: 20,
   },
+  emptyContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 40,
+  },
   emptyText: {
     textAlign: 'center',
     color: '#666',
     fontSize: 16,
-    marginTop: 20,
+    marginTop: 16,
+    fontWeight: '500',
+  },
+  emptySubtext: {
+    textAlign: 'center',
+    color: '#999',
+    fontSize: 14,
+    marginTop: 8,
+  },
+  emptyResultsList: {
+    flex: 1,
+    justifyContent: 'center',
+  },
+  translation: {
+    fontSize: 12,
+    color: '#999',
+    marginTop: 4,
+    fontStyle: 'italic',
   },
 });
 

@@ -11,7 +11,14 @@
     "search": "搜索圣经经文...",
     "all": "全部",
     "ok": "确定",
-    "confirm": "确认"
+    "confirm": "确认",
+    "enterAtLeast2Chars": "请至少输入2个字符进行搜索",
+    "tryDifferentSearchTerm": "尝试不同的搜索词或检查拼写",
+    "noVersesFound": "没有找到经文",
+    "noVersesFoundFor": "没有找到关于 '{query}' 的经文",
+    "pleaseCheckInternetConnection": "请检查您的互联网连接",
+    "someFeaturesMayNotWorkInWebBrowsers": "某些功能在网页浏览器中可能无法正常工作",
+    "databasePerformance": "由于性能原因，数据库操作限制为每查询100条记录。"
   },
   "home": {
     "title": "圣经研读",

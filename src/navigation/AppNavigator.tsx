@@ -10,6 +10,8 @@ import { useTranslation } from 'react-i18next';
 import { useFocusEffect } from '@react-navigation/native';
 import { WebViewProvider } from '../contexts/WebViewContext';
 import { GlobalWebViewManager } from '../contexts/WebViewManager';
+import { Platform, View, Text } from 'react-native';
+import { theme, globalStyles } from '../styles/theme';
 
 // Auth Screens
 import LoginScreen from '../screens/LoginScreen';
@@ -50,39 +52,72 @@ const MainTabs = () => {
             iconName = focused ? 'person' : 'person-outline';
           }
 
-          return <Ionicons name={iconName as any} size={size} color={color} />;
+          return (
+            <View style={{
+              alignItems: 'center',
+              justifyContent: 'center',
+              paddingTop: theme.spacing.xs,
+            }}>
+              <Ionicons name={iconName as any} size={size} color={color} />
+              {focused && (
+                <View style={globalStyles.tabBarDot} />
+              )}
+            </View>
+          );
         },
-        tabBarActiveTintColor: '#007AFF',
-        tabBarInactiveTintColor: 'gray',
-        tabBarStyle: { 
-          height: 60,
+        tabBarActiveTintColor: theme.colors.primary,
+        tabBarInactiveTintColor: theme.colors.textSecondary,
+        tabBarStyle: globalStyles.tabBar,
+        tabBarItemStyle: globalStyles.tabBarItem,
+        tabBarLabelStyle: {
+          ...theme.typography.tabLabel,
+          marginTop: -4,
           paddingBottom: 0,
           marginBottom: 8,
         },
-        tabBarItemStyle: {
-          paddingTop: 4,
+        headerStyle: {
+          backgroundColor: theme.colors.background,
+          shadowColor: theme.colors.border,
+          shadowOffset: { width: 0, height: 1 },
+          shadowOpacity: 0.1,
+          shadowRadius: 2,
+          elevation: 2,
         },
+        headerTintColor: theme.colors.text,
+        headerTitleStyle: {
+          ...theme.typography.h3,
+          color: theme.colors.primary,
+        },
+        headerShadowVisible: true,
       })}
     >
       <Tab.Screen 
         name="Home" 
         component={HomeScreen} 
-        options={{ title: t('home') }}
+        options={{ 
+          title: t('home'),
+        }}
       />
       <Tab.Screen 
         name="Graph" 
         component={GraphViewScreen} 
-        options={{ title: t('graph') }}
+        options={{ 
+          title: t('graph'),
+        }}
       />
       <Tab.Screen 
         name="Notes" 
         component={NotesScreen} 
-        options={{ title: t('notes') }}
+        options={{ 
+          title: t('notes'),
+        }}
       />
       <Tab.Screen 
         name="Profile" 
         component={ProfileScreen} 
-        options={{ title: t('profile') }}
+        options={{ 
+          title: t('profile'),
+        }}
       />
     </Tab.Navigator>
   );
@@ -122,11 +157,53 @@ const AppNavigator: React.FC = () => {
 
   return (
     <WebViewProvider>
-      <NavigationContainer>
+      <NavigationContainer
+        theme={{
+          dark: false,
+          colors: {
+            primary: theme.colors.primary,
+            background: theme.colors.background,
+            card: theme.colors.background,
+            text: theme.colors.text,
+            border: theme.colors.border,
+            notification: theme.colors.error,
+          },
+          fonts: {
+            regular: {
+              fontFamily: 'System',
+              fontWeight: '400'
+            },
+            medium: {
+              fontFamily: 'System',
+              fontWeight: '500'
+            },
+            bold: {
+              fontFamily: 'System',
+              fontWeight: '700'
+            },
+            heavy: {
+              fontFamily: 'System',
+              fontWeight: '900'
+            }
+          }
+        }}
+      >
         <Stack.Navigator
           initialRouteName={isAuthenticated ? 'MainTabs' : 'Login'}
           screenOptions={{
             headerShown: false,
+            contentStyle: {
+              backgroundColor: theme.colors.background,
+            },
+            animation: 'slide_from_right',
+            headerStyle: {
+              backgroundColor: theme.colors.background,
+            },
+            headerTintColor: theme.colors.text,
+            headerTitleStyle: {
+              ...theme.typography.h3,
+              color: theme.colors.primary,
+            },
           }}
         >
           {/* Auth Stack */}
@@ -135,17 +212,30 @@ const AppNavigator: React.FC = () => {
               <Stack.Screen 
                 name="Login" 
                 component={LoginScreen}
-                options={{ title: t('auth:login') }} 
+                options={{ 
+                  title: t('auth:login'),
+                  headerShown: false,
+                }} 
               />
               <Stack.Screen 
                 name="SignUp" 
                 component={SignUpScreen}
-                options={{ title: t('auth:signup') }} 
+                options={{ 
+                  title: t('auth:signup'),
+                  headerShown: true,
+                  headerTransparent: true,
+                  headerBlurEffect: 'light',
+                }} 
               />
               <Stack.Screen 
                 name="ForgotPassword" 
                 component={ForgotPasswordScreen}
-                options={{ title: t('auth:forgotPassword') }} 
+                options={{ 
+                  title: t('auth:forgotPassword'),
+                  headerShown: true,
+                  headerTransparent: true,
+                  headerBlurEffect: 'light',
+                }} 
               />
             </>
           )}
@@ -153,26 +243,56 @@ const AppNavigator: React.FC = () => {
           {/* Main Stack */}
           {isAuthenticated && (
             <>
-              <Stack.Screen name="MainTabs" component={MainTabs} />
+              <Stack.Screen 
+                name="MainTabs" 
+                component={MainTabs}
+                options={{
+                  headerShown: false,
+                }}
+              />
               <Stack.Screen 
                 name="Search" 
                 component={SearchScreen}
-                options={{ title: t('search') }} 
+                options={{ 
+                  title: t('search'),
+                  headerShown: true,
+                  presentation: 'modal',
+                  animation: 'slide_from_bottom',
+                  headerStyle: {
+                    backgroundColor: theme.colors.background,
+                  },
+                  contentStyle: {
+                    backgroundColor: theme.colors.background,
+                  },
+                }} 
               />
               <Stack.Screen 
                 name="VerseDetail" 
                 component={VerseDetailScreen} 
-                options={{ title: t('verseDetail:title') }}
+                options={{ 
+                  title: t('verseDetail:title'),
+                  headerShown: true,
+                  headerTitleStyle: {
+                    ...theme.typography.h3,
+                    color: theme.colors.primary,
+                  },
+                }}
               />
               <Stack.Screen 
                 name="GraphView" 
                 component={GraphViewScreen}
-                options={{ title: t('graph') }} 
+                options={{ 
+                  title: t('graph'),
+                  headerShown: true,
+                }} 
               />
               <Stack.Screen 
                 name="GroupDetail" 
                 component={GroupDetailScreen}
-                options={{ title: t('group:detail') }} 
+                options={{ 
+                  title: t('group:detail'),
+                  headerShown: true,
+                }} 
               />
               <Stack.Screen 
                 name="TagsManagement" 
@@ -181,18 +301,27 @@ const AppNavigator: React.FC = () => {
                   title: t('tags:title'),
                   presentation: 'transparentModal',
                   animation: 'slide_from_right',
-                  headerShown: false
+                  headerShown: false,
+                  contentStyle: {
+                    backgroundColor: theme.colors.modalOverlay,
+                  },
                 }} 
               />
               <Stack.Screen 
                 name="Settings" 
                 component={SettingsScreen}
-                options={{ title: t('settings') }} 
+                options={{ 
+                  title: t('settings'),
+                  headerShown: true,
+                }} 
               />
               <Stack.Screen 
                 name="LanguageSettings" 
                 component={LanguageSettingsScreen}
-                options={{ title: t('settings:language') }} 
+                options={{ 
+                  title: t('settings:language'),
+                  headerShown: true,
+                }} 
               />
             </>
           )}

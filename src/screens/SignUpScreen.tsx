@@ -134,7 +134,7 @@ const SignUpScreen: React.FC = () => {
               style={styles.backButton}
               onPress={() => navigation.goBack()}
             >
-              <Ionicons name="arrow-back" size={24} color="#007AFF" />
+              <Ionicons name="chevron-back" size={24} color="#007AFF" />
             </TouchableOpacity>
             <Text style={styles.title}>Create Account</Text>
             <Text style={styles.subtitle}>Join Bible Graph to enhance your study</Text>

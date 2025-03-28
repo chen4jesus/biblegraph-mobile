@@ -6,12 +6,12 @@ import { neo4jDriverService } from './src/services/neo4jDriver';
 import { bibleDataLoader } from './src/services/bibleDataLoader';
 import { LanguageProvider } from './src/i18n/LanguageProvider';
 import './src/i18n'; // Import i18n configuration
-
+import { useTranslation } from 'react-i18next';
 export default function App() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [loadingMessage, setLoadingMessage] = useState<string>('Loading Bible Graph...');
-
+  const { t } = useTranslation();
   useEffect(() => {
     const initializeDatabase = async () => {
       try {
@@ -53,9 +53,9 @@ export default function App() {
   if (loading) {
     return (
       <View style={styles.container}>
-        <Text style={styles.text}>{loadingMessage}</Text>
+        <Text style={styles.text}>{t('common:loading')}</Text>
         <Text style={styles.subText}>
-          For performance reasons, database operations are limited to 100 records per query.
+          {t('common:databasePerformance')}
         </Text>
       </View>
     );
@@ -64,11 +64,11 @@ export default function App() {
   if (error) {
     return (
       <View style={styles.container}>
-        <Text style={styles.errorText}>Error</Text>
+        <Text style={styles.errorText}>{t('common:error')}</Text>
         <Text style={styles.text}>{error}</Text>
         <Text style={styles.text}>
-          Please check your internet connection and restart the app.
-          {Platform.OS === 'web' && ' Some features may not work in web browsers.'}
+          {t('common:pleaseCheckInternetConnection')}
+          {Platform.OS === 'web' && ' ' + t('common:someFeaturesMayNotWorkInWebBrowsers')}
         </Text>
       </View>
     );
