@@ -7,6 +7,7 @@
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
+    "api": "node api-server.js",
     "test": "jest __tests__/basic.test.js __tests__/services/neo4j.test.ts"
   },
   "dependencies": {

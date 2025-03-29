@@ -6,19 +6,17 @@ WORKDIR /app
 # Install system dependencies
 RUN apk add --no-cache git
 
-# Copy package files
+# Copy package files first for better caching
 COPY package.json package-lock.json ./
 
-# Install app dependencies with more resilient approach
-RUN npm install --legacy-peer-deps || npm install --force
+# Install app dependencies
+RUN npm ci || npm install --legacy-peer-deps
 
 # Copy the rest of the app
 COPY . .
 
-# Try to build the web version with a fallback to creating a simple page
-RUN mkdir -p web-build && \
-    (npx expo export:web || \
-     echo '<html><head><title>BibleGraph</title><style>body{font-family:Arial,sans-serif;margin:40px;line-height:1.6}</style></head><body><h1>BibleGraph API</h1><p>Welcome to the BibleGraph API. Use the API endpoints to access your Bible study data.</p><h2>Available Endpoints:</h2><ul><li><a href="/api/health">/api/health</a> - Check API status</li><li><a href="/api/notes">/api/notes</a> - Get all notes</li><li><a href="/api/tags">/api/tags</a> - Get all tags</li><li><a href="/api/verses">/api/verses</a> - Get verses</li></ul></body></html>' > web-build/index.html)
+# Build the web version
+RUN npx expo export:web
 
 # Production stage
 FROM nginx:alpine

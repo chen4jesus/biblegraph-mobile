@@ -11,6 +11,8 @@ services:
     restart: unless-stopped
     depends_on:
       - api
+    networks:
+      - biblegraph-network
 
   api:
     build:
@@ -27,9 +29,11 @@ services:
     depends_on:
       - neo4j
     restart: unless-stopped
+    networks:
+      - biblegraph-network
 
   neo4j:
-    image: neo4j:4.4
+    image: neo4j:latest
     container_name: biblegraph-neo4j
     ports:
       - "7474:7474"  # HTTP
@@ -45,6 +49,12 @@ services:
       - neo4j_import:/var/lib/neo4j/import
       - neo4j_plugins:/plugins
     restart: unless-stopped
+    networks:
+      - biblegraph-network
+
+networks:
+  biblegraph-network:
+    driver: bridge
 
 volumes:
   neo4j_data:

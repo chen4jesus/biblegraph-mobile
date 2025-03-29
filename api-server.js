@@ -14,11 +14,18 @@ const NEO4J_PASSWORD = process.env.NEO4J_PASSWORD || 'password';
 const MAX_RETRY_ATTEMPTS = 20;
 const RETRY_INTERVAL = 3000; // 3 seconds
 
-// Create the Neo4j driver instance
+// Create the Neo4j driver instance with improved configuration
 const driver = neo4j.driver(
   NEO4J_URI,
   neo4j.auth.basic(NEO4J_USER, NEO4J_PASSWORD),
-  { maxConnectionLifetime: 3 * 60 * 60 * 1000 } // 3 hours
+  { 
+    maxTransactionRetryTime: 30000, // 30 seconds max retry time
+    maxConnectionLifetime: 3 * 60 * 60 * 1000, // 3 hours
+    logging: {
+      level: 'info',
+      logger: (level, message) => console.log(`[neo4j ${level}] ${message}`)
+    }
+  }
 );
 
 // Enable CORS
@@ -72,7 +79,8 @@ app.get('/health', async (req, res) => {
     const connected = await driver.verifyConnectivity();
     res.json({ 
       status: 'ok',
-      neo4j: 'connected'
+      neo4j: 'connected',
+      driver_version: neo4j.version
     });
   } catch (error) {
     res.json({ 
@@ -83,29 +91,31 @@ app.get('/health', async (req, res) => {
   }
 });
 
-// Get all notes
+// Get all notes - using transaction function
 app.get('/api/notes', async (req, res) => {
   const session = driver.session();
   try {
-    const result = await session.run(`
-      MATCH (n:Note)
-      OPTIONAL MATCH (n)-[:REFERS_TO]->(v:Verse)
-      RETURN n, v
-    `);
-    
-    const notes = result.records.map(record => {
-      const note = record.get('n').properties;
-      const verse = record.get('v') ? record.get('v').properties : null;
+    const notes = await session.executeRead(async tx => {
+      const result = await tx.run(`
+        MATCH (n:Note)
+        OPTIONAL MATCH (n)-[:REFERS_TO]->(v:Verse)
+        RETURN n, v
+      `);
       
-      // Handle tags (stored as a string array or comma-delimited string)
-      if (typeof note.tags === 'string') {
-        note.tags = note.tags.split(',').map(tag => tag.trim()).filter(tag => tag);
-      }
-      
-      return {
-        ...note,
-        verse: verse
-      };
+      return result.records.map(record => {
+        const note = record.get('n').properties;
+        const verse = record.get('v') ? record.get('v').properties : null;
+        
+        // Handle tags (stored as a string array or comma-delimited string)
+        if (typeof note.tags === 'string') {
+          note.tags = note.tags.split(',').map(tag => tag.trim()).filter(tag => tag);
+        }
+        
+        return {
+          ...note,
+          verse: verse
+        };
+      });
     });
     
     res.json(notes);
@@ -117,33 +127,41 @@ app.get('/api/notes', async (req, res) => {
   }
 });
 
-// Get a specific note by ID
+// Get a specific note by ID - using transaction function
 app.get('/api/notes/:id', async (req, res) => {
   const session = driver.session();
   try {
-    const result = await session.run(`
-      MATCH (n:Note {id: $id})
-      OPTIONAL MATCH (n)-[:REFERS_TO]->(v:Verse)
-      RETURN n, v
-    `, { id: req.params.id });
+    const note = await session.executeRead(async tx => {
+      const result = await tx.run(`
+        MATCH (n:Note {id: $id})
+        OPTIONAL MATCH (n)-[:REFERS_TO]->(v:Verse)
+        RETURN n, v
+      `, { id: req.params.id });
+      
+      if (result.records.length === 0) {
+        return null;
+      }
+      
+      const record = result.records[0];
+      const noteProps = record.get('n').properties;
+      const verse = record.get('v') ? record.get('v').properties : null;
+      
+      // Handle tags (stored as a string array or comma-delimited string)
+      if (typeof noteProps.tags === 'string') {
+        noteProps.tags = noteProps.tags.split(',').map(tag => tag.trim()).filter(tag => tag);
+      }
+      
+      return {
+        ...noteProps,
+        verse: verse
+      };
+    });
     
-    if (result.records.length === 0) {
+    if (!note) {
       return res.status(404).json({ error: 'Note not found' });
     }
     
-    const record = result.records[0];
-    const note = record.get('n').properties;
-    const verse = record.get('v') ? record.get('v').properties : null;
-    
-    // Handle tags (stored as a string array or comma-delimited string)
-    if (typeof note.tags === 'string') {
-      note.tags = note.tags.split(',').map(tag => tag.trim()).filter(tag => tag);
-    }
-    
-    res.json({
-      ...note,
-      verse: verse
-    });
+    res.json(note);
   } catch (error) {
     console.error(`Error fetching note ${req.params.id}:`, error);
     res.status(500).json({ error: 'Failed to fetch note' });
@@ -152,20 +170,27 @@ app.get('/api/notes/:id', async (req, res) => {
   }
 });
 
-// Get a verse by ID
+// Get a verse by ID - using transaction function
 app.get('/api/verses/:id', async (req, res) => {
   const session = driver.session();
   try {
-    const result = await session.run(`
-      MATCH (v:Verse {id: $id})
-      RETURN v
-    `, { id: req.params.id });
+    const verse = await session.executeRead(async tx => {
+      const result = await tx.run(`
+        MATCH (v:Verse {id: $id})
+        RETURN v
+      `, { id: req.params.id });
+      
+      if (result.records.length === 0) {
+        return null;
+      }
+      
+      return result.records[0].get('v').properties;
+    });
     
-    if (result.records.length === 0) {
+    if (!verse) {
       return res.status(404).json({ error: 'Verse not found' });
     }
     
-    const verse = result.records[0].get('v').properties;
     res.json(verse);
   } catch (error) {
     console.error(`Error fetching verse ${req.params.id}:`, error);
@@ -175,25 +200,33 @@ app.get('/api/verses/:id', async (req, res) => {
   }
 });
 
-// Get a verse by reference
+// Get a verse by reference - using transaction function
 app.get('/api/verses/reference/:book/:chapter/:verse', async (req, res) => {
   const session = driver.session();
   try {
     const { book, chapter, verse } = req.params;
-    const result = await session.run(`
-      MATCH (v:Verse {book: $book, chapter: toInteger($chapter), verse: toInteger($verse)})
-      RETURN v
-    `, { 
-      book, 
-      chapter: parseInt(chapter), 
-      verse: parseInt(verse) 
+    
+    const verseData = await session.executeRead(async tx => {
+      const result = await tx.run(`
+        MATCH (v:Verse {book: $book, chapter: toInteger($chapter), verse: toInteger($verse)})
+        RETURN v
+      `, { 
+        book, 
+        chapter: parseInt(chapter), 
+        verse: parseInt(verse) 
+      });
+      
+      if (result.records.length === 0) {
+        return null;
+      }
+      
+      return result.records[0].get('v').properties;
     });
     
-    if (result.records.length === 0) {
+    if (!verseData) {
       return res.status(404).json({ error: 'Verse not found' });
     }
     
-    const verseData = result.records[0].get('v').properties;
     res.json(verseData);
   } catch (error) {
     console.error(`Error fetching verse by reference:`, error);
@@ -203,33 +236,93 @@ app.get('/api/verses/reference/:book/:chapter/:verse', async (req, res) => {
   }
 });
 
-// Get all tags
+// Get all tags - using transaction function
 app.get('/api/tags', async (req, res) => {
   const session = driver.session();
   try {
-    const result = await session.run(`
-      MATCH (n:Note)
-      WHERE n.tags IS NOT NULL
-      RETURN n.tags
-    `);
-    
-    // Extract all tags from notes
-    let allTags = [];
-    result.records.forEach(record => {
-      const tags = record.get('n.tags');
-      if (Array.isArray(tags)) {
-        allTags = allTags.concat(tags);
-      } else if (typeof tags === 'string') {
-        allTags = allTags.concat(tags.split(',').map(tag => tag.trim()).filter(tag => tag));
-      }
+    const tags = await session.executeRead(async tx => {
+      const result = await tx.run(`
+        MATCH (n:Note)
+        WHERE n.tags IS NOT NULL
+        RETURN n.tags
+      `);
+      
+      // Extract all tags from notes
+      let allTags = [];
+      result.records.forEach(record => {
+        const tags = record.get('n.tags');
+        if (Array.isArray(tags)) {
+          allTags = allTags.concat(tags);
+        } else if (typeof tags === 'string') {
+          allTags = allTags.concat(tags.split(',').map(tag => tag.trim()).filter(tag => tag));
+        }
+      });
+      
+      // Get unique tags
+      return [...new Set(allTags)];
     });
     
-    // Get unique tags
-    const uniqueTags = [...new Set(allTags)];
-    res.json(uniqueTags);
+    res.json(tags);
   } catch (error) {
     console.error('Error fetching tags:', error);
     res.status(500).json({ error: 'Failed to fetch tags' });
+  } finally {
+    await session.close();
+  }
+});
+
+// Add endpoint for creating notes
+app.post('/api/notes', async (req, res) => {
+  const { text, tags, verseId } = req.body;
+  
+  if (!text) {
+    return res.status(400).json({ error: 'Note text is required' });
+  }
+  
+  const session = driver.session();
+  try {
+    const result = await session.executeWrite(async tx => {
+      // Generate a unique ID for the note
+      const query = verseId 
+        ? `
+          MATCH (v:Verse {id: $verseId})
+          CREATE (n:Note {id: randomUUID(), text: $text, tags: $tags, created: datetime()})
+          CREATE (n)-[:REFERS_TO]->(v)
+          RETURN n, v
+        `
+        : `
+          CREATE (n:Note {id: randomUUID(), text: $text, tags: $tags, created: datetime()})
+          RETURN n, null as v
+        `;
+      
+      const result = await tx.run(query, { 
+        text, 
+        tags: Array.isArray(tags) ? tags : [], 
+        verseId 
+      });
+      
+      if (result.records.length === 0) {
+        return null;
+      }
+      
+      const record = result.records[0];
+      const note = record.get('n').properties;
+      const verse = record.get('v') ? record.get('v').properties : null;
+      
+      return {
+        ...note,
+        verse
+      };
+    });
+    
+    if (!result) {
+      return res.status(500).json({ error: 'Failed to create note' });
+    }
+    
+    res.status(201).json(result);
+  } catch (error) {
+    console.error('Error creating note:', error);
+    res.status(500).json({ error: 'Failed to create note' });
   } finally {
     await session.close();
   }
