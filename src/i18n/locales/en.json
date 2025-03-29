@@ -12,6 +12,7 @@
     "all": "All",
     "ok": "OK",
     "confirm": "Confirm",
+    "close": "Close",
     "enterAtLeast2Chars": "Enter at least 2 characters to search",
     "tryDifferentSearchTerm": "Try a different search term or check your spelling",
     "noVersesFound": "No verses found",
@@ -41,6 +42,24 @@
     "verse": "Verse",
     "noVersesFound": "No verses found"
   },
+  "bible": {
+    "reading": "Bible Reading",
+    "readChapter": "Read Chapter",
+    "previous": "Previous",
+    "next": "Next",
+    "goToVerse": "Go to Verse", 
+    "selectTranslation": "Select Translation",
+    "addToFavorites": "Add to Favorites",
+    "shareVerse": "Share Verse",
+    "copyVerse": "Copy Verse",
+    "verseCopied": "Verse copied to clipboard",
+    "highlightVerse": "Highlight Verse",
+    "createNote": "Create Note",
+    "createConnection": "Create Connection",
+    "viewDetail": "View Detail",
+    "listView": "List View",
+    "continuousView": "Continuous View"
+  },
   "notes": {
     "title": "My Notes",
     "searchNotes": "Search notes... (e.g. Genesis 1:1)",
@@ -58,6 +77,7 @@
     "searchPlaceholder": "Search notes..."
   },
   "tags": {
+    "title": "Tags",
     "manageTags": "Manage Tags",
     "searchTags": "Search tags...",
     "addNewTag": "Add new tag...",
@@ -78,8 +98,7 @@
     "createTag": "Create Tag",
     "addTag": "Add Tag",
     "noSearchResults": "No search results",
-    "noTags": "No tags"
-
+    "noTags": "No tags" 
   },
   "connections": {
     "title": "Connections",
@@ -213,6 +232,7 @@
     "create": "Create Group",
     "edit": "Edit Group",
     "name": "Group Name",
+    "detail": "Group Detail",
     "description": "Description",
     "enterName": "Enter group name",
     "enterDescription": "Enter group description (optional)",

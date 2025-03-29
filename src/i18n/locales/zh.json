@@ -12,6 +12,7 @@
     "all": "全部",
     "ok": "确定",
     "confirm": "确认",
+    "close": "关闭",
     "enterAtLeast2Chars": "请至少输入2个字符进行搜索",
     "tryDifferentSearchTerm": "尝试不同的搜索词或检查拼写",
     "noVersesFound": "没有找到经文",
@@ -76,6 +77,7 @@
     "searchPlaceholder": "搜索笔记..."
   },
   "tags": {
+    "title": "我的标签",
     "manageTags": "管理标签",
     "searchTags": "搜索标签...",
     "addNewTag": "添加新标签...",
@@ -230,6 +232,7 @@
     "create": "创建群组",
     "edit": "编辑群组",
     "name": "群组名称",
+    "detail": "群组详情",
     "description": "描述",
     "enterName": "输入群组名称",
     "enterDescription": "输入群组描述（可选）",
@@ -246,7 +249,7 @@
     "noVerses": "这个群组中没有经文",
     "loadError": "加载群组数据失败",
     "notFound": "找不到群组",
-    "viewGraph": "查看图表",
+    "viewGraph": "查看图谱",
     "goBack": "返回",
     "delete": "删除群组",
     "noGroupsYet": "暂无经文群组",

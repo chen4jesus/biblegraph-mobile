@@ -4,6 +4,11 @@ import Svg, { SvgProps } from 'react-native-svg';
 import { Circle, Line, G, Text } from 'react-native-svg';
 import { GraphNode, GraphEdge } from '../types/bible';
 
+// Add extended interface for GraphEdge
+interface ExtendedGraphEdge extends GraphEdge {
+  weight?: number;
+}
+
 const { width, height } = Dimensions.get('window');
 
 interface ForceGraphProps {
@@ -27,7 +32,7 @@ const ForceGraph: React.FC<ForceGraphProps> = ({
   showLabels = true
 }) => {
   const [graphNodes, setGraphNodes] = useState<Array<GraphNode & {x: number, y: number, fx?: number | null, fy?: number | null}>>([]);
-  const [graphLinks, setGraphLinks] = useState<GraphEdge[]>([]);
+  const [graphLinks, setGraphLinks] = useState<ExtendedGraphEdge[]>([]);
   const [dimensions] = useState({ width: propWidth, height: propHeight });
   const svgRef = useRef<View>(null);
   const animationRef = useRef<number>();
@@ -194,17 +199,18 @@ const ForceGraph: React.FC<ForceGraphProps> = ({
       
       // Calculate optimal initial positions for nodes
       const calculateInitialPositions = () => {
-        // Padding from edges
-        const padding = Math.min(dimensions.width, dimensions.height) * 0.1;
+        // Increase padding from edges for better visibility
+        const padding = Math.min(dimensions.width, dimensions.height) * 0.15;
         const availableWidth = dimensions.width - (padding * 2);
         const availableHeight = dimensions.height - (padding * 2);
         
         // Choose layout based on node count
         if (nodes.length <= 10) {
-          // Circular layout for small number of nodes
+          // Circular layout for small number of nodes with more spacing
           return nodes.map((node, i) => {
             const angle = (i / nodes.length) * 2 * Math.PI;
-            const radius = Math.min(availableWidth, availableHeight) * 0.4;
+            // Use a larger radius to push nodes further out
+            const radius = Math.min(availableWidth, availableHeight) * 0.45;
             
             return {
               ...node,
@@ -214,8 +220,26 @@ const ForceGraph: React.FC<ForceGraphProps> = ({
               fy: null
             };
           });
+        } else if (nodes.length <= 20) {
+          // Spiral layout for medium number of nodes
+          return nodes.map((node, i) => {
+            // Golden ratio for more natural spacing
+            const goldenRatio = (1 + Math.sqrt(5)) / 2;
+            const theta = i * 2 * Math.PI / goldenRatio;
+            
+            // Radius increases as we move out in the spiral
+            const distance = Math.sqrt(i) / Math.sqrt(nodes.length) * Math.min(availableWidth, availableHeight) * 0.45;
+            
+            return {
+              ...node,
+              x: Math.cos(theta) * distance + dimensions.width / 2,
+              y: Math.sin(theta) * distance + dimensions.height / 2,
+              fx: null,
+              fy: null
+            };
+          });
         } else {
-          // Grid layout for larger number of nodes
+          // Grid layout for larger number of nodes with better spacing
           // Calculate grid dimensions based on aspect ratio
           const aspectRatio = availableWidth / availableHeight;
           const totalNodes = nodes.length;
@@ -229,18 +253,18 @@ const ForceGraph: React.FC<ForceGraphProps> = ({
             rows = Math.ceil(totalNodes / cols);
           }
           
-          // Calculate cell size
-          const cellWidth = availableWidth / cols;
-          const cellHeight = availableHeight / rows;
+          // Calculate cell size with more space between nodes
+          const cellWidth = availableWidth / (cols + 0.5);  // Add extra space
+          const cellHeight = availableHeight / (rows + 0.5);  // Add extra space
           
           // Position nodes in a grid with some randomness
           return nodes.map((node, i) => {
             const col = i % cols;
             const row = Math.floor(i / cols);
             
-            // Add some randomness within the cell to avoid perfect grid
-            const jitterX = (Math.random() - 0.5) * cellWidth * 0.5;
-            const jitterY = (Math.random() - 0.5) * cellHeight * 0.5;
+            // Add some randomness within the cell for more natural layout
+            const jitterX = (Math.random() - 0.5) * cellWidth * 0.3;
+            const jitterY = (Math.random() - 0.5) * cellHeight * 0.3;
             
             return {
               ...node,
@@ -286,7 +310,7 @@ const ForceGraph: React.FC<ForceGraphProps> = ({
       // Important: Update both state and ref
       setGraphNodes(initialNodes);
       currentNodesRef.current = [...initialNodes];
-      setGraphLinks(links);
+      setGraphLinks(links as ExtendedGraphEdge[]);
       prevNodesRef.current = [...nodes];
       prevLinksRef.current = [...links];
       
@@ -304,7 +328,7 @@ const ForceGraph: React.FC<ForceGraphProps> = ({
     } else if (links.length !== prevLinksRef.current.length || 
             links.some((link, i) => prevLinksRef.current[i]?.id !== link.id)) {
       // Links changed but nodes didn't
-      setGraphLinks(links);
+      setGraphLinks(links as ExtendedGraphEdge[]);
       prevLinksRef.current = [...links];
     }
   }, [nodes, links, dimensions]);
@@ -328,11 +352,22 @@ const ForceGraph: React.FC<ForceGraphProps> = ({
     const alphaDecay = 0.0228; // Similar to D3's default
     const alphaTarget = 0;
     
-    // Force parameters - adjusted for better spacing
-    const linkDistance = Math.min(dimensions.width, dimensions.height) * 0.15; // Relative to screen size
-    const linkStrength = 0.7;
-    const chargeStrength = -40; // Stronger repulsion
-    const centerStrength = 0.05;
+    // Force parameters - adjusted to match D3 behavior
+    const nodeSeparationFactor = Math.min(dimensions.width, dimensions.height) * 0.01;
+    const linkDistance = Math.min(dimensions.width, dimensions.height) * 0.15; // Link distance relative to screen size
+    const linkStrength = 0.7; // Stronger links to keep related nodes together
+    const chargeStrength = -30 * nodeSeparationFactor; // Repulsion force
+    const centerStrength = 0.1; // Center force
+    const clusteringStrength = 0.5; // Strength of type-based clustering
+    
+    // Group nodes by type for clustering
+    const nodesByType: Record<string, Array<GraphNode & {x: number, y: number}>> = {};
+    currentNodesRef.current.forEach(node => {
+      if (!nodesByType[node.type]) {
+        nodesByType[node.type] = [];
+      }
+      nodesByType[node.type].push(node);
+    });
     
     const runSimulation = () => {
       // Check if we should stop
@@ -343,7 +378,8 @@ const ForceGraph: React.FC<ForceGraphProps> = ({
       }
       
       iteration++;
-      alpha = Math.max(alphaMin, alpha * (1 - alphaDecay) + alphaTarget * (1 - (1 - alphaDecay)));
+      // D3-style alpha cooling
+      alpha = Math.max(alphaMin, alpha * (1 - alphaDecay) + alphaTarget * alphaDecay);
       
       // Important: Use currentNodesRef.current for latest positions
       const updatedNodes = [...currentNodesRef.current].map(node => {
@@ -360,6 +396,7 @@ const ForceGraph: React.FC<ForceGraphProps> = ({
         // Calculate forces from all other nodes (repulsion - like d3.forceManyBody)
         let fx = 0, fy = 0;
         
+        // Force many body - charge (repulsion or attraction)
         currentNodesRef.current.forEach(otherNode => {
           if (node.id === otherNode.id) return;
           
@@ -367,17 +404,33 @@ const ForceGraph: React.FC<ForceGraphProps> = ({
           const dy = node.y - otherNode.y;
           const distance = Math.sqrt(dx * dx + dy * dy) || 1;
           
-          // Charge force (like d3.forceManyBody)
-          if (distance < 100) {
-            const force = chargeStrength / distance;
-            fx += (dx / distance) * force * alpha;
-            fy += (dy / distance) * force * alpha;
+          // Inverse square law with distance clamping (like D3)
+          const strength = chargeStrength * alpha;
+          // Apply stronger forces between nodes of the same type (clustering)
+          const typeFactor = node.type === otherNode.type ? 0.2 : 1.0;
+          
+          // D3 uses a distance-clamped charge force
+          if (distance < 180) {
+            let force;
+            if (distance < 30) {
+              // Strong repulsion for very close nodes to prevent overlap
+              force = strength * typeFactor * 10 / Math.max(9, distance * distance);
+            } else {
+              // Regular inverse square law for moderate distances
+              force = strength * typeFactor / distance;
+            }
+            
+            fx += (dx / distance) * force;
+            fy += (dy / distance) * force;
           }
         });
         
         // Apply forces from links (attraction - like d3.forceLink)
+        let hasLinks = false;
+        
         graphLinks.forEach(link => {
           if (link.source === node.id || link.target === node.id) {
+            hasLinks = true;
             const targetId = link.source === node.id ? link.target : link.source;
             const target = currentNodesRef.current.find(n => n.id === targetId);
             
@@ -386,25 +439,134 @@ const ForceGraph: React.FC<ForceGraphProps> = ({
               const dy = node.y - target.y;
               const distance = Math.sqrt(dx * dx + dy * dy) || 1;
               
-              // Link force (like d3.forceLink)
-              const force = (distance - linkDistance) * linkStrength * alpha;
+              // Link force with bias based on node type
+              // Links between same type nodes are stronger (cluster by type)
+              const sameType = node.type === target.type;
+              const bias = sameType ? 1.2 : 0.8; // Bias to create clusters by type
+              
+              // D3-style link force with distance constraint
+              let strength = linkStrength * bias;
+              // More important links can be stronger
+              const extendedLink = link as ExtendedGraphEdge;
+              if (extendedLink.weight) {
+                strength *= extendedLink.weight;
+              }
+              
+              // The link acts like a spring
+              const force = (distance - linkDistance) * strength * alpha;
               fx -= (dx / distance) * force;
               fy -= (dy / distance) * force;
             }
           }
         });
         
+        // Type-based clustering force (encourages nodes of same type to cluster)
+        if (nodesByType[node.type] && nodesByType[node.type].length > 1) {
+          let clusterX = 0, clusterY = 0;
+          
+          // Calculate center of mass for nodes of this type
+          nodesByType[node.type].forEach(typeNode => {
+            if (typeNode.id !== node.id) {
+              clusterX += typeNode.x;
+              clusterY += typeNode.y;
+            }
+          });
+          
+          const count = nodesByType[node.type].length - 1;
+          if (count > 0) {
+            clusterX /= count;
+            clusterY /= count;
+            
+            // Apply a gentle force toward the cluster center
+            const dx = clusterX - node.x;
+            const dy = clusterY - node.y;
+            const distance = Math.sqrt(dx * dx + dy * dy) || 1;
+            
+            // Only apply if not too far away
+            if (distance < Math.min(dimensions.width, dimensions.height) * 0.3) {
+              fx += dx * clusteringStrength * alpha * 0.01;
+              fy += dy * clusteringStrength * alpha * 0.01;
+            }
+          }
+        }
+        
         // Add centering force (like d3.forceCenter)
         const centerX = dimensions.width / 2;
         const centerY = dimensions.height / 2;
-        fx += (centerX - node.x) * centerStrength * alpha;
-        fy += (centerY - node.y) * centerStrength * alpha;
         
-        // Update position based on forces
+        // Create radial sectors based on node type for better separation
+        const typeCount = Object.keys(nodesByType).length;
+        const typeIndex = Object.keys(nodesByType).indexOf(node.type);
+        let sectorAngle = 0;
+        
+        if (typeCount > 1 && typeIndex >= 0) {
+          sectorAngle = (typeIndex / typeCount) * 2 * Math.PI;
+          // Offset center for each type to create separate clusters
+          const offset = Math.min(dimensions.width, dimensions.height) * 0.25;
+          const offsetX = Math.cos(sectorAngle) * offset;
+          const offsetY = Math.sin(sectorAngle) * offset;
+          
+          // Apply graduated centering force
+          const dx = (centerX + offsetX) - node.x;
+          const dy = (centerY + offsetY) - node.y;
+          const distance = Math.sqrt(dx * dx + dy * dy);
+          
+          // Center force increases with distance from center
+          const centerFactor = Math.min(1, distance / (Math.min(dimensions.width, dimensions.height) * 0.4));
+          fx += dx * centerStrength * alpha * (0.5 + centerFactor);
+          fy += dy * centerStrength * alpha * (0.5 + centerFactor);
+        } else {
+          // Standard centering for graphs with one type
+          fx += (centerX - node.x) * centerStrength * alpha;
+          fy += (centerY - node.y) * centerStrength * alpha;
+        }
+        
+        // Collision detection to prevent overlap (like d3.forceCollide)
+        currentNodesRef.current.forEach(otherNode => {
+          if (node.id === otherNode.id) return;
+          
+          const dx = node.x - otherNode.x;
+          const dy = node.y - otherNode.y;
+          const distance = Math.sqrt(dx * dx + dy * dy) || 1;
+          
+          // Sum of node radii with padding
+          const minDistance = getNodeSize(node) + getNodeSize(otherNode) + 5;
+          
+          // Only apply collision force if nodes are overlapping
+          if (distance < minDistance) {
+            const force = (minDistance - distance) / distance * alpha * 0.5;
+            fx += dx * force;
+            fy += dy * force;
+          }
+        });
+        
+        // Boundary forces - keep nodes within view
+        const boundaryPadding = 30;
+        const boundaryStrength = 0.3 * alpha;
+        
+        // Left boundary
+        if (node.x < boundaryPadding) {
+          fx += boundaryStrength * (boundaryPadding - node.x);
+        }
+        // Right boundary
+        if (node.x > dimensions.width - boundaryPadding) {
+          fx -= boundaryStrength * (node.x - (dimensions.width - boundaryPadding));
+        }
+        // Top boundary
+        if (node.y < boundaryPadding) {
+          fy += boundaryStrength * (boundaryPadding - node.y);
+        }
+        // Bottom boundary
+        if (node.y > dimensions.height - boundaryPadding) {
+          fy -= boundaryStrength * (node.y - (dimensions.height - boundaryPadding));
+        }
+        
+        // Apply velocity verlet integration (D3 style)
         return {
           ...node,
-          x: Math.max(20, Math.min(dimensions.width - 20, node.x + fx)),
-          y: Math.max(20, Math.min(dimensions.height - 20, node.y + fy))
+          // Enforce boundaries
+          x: Math.max(10, Math.min(dimensions.width - 10, node.x + fx)),
+          y: Math.max(10, Math.min(dimensions.height - 10, node.y + fy))
         };
       });
       
@@ -475,8 +637,7 @@ const ForceGraph: React.FC<ForceGraphProps> = ({
                   x2={target.x || 0}
                   y2={target.y || 0}
                   stroke={getLinkColor(link)}
-                  strokeOpacity={0.6}
-                  strokeWidth={2}
+                  strokeWidth={link.weight ? 1 + Math.min(link.weight, 3) : 1.5}
                 />
               </G>
             );
