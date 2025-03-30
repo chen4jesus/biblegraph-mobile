@@ -119,7 +119,7 @@ const NotesScreen = forwardRef<NotesScreenRef, {}>((props, ref) => {
     // Start with deduplicated notes for filtering
     let filtered = deduplicateNotes(notes);
     
-    // Filter by tags if any are selected (AND logic - note must have ALL selected tags)
+    // Filter by tags if any are selected (AND debugic - note must have ALL selected tags)
     if (selectedTags.length > 0) {
       filtered = filtered.filter(note => {
         // If note has no tags, it can't match our filter
@@ -177,7 +177,7 @@ const NotesScreen = forwardRef<NotesScreenRef, {}>((props, ref) => {
     // Deduplicate notes if there are any duplicates
     const uniqueNotes = deduplicateNotes(notes);
     if (uniqueNotes.length !== notes.length) {
-      console.log(`Deduplicated notes: removed ${notes.length - uniqueNotes.length} duplicates`);
+      console.debug(`Deduplicated notes: removed ${notes.length - uniqueNotes.length} duplicates`);
       setNotes(uniqueNotes);
     }
   }, [notes, deduplicateNotes]);
@@ -627,7 +627,7 @@ const NotesScreen = forwardRef<NotesScreenRef, {}>((props, ref) => {
     );
   };
 
-  // Update the FlatList rendering logic to use a different renderer based on content
+  // Update the FlatList rendering debugic to use a different renderer based on content
   const renderItem = (info: { item: NoteWithVerse }) => {
     // Check if the note is basically just a URL
     const item = info.item;

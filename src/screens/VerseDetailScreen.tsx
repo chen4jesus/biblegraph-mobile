@@ -1107,7 +1107,7 @@ const VerseDetailScreen: React.FC = () => {
         }
       }
     } catch (error) {
-      console.log('Could not find NotesScreen reference:', error);
+      console.debug('Could not find NotesScreen reference:', error);
     }
     
     return null;

@@ -246,10 +246,10 @@ export const DatabaseService = {
 // Authentication Service API
 export const AuthService = {
   /**
-   * Log in a user
+   * debug in a user
    */
-  login: (email: string, password: string) => 
-    authService.login(email, password),
+  debugin: (email: string, password: string) => 
+    authService.debugin(email, password),
 
   /**
    * Sign up a new user
@@ -258,9 +258,9 @@ export const AuthService = {
     authService.signUp(name, email, password),
 
   /**
-   * Log out the current user
+   * debug out the current user
    */
-  logout: () => authService.logout(),
+  debugout: () => authService.debugout(),
 
   /**
    * Check if a user is authenticated
@@ -368,7 +368,7 @@ export const BibleDataService = {
     try {
       // First check if we're in offline mode
       if (neo4jDatabaseService.isOfflineMode()) {
-        console.log('Database is in offline mode, using fallback data source');
+        console.debug('Database is in offline mode, using fallback data source');
         // When Neo4j is unavailable, we'll try to use whatever data exists in local storage
         return true;
       }

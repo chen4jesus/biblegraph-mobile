@@ -21,7 +21,7 @@ try {
   LinearGradient = ExpoLinearGradient.LinearGradient;
 } catch (err) {
   // Linear gradient not available, we'll provide a fallback
-  console.log('LinearGradient not available, using fallback');
+  console.debug('LinearGradient not available, using fallback');
 }
 
 interface ButtonProps extends TouchableOpacityProps {

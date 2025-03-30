@@ -90,9 +90,14 @@ const NoteEditorModal: React.FC<NoteEditorModalProps> = ({
     onSave(content, tags, note?.id, !note);
   };
 
+  // Simplified cancel handler that directly closes the modal
   const handleCancel = () => {
-    // Confirm if there are unsaved changes
-    if (note && (content !== note.content || JSON.stringify(tags) !== JSON.stringify(note.tags))) {
+    // Check for unsaved changes
+    const hasUnsavedChanges = note ? 
+      (content !== note.content || JSON.stringify(tags) !== JSON.stringify(note.tags)) :
+      (content.trim() || tags.length > 0);
+    
+    if (hasUnsavedChanges) {
       Alert.alert(
         t('common:confirm'),
         t('verseDetail:discardChanges'),
@@ -103,30 +108,24 @@ const NoteEditorModal: React.FC<NoteEditorModalProps> = ({
           },
           {
             text: t('common:discard'),
-            onPress: onClose,
-            style: 'destructive'
-          }
-        ]
-      );
-    } else if (!note && (content.trim() || tags.length > 0)) {
-      Alert.alert(
-        t('common:confirm'),
-        t('verseDetail:discardChanges'),
-        [
-          { 
-            text: t('common:cancel'), 
-            style: 'cancel' 
-          },
-          {
-            text: t('common:discard'),
-            onPress: onClose,
+            onPress: () => {
+              console.debug("Discarding changes and closing modal");
+              onClose();
+            },
             style: 'destructive'
           }
         ]
       );
     } else {
+      console.debug("No changes to discard, closing modal");
       onClose();
     }
+  };
+
+  // Create separate direct close handler
+  const handleDirectClose = () => {
+    console.debug("Direct close triggered");
+    onClose();
   };
 
   return (
@@ -136,21 +135,26 @@ const NoteEditorModal: React.FC<NoteEditorModalProps> = ({
       animationType="slide"
       onRequestClose={handleCancel}
     >
-      <KeyboardAvoidingView 
-        style={styles.container}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      >
-        <View style={styles.modalBackdrop}>
-          <View style={styles.modalContainer}>
+      <View style={styles.container}>
+        <TouchableOpacity 
+          style={styles.modalBackdrop} 
+          onPress={handleCancel}
+          activeOpacity={1}
+        >
+          <TouchableOpacity 
+            style={styles.modalContainer}
+            onPress={(e) => e.stopPropagation()} 
+            activeOpacity={1}
+          >
             {/* Header */}
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>
                 {note ? t('verseDetail:editNote') : t('verseDetail:addNote')}
               </Text>
               <TouchableOpacity 
-                onPress={handleCancel} 
+                onPress={handleDirectClose} 
                 style={styles.closeButton}
-                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
               >
                 <Ionicons name="close" size={24} color="#666" />
               </TouchableOpacity>
@@ -188,7 +192,8 @@ const NoteEditorModal: React.FC<NoteEditorModalProps> = ({
             <View style={styles.modalFooter}>
               <TouchableOpacity 
                 style={styles.cancelButton}
-                onPress={handleCancel}
+                onPress={handleDirectClose}
+                activeOpacity={0.7}
               >
                 <Text style={styles.cancelButtonText}>
                   {t('common:cancel')}
@@ -201,13 +206,14 @@ const NoteEditorModal: React.FC<NoteEditorModalProps> = ({
                 ]}
                 onPress={handleSave}
                 disabled={!content.trim()}
+                activeOpacity={0.7}
               >
                 <Text style={styles.saveButtonText}>{t('common:save')}</Text>
               </TouchableOpacity>
             </View>
-          </View>
-        </View>
-      </KeyboardAvoidingView>
+          </TouchableOpacity>
+        </TouchableOpacity>
+      </View>
     </Modal>
   );
 };
@@ -219,12 +225,13 @@ const styles = StyleSheet.create({
   modalBackdrop: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'center',
+    justifyContent: 'flex-end',
     alignItems: 'center',
+    paddingBottom: 48,
   },
   modalContainer: {
     width: '95%',
-    height: '90%',
+    maxHeight: '85%',
     backgroundColor: '#fff',
     borderRadius: 16,
     overflow: 'hidden',
@@ -257,7 +264,7 @@ const styles = StyleSheet.create({
   },
   contentContainer: {
     flex: 1,
-    padding: 20,
+    padding: 10,
     overflow: 'scroll',
   },
   noteSection: {
