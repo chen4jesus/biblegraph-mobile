@@ -126,7 +126,7 @@ class BibleDataLoader {
                     chapter: chapterNumber,
                     verse: verseNumber,
                     text: verseText.trim(),
-                    translation: 'CUVS', // Chinese Union Version Simplified
+                    translation: '中文和合本', // Chinese Union Version Simplified
                   };
                   
                   const verseId = await this.createVerse(verseData);

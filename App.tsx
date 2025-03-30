@@ -18,7 +18,7 @@ export default function App() {
     const initializeDatabase = async () => {
       try {
         // Initialize database services
-        setLoadingMessage('Initializing database...');
+        setLoadingMessage(t('common:initializingDatabase'));
         await DatabaseService.initialize();
         
         // Check if we're in offline mode after initialization

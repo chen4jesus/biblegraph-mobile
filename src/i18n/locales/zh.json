@@ -19,7 +19,8 @@
     "noVersesFoundFor": "没有找到关于 '{query}' 的经文",
     "pleaseCheckInternetConnection": "请检查您的互联网连接",
     "someFeaturesMayNotWorkInWebBrowsers": "某些功能在网页浏览器中可能无法正常工作",
-    "databasePerformance": "由于性能原因，数据库操作限制为每查询100条记录。"
+    "databasePerformance": "由于性能原因，数据库操作限制为每查询100条记录。",
+    "initializingDatabase": "初始化数据库..."
   },
   "home": {
     "title": "圣经研读",
@@ -190,7 +191,6 @@
   },
   "settings": {
     "title": "设置",
-    "appearance": "外观",
     "language": "语言",
     "languageDescription": "更改显示语言",
     "fontSize": "字体大小",
@@ -259,5 +259,20 @@
     "verses": "经文",
     "editNotImplemented": "编辑功能尚未实现",
     "shareNotImplemented": "分享功能尚未实现"
+  },
+  "profile": {
+    "title": "个人资料",
+    "appearance": "外观",
+    "offlineMode": "离线模式",
+    "offlineModeDescription": "下载内容供离线使用",
+    "notifications": "通知",
+    "notificationsDescription": "接收学习提醒和更新",
+    "defaultTranslation": "默认译本",
+    "defaultTranslationDescription": "选择您偏好的圣经译本",
+    "logout": "退出登录",
+    "account": "账户",
+    "darkMode": "深色模式",
+    "darkModeDescription": "启用深色主题",
+    "preferences": "偏好设置"
   }
 } 

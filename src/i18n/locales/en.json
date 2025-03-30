@@ -19,7 +19,8 @@
     "noVersesFoundFor": "No verses found for '{query}'",
     "pleaseCheckInternetConnection": "Please check your internet connection",
     "someFeaturesMayNotWorkInWebBrowsers": "Some features may not work in web browsers",
-    "databasePerformance": "Due to performance reasons, database operations are limited to 100 records per query."
+    "databasePerformance": "Due to performance reasons, database operations are limited to 100 records per query.",
+    "initializingDatabase": "Initializing Database..."
   },
   "home": {
     "title": "Bible Graph",
@@ -190,7 +191,6 @@
   },
   "settings": {
     "title": "Settings",
-    "appearance": "Appearance",
     "language": "Language",
     "languageDescription": "Change the display language",
     "fontSize": "Font Size",
@@ -259,5 +259,20 @@
     "verses": "Verses",
     "editNotImplemented": "Edit feature not implemented yet",
     "shareNotImplemented": "Share feature not implemented yet"
+  },
+  "profile": {
+    "title": "Profile",
+    "appearance": "Appearance",
+    "offlineMode": "Offline Mode",
+    "offlineModeDescription": "Download content for offline use",
+    "notifications": "Notifications",
+    "notificationsDescription": "Receive study reminders and updates",
+    "defaultTranslation": "Default Translation",
+    "defaultTranslationDescription": "Choose your preferred Bible translation",
+    "logout": "Logout",
+    "account": "Account",
+    "darkMode": "Dark Mode",
+    "darkModeDescription": "Enable dark theme",
+    "preferences": "Preferences"
   }
 } 

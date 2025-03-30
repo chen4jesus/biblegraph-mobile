@@ -16,6 +16,7 @@ import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { authService } from '../services/auth';
 import { User } from '../services/auth';
+import { useTranslation } from 'react-i18next';
 
 type ProfileScreenNavigationProp = NativeStackNavigationProp<RootStackParamList, 'Main'>;
 
@@ -27,6 +28,7 @@ interface Settings {
 }
 
 const ProfileScreen: React.FC = () => {
+  const { t } = useTranslation(['profile', 'common', 'settings']);
   const navigation = useNavigation<ProfileScreenNavigationProp>();
   const [user, setUser] = useState<User | null>(null);
   const [settings, setSettings] = useState<Settings>({
@@ -144,7 +146,7 @@ const ProfileScreen: React.FC = () => {
     <SafeAreaView style={styles.container}>
       <ScrollView style={styles.content}>
         <View style={styles.header}>
-          <Text style={styles.title}>Profile</Text>
+          <Text style={styles.title}>{t('title')}</Text>
           <TouchableOpacity
             style={styles.settingsButton}
             onPress={() => navigation.navigate('Settings')}
@@ -168,10 +170,10 @@ const ProfileScreen: React.FC = () => {
         )}
 
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Appearance</Text>
+          <Text style={styles.sectionTitle}>{t('appearance')}</Text>
           {renderSettingItem(
-            'Dark Mode',
-            'Enable dark theme for the app',
+            t('darkMode'),
+            t('darkModeDescription'),
             'switch',
             'darkMode',
             settings.darkMode
@@ -179,24 +181,24 @@ const ProfileScreen: React.FC = () => {
         </View>
 
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Preferences</Text>
+          <Text style={styles.sectionTitle}>{t('preferences')}</Text>
           {renderSettingItem(
-            'Offline Mode',
-            'Download content for offline use',
+            t('offlineMode'),
+            t('offlineModeDescription'),
             'switch',
             'offlineMode',
             settings.offlineMode
           )}
           {renderSettingItem(
-            'Notifications',
-            'Receive study reminders and updates',
+            t('notifications'),
+            t('notificationsDescription'),
             'switch',
             'notifications',
             settings.notifications
           )}
           {renderSettingItem(
-            'Default Translation',
-            'Choose your preferred Bible translation',
+            t('defaultTranslation'),
+            t('defaultTranslationDescription'),
             'select',
             'defaultTranslation',
             settings.defaultTranslation,
@@ -207,9 +209,9 @@ const ProfileScreen: React.FC = () => {
         </View>
 
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Account</Text>
+          <Text style={styles.sectionTitle}>{t('account')}</Text>
           <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
-            <Text style={styles.logoutText}>Logout</Text>
+            <Text style={styles.logoutText}>{t('logout')}</Text>
           </TouchableOpacity>
         </View>
       </ScrollView>
