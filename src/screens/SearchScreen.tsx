@@ -14,7 +14,7 @@ import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/types';
 import { Verse } from '../types/bible';
-import { neo4jService } from '../services/neo4j';
+import { DatabaseService } from '../services';
 import { Ionicons } from '@expo/vector-icons';
 import debounce from 'lodash/debounce';
 import { useTranslation } from 'react-i18next';
@@ -37,7 +37,7 @@ const SearchScreen: React.FC = () => {
 
       setIsLoading(true);
       try {
-        const verses = await neo4jService.searchVerses(searchQuery);
+        const verses = await DatabaseService.searchVerses(searchQuery);
         setResults(verses);
         
         console.debug(`Search returned ${verses.length} results`);

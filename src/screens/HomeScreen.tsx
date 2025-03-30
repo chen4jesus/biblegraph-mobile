@@ -14,7 +14,7 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/types';
 import { Ionicons } from '@expo/vector-icons';
 import { Verse } from '../types/bible';
-import { neo4jService } from '../services/neo4j';
+import { DatabaseService } from '../services';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTranslation } from 'react-i18next';
 import BibleSelectorModal from '../components/BibleSelectorModal';
@@ -76,7 +76,7 @@ const HomeScreen: React.FC = () => {
       const verses: Verse[] = [];
       
       for (const ref of popularReferences) {
-        const verse = await neo4jService.getVerseByReference(
+        const verse = await DatabaseService.getVerseByReference(
           ref.book, 
           ref.chapter, 
           ref.verse
@@ -98,7 +98,7 @@ const HomeScreen: React.FC = () => {
     try {
       setIsLoading(true);
       // Try to get the verse from the database
-      const selectedVerse = await neo4jService.getVerseByReference(book, chapter, verse);
+      const selectedVerse = await DatabaseService.getVerseByReference(book, chapter, verse);
       
       if (selectedVerse) {
         // Navigate to verse detail screen
@@ -137,7 +137,7 @@ const HomeScreen: React.FC = () => {
         console.debug(`Fetching verse: ${selection.book} ${selection.chapter}:${selection.verse}`);
         
         // Try with English name first
-        let verse = await neo4jService.getVerseByReference(
+        let verse = await DatabaseService.getVerseByReference(
           selection.book,
           selection.chapter,
           selection.verse
@@ -146,7 +146,7 @@ const HomeScreen: React.FC = () => {
         // If not found and we have Chinese name, try with that
         if (!verse && selection.chineseBook) {
           console.debug(`Trying with Chinese name: ${selection.chineseBook}`);
-          verse = await neo4jService.getVerseByReference(
+          verse = await DatabaseService.getVerseByReference(
             selection.chineseBook,
             selection.chapter,
             selection.verse
@@ -157,7 +157,7 @@ const HomeScreen: React.FC = () => {
         if (!verse) {
           // Try lowercase book name
           console.debug(`Trying lowercase: ${selection.book.toLowerCase()}`);
-          verse = await neo4jService.getVerseByReference(
+          verse = await DatabaseService.getVerseByReference(
             selection.book.toLowerCase(),
             selection.chapter,
             selection.verse

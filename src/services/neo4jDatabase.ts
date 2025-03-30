@@ -1,13 +1,55 @@
 import { neo4jDriverService } from './neo4jDriver';
 import { Verse, Connection, Note, ConnectionType, User, VerseGroup, GroupConnection, NodeType, Tag } from '../types/bible';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { storageService } from './storage';
 
 // Token storage key
 const TOKEN_KEY = '@biblegraph:auth_token';
 
+// Add a mock data service for offline mode
+const offlineDataService = {
+  isOfflineMode: true,
+  
+  async getVerses(signal?: AbortSignal, verseIds?: string[]) {
+    console.log('Using offline mode for getVerses');
+    // Retrieve verses from local storage
+    const storedVerses = await storageService.getVerses();
+    
+    // Filter if verseIds are provided
+    if (verseIds && verseIds.length > 0) {
+      return storedVerses.filter(verse => verseIds.includes(verse.id));
+    }
+    
+    return storedVerses;
+  },
+  
+  async getVerse(id: string) {
+    console.log('Using offline mode for getVerse');
+    const verses = await storageService.getVerses();
+    return verses.find(verse => verse.id === id) || null;
+  },
+  
+  async getConnections() {
+    console.log('Using offline mode for getConnections');
+    return storageService.getConnections();
+  },
+  
+  async getConnectionsForVerse(verseId: string) {
+    console.log('Using offline mode for getConnectionsForVerse');
+    const connections = await storageService.getConnections();
+    return connections.filter(
+      conn => conn.sourceVerseId === verseId || conn.targetVerseId === verseId
+    );
+  },
+  
+  // Implement other required methods with local storage fallbacks
+  // ...
+};
+
 class Neo4jDatabaseService {
   private static instance: Neo4jDatabaseService;
-  private isInitialized = false;
+  private initialized = false;
+  private offlineMode = false;
   private user: User | null = null;
 
   private constructor() {}
@@ -21,19 +63,31 @@ class Neo4jDatabaseService {
 
   // Initialization
   public async initialize(): Promise<void> {
-    if (this.isInitialized) {
+    if (this.initialized) {
       return;
     }
 
     try {
+      // Try to connect to Neo4j
       await neo4jDriverService.connect();
+      
+      // If successful, initialize the database
       await neo4jDriverService.initializeDatabase();
-      this.isInitialized = true;
-      console.debug('Neo4j database service initialized');
+      
+      this.initialized = true;
+      this.offlineMode = false;
+      console.log('Neo4j database initialized successfully');
     } catch (error) {
-      console.error('Failed to initialize Neo4j database service:', error);
-      throw error;
+      console.error('Failed to initialize Neo4j database:', error);
+      // If Neo4j connection fails, switch to offline mode
+      this.offlineMode = true;
+      this.initialized = true; // We're still initialized, just in offline mode
+      console.log('Switching to offline mode due to Neo4j connection failure');
     }
+  }
+
+  isOfflineMode(): boolean {
+    return this.offlineMode;
   }
 
   // Authentication
@@ -129,11 +183,21 @@ class Neo4jDatabaseService {
   // Verse methods
   public async getVerses(signal?: AbortSignal, verseIds?: string[]): Promise<Verse[]> {
     await this.ensureInitialized();
+    
+    if (this.offlineMode) {
+      return offlineDataService.getVerses(signal, verseIds);
+    }
+    
     return neo4jDriverService.getVerses(signal, verseIds);
   }
 
   public async getVerse(id: string, signal?: AbortSignal): Promise<Verse | null> {
     await this.ensureInitialized();
+    
+    if (this.offlineMode) {
+      return offlineDataService.getVerse(id);
+    }
+    
     return neo4jDriverService.getVerse(id, signal);
   }
 
@@ -155,11 +219,21 @@ class Neo4jDatabaseService {
   // Connection methods
   public async getConnections(signal?: AbortSignal): Promise<Connection[]> {
     await this.ensureInitialized();
+    
+    if (this.offlineMode) {
+      return offlineDataService.getConnections();
+    }
+    
     return neo4jDriverService.getConnections(signal);
   }
 
   public async getConnectionsForVerse(verseId: string, signal?: AbortSignal): Promise<Connection[]> {
     await this.ensureInitialized();
+    
+    if (this.offlineMode) {
+      return offlineDataService.getConnectionsForVerse(verseId);
+    }
+    
     return neo4jDriverService.getConnectionsForVerse(verseId, signal);
   }
 
@@ -182,6 +256,11 @@ class Neo4jDatabaseService {
   public async getNotes(skip: number = 0, limit: number = 20): Promise<Note[]> {
     await this.ensureInitialized();
     return neo4jDriverService.getNotes(skip, limit);
+  }
+
+  public async getNote(noteId: string): Promise<Note | null> {
+    await this.ensureInitialized();
+    return neo4jDriverService.getNote(noteId);
   }
 
   public async getNotesForVerse(verseId: string): Promise<Note[]> {
@@ -232,7 +311,7 @@ class Neo4jDatabaseService {
 
   // Helper methods
   private async ensureInitialized(): Promise<void> {
-    if (!this.isInitialized) {
+    if (!this.initialized) {
       await this.initialize();
     }
   }

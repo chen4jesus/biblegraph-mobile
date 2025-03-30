@@ -7,7 +7,7 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import { RootStackParamList } from '../navigation/types';
 import { Verse, VerseGroup } from '../types/bible';
-import { neo4jService } from '../services/neo4j';
+import { DatabaseService } from '../services';
 import { showNotification } from '../utils/notifications';
 import theme from '../theme';
 
@@ -38,7 +38,7 @@ const GroupDetailScreen: React.FC = () => {
 
     try {
       // First load the group data
-      const group = await neo4jService.getVerseGroup(groupId);
+      const group = await DatabaseService.getVerseGroup(groupId);
       console.debug(`[GroupDetailScreen] Group loaded: ${JSON.stringify(group)}`);
       setGroupData(group);
 
@@ -47,7 +47,7 @@ const GroupDetailScreen: React.FC = () => {
         console.debug(`[GroupDetailScreen] Loading ${group.verseIds.length} verses for group`);
         
         // Use Promise.allSettled to handle potential failures with individual verses
-        const versePromises = group.verseIds.map(id => neo4jService.getVerse(id));
+        const versePromises = group.verseIds.map(id => DatabaseService.getVerse(id));
         const results = await Promise.allSettled(versePromises);
         
         // Filter out any failed promises or null results

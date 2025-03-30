@@ -20,7 +20,7 @@ import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/types';
 import { Note, Tag } from '../types/bible';
-import { neo4jService } from '../services/neo4j';
+import { DatabaseService } from '../services';
 import { Ionicons } from '@expo/vector-icons';
 import { useTranslation } from 'react-i18next';
 import { BlurView } from 'expo-blur';
@@ -161,7 +161,7 @@ const TagsManagementScreen: React.FC = () => {
     try {
       setIsLoading(true);
       // Fetch tags with their usage counts
-      const fetchedTags = await neo4jService.getTagsWithCount();
+      const fetchedTags = await DatabaseService.getTagsWithCount();
       setTags(fetchedTags);
     } catch (error) {
       console.error('Error loading tags:', error);
@@ -179,7 +179,7 @@ const TagsManagementScreen: React.FC = () => {
       const color = generateRandomColor();
       
       // Call the service with proper parameters
-      const newTag = await neo4jService.createTag(newTagName.trim(), color);
+      const newTag = await DatabaseService.createTag(newTagName.trim(), color);
       
       // Add the new tag to local state with count=0 for new tags
       setTags(prevTags => [...prevTags, {...newTag, count: 0}]);
@@ -210,7 +210,7 @@ const TagsManagementScreen: React.FC = () => {
     
     try {
       // Update tag in database
-      await neo4jService.updateTag(tag.id, {
+      await DatabaseService.updateTag(tag.id, {
         name: editedTagName.trim(),
       });
       
@@ -228,7 +228,7 @@ const TagsManagementScreen: React.FC = () => {
   const deleteTag = async (tagId: string) => {
     try {
       setIsLoading(true);
-      await neo4jService.deleteTag(tagId);
+      const success = await DatabaseService.deleteTag(tagId);
       // Remove the tag from local state
       setTags(prevTags => prevTags.filter(tag => tag.id !== tagId));
       Alert.alert(t('common:success'), t('tags:deleteSuccess'));

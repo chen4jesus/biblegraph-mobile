@@ -21,8 +21,7 @@ import { useBibleGraph } from '../hooks/useBibleGraph';
 import { Verse, Connection, GraphNode, GraphEdge } from '../types/bible';
 import { RootStackParamList } from '../navigation/types';
 import { useTranslation } from 'react-i18next';
-import { neo4jService } from '../services/neo4j';
-import { syncService } from '../services/sync';
+import { DatabaseService, SyncService } from '../services';
 import ForceGraph from '../components/ForceGraph';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import theme from '../theme';
@@ -99,7 +98,7 @@ const GraphViewScreen: React.FC = () => {
         const verses: Verse[] = [];
         
         for (const id of initialVerseIds) {
-          const verse = await neo4jService.getVerse(id);
+          const verse = await DatabaseService.getVerse(id);
           if (verse) {
             verses.push(verse);
           }
@@ -186,7 +185,7 @@ const GraphViewScreen: React.FC = () => {
         {
           text: '重置',
           onPress: async () => {
-            syncService.resetSyncState();
+            SyncService.resetSyncState();
             setConnectionErrors(false);
             errorShownRef.current = false;
             await zoomToNode(currentVerseId);

@@ -16,7 +16,7 @@ import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/types';
 import { Note, Verse } from '../types/bible';
-import { neo4jService } from '../services/neo4j';
+import { DatabaseService } from '../services';
 import { Ionicons } from '@expo/vector-icons';
 import { useTranslation } from 'react-i18next';
 import WebViewModal from '../components/WebViewModal';
@@ -227,7 +227,7 @@ const NotesScreen = forwardRef<NotesScreenRef, {}>((props, ref) => {
     try {
       // Fetch notes from the Neo4j database with pagination
       const skip = refresh ? 0 : page * NOTES_PER_PAGE;
-      const fetchedNotes = await neo4jService.getNotes(skip, NOTES_PER_PAGE);
+      const fetchedNotes = await DatabaseService.getNotes(skip, NOTES_PER_PAGE);
       
       // If we got fewer notes than requested, there are no more to load
       if (fetchedNotes.length < NOTES_PER_PAGE) {
@@ -241,7 +241,7 @@ const NotesScreen = forwardRef<NotesScreenRef, {}>((props, ref) => {
       for (const note of fetchedNotes) {
         let verse = null;
         if (note.verseId) {
-          verse = await neo4jService.getVerse(note.verseId);
+          verse = await DatabaseService.getVerse(note.verseId);
         }
         
         const noteWithVerse = {
@@ -294,7 +294,7 @@ const NotesScreen = forwardRef<NotesScreenRef, {}>((props, ref) => {
 
   const loadTagColors = async () => {
     try {
-      const tags = await neo4jService.getTags();
+      const tags = await DatabaseService.getTags();
       const colorMap: Record<string, string> = {};
       
       tags.forEach(tag => {
@@ -360,14 +360,14 @@ const NotesScreen = forwardRef<NotesScreenRef, {}>((props, ref) => {
       // If it's a new note, we'll add it to the top of the list after fetching
       if (isNew) {
         // For new notes, get just the latest note and add it to the existing list
-        const latestNotes = await neo4jService.getNotes(0, 1);
+        const latestNotes = await DatabaseService.getNotes(0, 1);
         if (latestNotes.length > 0) {
           const newNote = latestNotes[0];
           
           // Fetch the verse for this note if it has one
           let verse = null;
           if (newNote.verseId) {
-            verse = await neo4jService.getVerse(newNote.verseId);
+            verse = await DatabaseService.getVerse(newNote.verseId);
           }
           
           const noteWithVerse: NoteWithVerse = {
@@ -404,12 +404,12 @@ const NotesScreen = forwardRef<NotesScreenRef, {}>((props, ref) => {
         }
       } else {
         // For existing notes, fetch just that specific note and update it in the list
-        const updatedNote = await neo4jService.getNote(noteId);
+        const updatedNote = await DatabaseService.getNote(noteId);
         if (updatedNote) {
           // Fetch the verse for this note if it has one
           let verse = null;
           if (updatedNote.verseId) {
-            verse = await neo4jService.getVerse(updatedNote.verseId);
+            verse = await DatabaseService.getVerse(updatedNote.verseId);
           }
           
           const noteWithVerse: NoteWithVerse = {

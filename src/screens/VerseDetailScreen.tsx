@@ -18,7 +18,7 @@ import {
 import { useRoute, RouteProp, useNavigation } from '@react-navigation/native';
 import { RootStackParamList } from '../navigation/types';
 import { Verse, Note, Connection, ConnectionType, VerseGroup, GroupConnection, NodeType, Tag } from '../types/bible';
-import { neo4jService } from '../services/neo4j';
+import { DatabaseService } from '../services';
 import { Ionicons } from '@expo/vector-icons';
 import { useTranslation } from 'react-i18next';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -134,7 +134,7 @@ const VerseDetailScreen: React.FC = () => {
 
   const loadTagColors = async () => {
     try {
-      const tags = await neo4jService.getTags();
+      const tags = await DatabaseService.getTags();
       const colorMap: Record<string, string> = {};
       
       tags.forEach(tag => {
@@ -150,7 +150,7 @@ const VerseDetailScreen: React.FC = () => {
   const loadVerseDetails = async () => {
     try {
       // First try to get the verse by ID from the database
-      let verseToDisplay = await neo4jService.getVerse(route.params.verseId);
+      let verseToDisplay = await DatabaseService.getVerse(route.params.verseId);
       
       // If verse not found by ID, check if it exists by reference (book, chapter, verse)
       if (!verseToDisplay) {
@@ -164,7 +164,7 @@ const VerseDetailScreen: React.FC = () => {
           // If we could parse valid reference, first check if it exists
           if (book && !isNaN(chapter) && !isNaN(verse)) {
             // Try to find by reference first
-            verseToDisplay = await neo4jService.getVerseByReference(book, chapter, verse);
+            verseToDisplay = await DatabaseService.getVerseByReference(book, chapter, verse);
             
             // If not found, create it
             if (!verseToDisplay) {
@@ -180,11 +180,11 @@ const VerseDetailScreen: React.FC = () => {
               };
               
               try {
-                verseToDisplay = await neo4jService.createVerse(mockVerse);
+                verseToDisplay = await DatabaseService.createVerse(mockVerse);
               } catch (error) {
                 // If creation fails, try to fetch by book, chapter, verse again (race condition handling)
                 console.debug('Error creating verse, trying to fetch existing one:', error);
-                verseToDisplay = await neo4jService.getVerseByReference(book, chapter, verse);
+                verseToDisplay = await DatabaseService.getVerseByReference(book, chapter, verse);
               }
             }
           }
@@ -196,11 +196,11 @@ const VerseDetailScreen: React.FC = () => {
         setVerse(verseToDisplay);
         
         // Load notes for this verse
-        const verseNotes = await neo4jService.getNotesForVerse(verseToDisplay.id);
+        const verseNotes = await DatabaseService.getNotesForVerse(verseToDisplay.id);
         setNotes(verseNotes);
         
         // First load regular connections for this verse
-        const regularConnections = await neo4jService.getConnectionsForVerse(verseToDisplay.id);
+        const regularConnections = await DatabaseService.getConnectionsForVerse(verseToDisplay.id);
         
         // Filter out connections that are part of groups (have a groupConnectionId)
         const singleConnections = regularConnections.filter(conn => !conn.groupConnectionId);
@@ -212,7 +212,7 @@ const VerseDetailScreen: React.FC = () => {
             const connectedVerseId = isOutgoing ? connection.targetVerseId : connection.sourceVerseId;
             
             try {
-              const connectedVerse = await neo4jService.getVerse(connectedVerseId);
+              const connectedVerse = await DatabaseService.getVerse(connectedVerseId);
               return {
                 ...connection,
                 connectedVerse
@@ -228,7 +228,7 @@ const VerseDetailScreen: React.FC = () => {
         );
         
         // Then load group connections
-        const groupConnections = await neo4jService.getGroupConnectionsByVerseId(verseToDisplay.id);
+        const groupConnections = await DatabaseService.getGroupConnectionsByVerseId(verseToDisplay.id);
         
         // Process group connections
         const groupConnectionsWithVerses = await Promise.all(
@@ -243,9 +243,9 @@ const VerseDetailScreen: React.FC = () => {
               if (isSource && group.targetIds?.length) {
                 // This is a connection where our verse is a source - fetch a target
                 if (group.targetType === 'VERSE') {
-                  sampleConnectedNode = await neo4jService.getVerse(group.targetIds[0]);
+                  sampleConnectedNode = await DatabaseService.getVerse(group.targetIds[0]);
                 } else if (group.targetType === 'NOTE') {
-                  sampleConnectedNode = await neo4jService.getNote(group.targetIds[0]);
+                  sampleConnectedNode = await DatabaseService.getNote(group.targetIds[0]);
                 } else if (group.targetType === 'TAG') {
                   // Handle tag fetching - we may need to implement this method
                   // For now just create a placeholder object
@@ -255,9 +255,9 @@ const VerseDetailScreen: React.FC = () => {
               else if (isTarget && group.sourceIds?.length) {
                 // This is a connection where our verse is a target - fetch a source
                 if (group.sourceType === 'VERSE') {
-                  sampleConnectedNode = await neo4jService.getVerse(group.sourceIds[0]);
+                  sampleConnectedNode = await DatabaseService.getVerse(group.sourceIds[0]);
                 } else if (group.sourceType === 'NOTE') {
-                  sampleConnectedNode = await neo4jService.getNote(group.sourceIds[0]);
+                  sampleConnectedNode = await DatabaseService.getNote(group.sourceIds[0]);
                 } else if (group.sourceType === 'TAG') {
                   // Handle tag fetching - we may need to implement this method
                   // For now just create a placeholder object
@@ -357,7 +357,7 @@ const VerseDetailScreen: React.FC = () => {
     if (!newNote.trim() || !verse) return;
 
     try {
-      const note = await neo4jService.createNote(verse.id, newNote, newNoteTags);
+      const note = await DatabaseService.createNote(verse.id, newNote, newNoteTags);
       setNotes([...notes, note]);
       setNewNote('');
       setNewNoteTags([]);
@@ -379,7 +379,7 @@ const VerseDetailScreen: React.FC = () => {
     }
 
     try {
-      const savedNote = await neo4jService.updateNote(currentNote.id, {
+      const savedNote = await DatabaseService.updateNote(currentNote.id, {
         content,
         tags
       });
@@ -400,7 +400,7 @@ const VerseDetailScreen: React.FC = () => {
 
   const handleDeleteNote = async (noteId: string) => {
     try {
-      const success = await neo4jService.deleteNote(noteId);
+      const success = await DatabaseService.deleteNote(noteId);
       
       if (success) {
         setNotes(notes.filter(note => note.id !== noteId));
@@ -446,7 +446,7 @@ const VerseDetailScreen: React.FC = () => {
       const formattedRef = formatVerseReference(targetVerseRef);
       
       // First check if the target verse exists
-      let targetVerse = await neo4jService.getVerse(formattedRef);
+      let targetVerse = await DatabaseService.getVerse(formattedRef);
       
       // If not found by ID, try to parse it as a reference
       if (!targetVerse) {
@@ -457,7 +457,7 @@ const VerseDetailScreen: React.FC = () => {
           const verseNum = parseInt(parts[2]);
           
           if (book && !isNaN(chapter) && !isNaN(verseNum)) {
-            targetVerse = await neo4jService.getVerseByReference(book, chapter, verseNum);
+            targetVerse = await DatabaseService.getVerseByReference(book, chapter, verseNum);
             
             // Create the verse if it doesn't exist
             if (!targetVerse) {
@@ -472,7 +472,7 @@ const VerseDetailScreen: React.FC = () => {
                 updatedAt: new Date().toISOString()
               };
               
-              targetVerse = await neo4jService.createVerse(mockVerse);
+              targetVerse = await DatabaseService.createVerse(mockVerse);
             }
           }
         }
@@ -500,7 +500,7 @@ const VerseDetailScreen: React.FC = () => {
         connectedVerse: targetVerse
       };
       
-      await neo4jService.createConnection(connection);
+      await DatabaseService.createConnection(connection);
       setConnections([...connections, connection]);
       setTargetVerseRef(''); // Clear the input after successful connection
       
@@ -719,7 +719,7 @@ const VerseDetailScreen: React.FC = () => {
             style={[styles.deleteConnectionButton, { padding: 12 }]}
             onPress={() => {
               console.debug('Directly deleting connection with ID:', item.id);
-              neo4jService.deleteConnection(item.id);
+              DatabaseService.deleteConnection(item.id);
               console.debug('Connection deleted from database');
               
               // Update the connections state to remove this connection
@@ -980,7 +980,7 @@ const VerseDetailScreen: React.FC = () => {
                 // Delete all individual connections in the group
                 if (connection.groupedConnections && connection.groupedConnections.length > 0) {
                   for (const conn of connection.groupedConnections) {
-                    await neo4jService.deleteConnection(conn.id);
+                    await DatabaseService.deleteConnection(conn.id);
                   }
                 }
                 
@@ -1026,7 +1026,7 @@ const VerseDetailScreen: React.FC = () => {
       
       if (!isNewNote) {
         // Editing existing note
-        await neo4jService.updateNote(noteId, {
+        await DatabaseService.updateNote(noteId, {
           content,
           tags,
         });
@@ -1048,7 +1048,7 @@ const VerseDetailScreen: React.FC = () => {
         }
       } else {
         // Creating new note
-        const newNote = await neo4jService.createNote(verse!.id, content, tags);
+        const newNote = await DatabaseService.createNote(verse!.id, content, tags);
         
         // Add to local notes state
         setNotes(prevNotes => [newNote, ...prevNotes]);

@@ -2,41 +2,53 @@ import React, { useEffect, useState } from 'react';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { Text, View, StyleSheet, Platform } from 'react-native';
 import AppNavigator from './src/navigation/AppNavigator';
-import { neo4jDriverService } from './src/services/neo4jDriver';
-import { bibleDataLoader } from './src/services/bibleDataLoader';
 import { LanguageProvider } from './src/i18n/LanguageProvider';
 import './src/i18n'; // Import i18n configuration
 import { useTranslation } from 'react-i18next';
+import { DatabaseService, BibleDataService } from './src/services';
+
 export default function App() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [warning, setWarning] = useState<string | null>(null);
   const [loadingMessage, setLoadingMessage] = useState<string>('Loading Bible Graph...');
   const { t } = useTranslation();
+
   useEffect(() => {
     const initializeDatabase = async () => {
       try {
-        // Connect to Neo4j database
-        await neo4jDriverService.connect();
+        // Initialize database services
+        setLoadingMessage('Initializing database...');
+        await DatabaseService.initialize();
+        
+        // Check if we're in offline mode after initialization
+        const isOffline = DatabaseService.isOfflineMode();
+        if (isOffline) {
+          setWarning('Neo4j database is not available. Running in offline mode with limited functionality.');
+          console.warn('Neo4j database not available. Running in offline mode.');
+        }
         
         console.debug('Checking if Bible data is already loaded...');
         setLoadingMessage('Checking database...');
         
         // Check if Bible data is already loaded
-        const isLoaded = await bibleDataLoader.isBibleLoaded();
+        const isLoaded = await BibleDataService.isBibleDataLoaded();
         
-        if (!isLoaded) {
+        if (!isLoaded && !isOffline) {
           console.debug('Bible data not loaded. Loading XML data...');
           setLoadingMessage('Loading Bible data from XML (limited to 5000 verses)...');
           
           try {
             // Load data from XML file
-            await bibleDataLoader.loadXmlData();
+            await BibleDataService.loadBibleData();
           } catch (xmlError) {
             console.error('Error loading XML data:', xmlError);
-            setError(`Failed to load Bible data: ${xmlError instanceof Error ? xmlError.message : 'Unknown error'}`);
+            setWarning(`Failed to load full Bible data: ${xmlError instanceof Error ? xmlError.message : 'Unknown error'}`);
           }
+        } else if (!isLoaded && isOffline) {
+          setWarning('Running in offline mode with no Bible data. Some features will be unavailable.');
         } else {
-          console.debug('Bible data already loaded in database. Skipping initialization.');
+          console.debug('Bible data available. Ready to proceed.');
         }
         
         setLoading(false);
@@ -53,7 +65,7 @@ export default function App() {
   if (loading) {
     return (
       <View style={styles.container}>
-        <Text style={styles.text}>{t('common:loading')}</Text>
+        <Text style={styles.loadingText}>{loadingMessage}</Text>
         <Text style={styles.subText}>
           {t('common:databasePerformance')}
         </Text>
@@ -77,11 +89,17 @@ export default function App() {
   return (
     <LanguageProvider>
       <SafeAreaProvider>
+        {warning && (
+          <View style={styles.warningContainer}>
+            <Text style={styles.warningText}>{warning}</Text>
+          </View>
+        )}
         <AppNavigator />
       </SafeAreaProvider>
     </LanguageProvider>
   );
 }
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -89,6 +107,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 20,
     backgroundColor: '#f5f5f5',
+  },
+  loadingText: {
+    fontSize: 18,
+    fontWeight: '500',
+    marginVertical: 10,
+    textAlign: 'center',
   },
   text: {
     fontSize: 16,
@@ -108,5 +132,16 @@ const styles = StyleSheet.create({
     color: 'red',
     marginBottom: 20,
   },
+  warningContainer: {
+    backgroundColor: '#FFF3CD',
+    padding: 10,
+    width: '100%',
+    zIndex: 999,
+  },
+  warningText: {
+    color: '#856404',
+    textAlign: 'center',
+    fontSize: 14,
+  }
 });
 
