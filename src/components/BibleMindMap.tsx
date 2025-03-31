@@ -284,6 +284,11 @@ const BibleMindMap: React.FC<BibleMindMapProps> = ({
     transformData();
   }, [verses, notes, connections, transformData]);
 
+  // Function to determine if a node has any connections
+  const hasConnections = useCallback((nodeId: string): boolean => {
+    return edges.some(edge => edge.source === nodeId || edge.target === nodeId);
+  }, [edges]);
+
   // Handle node movement
   const updateNodePosition = (nodeId: string, newX: number, newY: number) => {
     setNodes(prevNodes => {
@@ -482,7 +487,9 @@ const BibleMindMap: React.FC<BibleMindMapProps> = ({
           </TouchableOpacity>
         );
       })}
-      {nodes.map((node, index) => renderNode(node, index))}
+      {nodes
+        .filter(node => hasConnections(node.id))
+        .map((node, index) => renderNode(node, index))}
     </ScrollView>
   );
 };
