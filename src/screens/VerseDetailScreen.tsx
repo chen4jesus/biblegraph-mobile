@@ -14,6 +14,7 @@ import {
   ActivityIndicator,
   Animated,
   Platform,
+  Pressable,
 } from 'react-native';
 import { useRoute, RouteProp, useNavigation } from '@react-navigation/native';
 import { RootStackParamList } from '../navigation/types';
@@ -25,9 +26,9 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import MultiConnectionSelector from '../components/MultiConnectionSelector';
 import VerseGroupSelector from '../components/VerseGroupSelector';
-import theme from 'theme';
 import NoteEditorModal from '../components/NoteEditorModal';
 import WebViewModal from '../components/WebViewModal';
+import { theme, globalStyles } from '../styles/theme';
 
 type VerseDetailScreenRouteProp = RouteProp<RootStackParamList, 'VerseDetail'>;
 type VerseDetailNavigationProp = NativeStackNavigationProp<RootStackParamList>;
@@ -68,8 +69,9 @@ interface ConnectionWithVerse extends Connection {
   metadata?: Record<string, any>;
 }
 
+// Update the component type declaration
 const VerseDetailScreen: React.FC = () => {
-  const { t } = useTranslation(['verseDetail', 'common']);
+  const { t } = useTranslation(['verseDetail', 'common', 'navigation']);
   const route = useRoute<VerseDetailScreenRouteProp>();
   const navigation = useNavigation<VerseDetailNavigationProp>();
   const [verse, setVerse] = useState<Verse | null>(null);
@@ -99,9 +101,14 @@ const VerseDetailScreen: React.FC = () => {
   const [isWebViewVisible, setIsWebViewVisible] = useState<boolean>(false);
   // Add state for tracking recently updated notes
   const [recentlyUpdatedNote, setRecentlyUpdatedNote] = useState<string | null>(null);
+  // Add state for visualization options modal
+  const [showVisualizationModal, setShowVisualizationModal] = useState<boolean>(false);
   
   // Animation value for the highlight effect
   const highlightAnimation = useRef(new Animated.Value(0)).current;
+
+  // Add state for active bottom tab
+  const [activeBottomTab, setActiveBottomTab] = useState<string>('none');
 
   useEffect(() => {
     loadVerseDetails();
@@ -1375,13 +1382,33 @@ const VerseDetailScreen: React.FC = () => {
       headerLeft: () => (
         <TouchableOpacity
           style={{ marginLeft: 16 }}
-          onPress={() => navigation.navigate('MainTabs')}
+          onPress={() => navigation.goBack()}
         >
           <Ionicons name="chevron-back" size={24} color="#007AFF" />
         </TouchableOpacity>
       ),
     });
   }, [navigation]);
+
+  // Add this useEffect to set the active bottom tab based on navigation source
+  useEffect(() => {
+    // Set the active bottom tab based on the screen tab user is coming from
+    if (route.params?.activeTab === 'notes') {
+      setActiveBottomTab('Notes');
+    } else if (route.params?.activeTab === 'connections') {
+      // If user is viewing connections, they're likely coming from GraphView
+      setActiveBottomTab('Graph');
+    }
+  }, [route.params?.activeTab]);
+
+  // Updated showVisualizationOptions function
+  const showVisualizationOptions = () => {
+    // Set the active bottom tab
+    setActiveBottomTab('Graph');
+    
+    // Show custom visualization modal
+    setShowVisualizationModal(true);
+  };
 
   if (isLoading) {
     return (
@@ -1492,15 +1519,101 @@ const VerseDetailScreen: React.FC = () => {
         )}
       </ScrollView>
       
-      {/* TODO: Remove this once we have a way to manage groups */}
-      {false && <View style={styles.actionsContainer}>
+      {/* Bottom Navigation Bar */}
+      <View style={[styles.bottomNav, globalStyles.tabBar]}>
         <TouchableOpacity
-          style={styles.actionButton}
-          onPress={toggleGroupSelector}
+          style={styles.bottomNavItem}
+          onPress={() => {
+            setActiveBottomTab('Home');
+            navigation.navigate('MainTabs', { screen: 'Home' });
+          }}
         >
-          <Text style={styles.actionButtonText}>{t('verseDetail:manageGroups')}</Text>
+          <View style={{
+            alignItems: 'center',
+            justifyContent: 'center',
+            paddingTop: theme.spacing.xs,
+          }}>
+            <Ionicons 
+              name="home-outline" 
+              size={24} 
+              color={activeBottomTab === 'Home' ? theme.colors.primary : theme.colors.textSecondary} 
+            />
+            {activeBottomTab === 'Home' && (
+              <View style={globalStyles.tabBarDot} />
+            )}
+          </View>
         </TouchableOpacity>
-      </View>}
+        
+        <TouchableOpacity
+          style={styles.bottomNavItem}
+          onPress={() => {
+            console.log('Visualization button pressed');
+            showVisualizationOptions();
+          }}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+        >
+          <View style={{
+            alignItems: 'center',
+            justifyContent: 'center',
+            paddingTop: theme.spacing.xs,
+          }}>
+            <Ionicons 
+              name="logo-electron" 
+              size={24} 
+              color={activeBottomTab === 'Graph' ? theme.colors.primary : theme.colors.textSecondary} 
+            />
+            {activeBottomTab === 'Graph' && (
+              <View style={globalStyles.tabBarDot} />
+            )}
+          </View>
+        </TouchableOpacity>
+        
+        <TouchableOpacity
+          style={styles.bottomNavItem}
+          onPress={() => {
+            setActiveBottomTab('Notes');
+            navigation.navigate('MainTabs', { screen: 'Notes' });
+          }}
+        >
+          <View style={{
+            alignItems: 'center',
+            justifyContent: 'center',
+            paddingTop: theme.spacing.xs,
+          }}>
+            <Ionicons 
+              name="document-text-outline" 
+              size={24} 
+              color={activeBottomTab === 'Notes' ? theme.colors.primary : theme.colors.textSecondary} 
+            />
+            {activeBottomTab === 'Notes' && (
+              <View style={globalStyles.tabBarDot} />
+            )}
+          </View>
+        </TouchableOpacity>
+        
+        <TouchableOpacity
+          style={styles.bottomNavItem}
+          onPress={() => {
+            setActiveBottomTab('Profile');
+            navigation.navigate('MainTabs', { screen: 'Profile' });
+          }}
+        >
+          <View style={{
+            alignItems: 'center',
+            justifyContent: 'center',
+            paddingTop: theme.spacing.xs,
+          }}>
+            <Ionicons 
+              name="person-outline" 
+              size={24} 
+              color={activeBottomTab === 'Profile' ? theme.colors.primary : theme.colors.textSecondary} 
+            />
+            {activeBottomTab === 'Profile' && (
+              <View style={globalStyles.tabBarDot} />
+            )}
+          </View>
+        </TouchableOpacity>
+      </View>
       
       {/* Add the verse group selector modal */}
       <Modal
@@ -1542,6 +1655,52 @@ const VerseDetailScreen: React.FC = () => {
         onClose={() => setIsWebViewVisible(false)}
         id="verse-detail-webview"
       />
+
+      {/* Custom Visualization Options Modal */}
+      <Modal
+        animationType="fade"
+        transparent={true}
+        visible={showVisualizationModal}
+        onRequestClose={() => setShowVisualizationModal(false)}
+      >
+
+        <Pressable 
+          style={styles.visualizationModalOverlay} 
+          onPress={() => setShowVisualizationModal(false)}
+        >
+      
+          <View style={styles.visualizationModalContent}>
+            <View style={styles.visualizationModalHeader}>
+              <Text style={styles.visualizationModalTitle}>{t('visualization:title')}</Text>
+              <TouchableOpacity onPress={() => setShowVisualizationModal(false)}>
+                <Ionicons name="close" size={24} color="#666" />
+              </TouchableOpacity>
+            </View>
+
+            <TouchableOpacity 
+              style={styles.visualizationOptionButton}
+              onPress={() => {
+                setShowVisualizationModal(false);
+                navigation.navigate('GraphView', { verseId: verse?.id });
+              }}
+            >
+              <Ionicons name="git-pull-request-outline" size={24} color="#007AFF" />
+              <Text style={styles.visualizationOptionLabel}>{t('visualization:graph')}</Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity 
+              style={styles.visualizationOptionButton}
+              onPress={() => {
+                setShowVisualizationModal(false);
+                navigation.navigate('MindMap', { verseId: verse?.id });
+              }}
+            >
+              <Ionicons name="map-outline" size={24} color="#007AFF" />
+              <Text style={styles.visualizationOptionLabel}>{t('visualization:mindMap')}</Text>
+            </TouchableOpacity>
+          </View>
+        </Pressable>
+      </Modal>
     </SafeAreaView>
   );
 };
@@ -2236,6 +2395,72 @@ const styles = StyleSheet.create({
     color: '#007AFF',
     marginLeft: 4,
     maxWidth: 200,
+  },
+  bottomNav: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    borderTopWidth: 1,
+    borderTopColor: '#eee',
+  },
+  bottomNavItem: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  visualizationModalContainer: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.4)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  visualizationModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  visualizationModalContent: {
+    backgroundColor: 'white',
+    borderRadius: 16,
+    padding: 20,
+    width: '80%',
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    elevation: 5,
+  },
+  visualizationModalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+    paddingBottom: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
+  },
+  visualizationModalTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#333',
+  },
+  visualizationOptionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    marginVertical: 8,
+    backgroundColor: '#f9f9f9',
+    borderRadius: 12,
+  },
+  visualizationOptionLabel: {
+    marginLeft: 16,
+    fontSize: 16,
+    color: '#007AFF',
   },
 });
 

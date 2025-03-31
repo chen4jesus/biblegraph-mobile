@@ -336,6 +336,7 @@ const AppNavigator: React.FC = () => {
                     ...theme.typography.h3,
                     color: theme.colors.primary,
                   },
+                  tabBarItemStyle: { display: 'flex' },
                 }}
               />
               <Stack.Screen 

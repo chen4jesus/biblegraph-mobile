@@ -5,7 +5,7 @@ export type RootStackParamList = {
   SignUp: undefined;
   ForgotPassword: undefined;
   Main: undefined;
-  MainTabs: undefined;
+  MainTabs: { screen?: keyof MainTabParamList } | undefined;
   Search: undefined;
   VerseDetail: { verseId: string, activeTab?: 'notes' | 'connections' };
   GraphView: { verseId?: string; verseIds?: string[] };

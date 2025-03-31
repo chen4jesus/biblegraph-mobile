@@ -335,17 +335,31 @@ const MindMapScreen: React.FC = () => {
   }, [fetchData]);
   
   // Memoize the header component
-  const Header = useMemo(() => (
-    <View style={styles.header}>
-      <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
-        <Ionicons name="arrow-back" size={24} color="#333" />
-      </TouchableOpacity>
-      <Text style={styles.title}>{t('visualization:mindMap')}</Text>
-      <TouchableOpacity style={styles.refreshButton} onPress={handleRefresh}>
-        <Ionicons name="refresh" size={24} color="#333" />
-      </TouchableOpacity>
-    </View>
-  ), [navigation, t, handleRefresh]);
+  const Header = useMemo(() => {
+    // Check if we navigated here from VerseDetailScreen by checking if verseId exists in params
+    const isFromVerseDetail = route.params?.verseId !== undefined;
+    
+    return (
+      <View style={styles.header}>
+        <TouchableOpacity 
+          style={styles.backButton} 
+          onPress={() => navigation.goBack()}
+        >
+          {isFromVerseDetail ? (
+            // Show X button when coming from VerseDetailScreen
+            <Ionicons name="close" size={24} color="#333" />
+          ) : (
+            // Show regular back arrow for other navigation paths
+            <Ionicons name="arrow-back" size={24} color="#333" />
+          )}
+        </TouchableOpacity>
+        <Text style={styles.title}>{t('visualization:mindMap')}</Text>
+        <TouchableOpacity style={styles.refreshButton} onPress={handleRefresh}>
+          <Ionicons name="refresh" size={24} color="#333" />
+        </TouchableOpacity>
+      </View>
+    );
+  }, [navigation, route.params, t, handleRefresh]);
   
   // If there's an error, show error screen
   if (error) {
