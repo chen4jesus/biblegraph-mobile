@@ -133,6 +133,7 @@ const BibleMindMap: React.FC<BibleMindMapProps> = ({
   const [tooltipPosition, setTooltipPosition] = useState({ x: 0, y: 0 });
   const [tooltipVisible, setTooltipVisible] = useState(false);
   const [tooltipBelow, setTooltipBelow] = useState(false);
+  const [tooltipHideTimer, setTooltipHideTimer] = useState<NodeJS.Timeout | null>(null);
   
   // Control panel states
   const [zoomLevel, setZoomLevel] = useState(1);
@@ -600,33 +601,53 @@ const BibleMindMap: React.FC<BibleMindMapProps> = ({
   
   // Function to show tooltip
   const showTooltip = (content: string, nodeX: number, nodeY: number) => {
+    // First clear any existing timer
+    if (tooltipHideTimer) {
+      clearTimeout(tooltipHideTimer);
+      setTooltipHideTimer(null);
+    }
+    
     const tooltipInfo = calculateTooltipPosition(nodeX, nodeY, content);
     setTooltipContent(content);
     setTooltipPosition({ x: tooltipInfo.x, y: tooltipInfo.y });
     setActiveNodePosition({ x: nodeX - scrollPosition.x, y: nodeY - scrollPosition.y });
     setTooltipBelow(tooltipInfo.isBelow);
     setTooltipVisible(true);
+    
+    // Auto-hide tooltip after 5 seconds
+    const timer = setTimeout(() => {
+      hideTooltip();
+    }, 5000);
+    
+    setTooltipHideTimer(timer);
   };
 
   // Function to hide tooltip
   const hideTooltip = () => {
+    if (tooltipHideTimer) {
+      clearTimeout(tooltipHideTimer);
+      setTooltipHideTimer(null);
+    }
     setTooltipVisible(false);
   };
+  
+  // Clean up tooltip timer when component unmounts
+  useEffect(() => {
+    return () => {
+      if (tooltipHideTimer) {
+        clearTimeout(tooltipHideTimer);
+      }
+    };
+  }, [tooltipHideTimer]);
 
   // Function to handle text container interactions properly
-  const getTextContainerProps = (handlePress: () => void, handleMouseEnter?: () => void, handleMouseLeave?: () => void) => {
+  const getTextContainerProps = (handleClick: () => void) => {
     const props: any = {
       style: styles.nodeTextContainer,
-      onPress: handlePress,
+      onPress: handleClick, // Use the same handler for both web and mobile
       activeOpacity: 0.8,
       delayPressIn: 200,
     };
-
-    // Only add mouse event handlers on web platform
-    if (Platform.OS === 'web') {
-      props.onMouseEnter = handleMouseEnter;
-      props.onMouseLeave = handleMouseLeave;
-    }
 
     return props;
   };
@@ -640,18 +661,7 @@ const BibleMindMap: React.FC<BibleMindMapProps> = ({
       }
     };
 
-    const handleContentHover = () => {
-      if (Platform.OS === 'web' && node.data.text) {
-        // Position tooltip above the node
-        showTooltip(
-          node.data.text,
-          node.x, // Center of node horizontally
-          node.y  // Center of node vertically
-        );
-      }
-    };
-
-    const handleContentPress = () => {
+    const handleContentClick = () => {
       if (node.data.text && !isDragging) {
         // Position tooltip above the node
         showTooltip(
@@ -678,12 +688,8 @@ const BibleMindMap: React.FC<BibleMindMapProps> = ({
 
     const panResponder = createPanResponder(node.id);
 
-    // Get props for text container with proper platform-specific event handlers
-    const textContainerProps = getTextContainerProps(
-      handleContentPress,
-      handleContentHover,
-      hideTooltip
-    );
+    // Get props for text container with click handler
+    const textContainerProps = getTextContainerProps(handleContentClick);
 
     return (
       <View
@@ -694,7 +700,7 @@ const BibleMindMap: React.FC<BibleMindMapProps> = ({
             left: node.x - 80,
             top: node.y - 40,
             backgroundColor: node.type === 'verse' ? '#ffffff' : 
-                            node.type === 'theme' ? '#f0f8ff' : '#fff9f0',
+                          node.type === 'theme' ? '#f0f8ff' : '#fff9f0',
             borderColor: node.type === 'verse' ? '#4285F4' : 
                         node.type === 'theme' ? '#34C759' : '#FF9500',
             zIndex: activeNodeId === node.id ? 100 : 10,
@@ -723,19 +729,24 @@ const BibleMindMap: React.FC<BibleMindMapProps> = ({
         {node.data.text && (
           <TouchableOpacity
             {...textContainerProps}
+            style={[
+              styles.nodeTextContainer,
+              Platform.OS === 'web' ? styles.webNodeTextContainer : {}
+            ]}
           >
-          <Text 
-            style={styles.nodeText} 
-            numberOfLines={2}
+            <Text 
+              style={styles.nodeText} 
+              numberOfLines={2}
               selectable={false}
-          >
-            {node.data.text}
-          </Text>
+            >
+              {node.data.text}
+            </Text>
+            
           </TouchableOpacity>
         )}
       </View>
     );
-  }, [onNodeSelect, isDragging, activeNodeId, nodes, mapSize.width, mapSize.height, showTooltip, hideTooltip]);
+  }, [onNodeSelect, isDragging, activeNodeId, showTooltip]);
 
   // Handle zoom controls
   const handleZoomIn = () => {
@@ -1250,13 +1261,26 @@ const styles = StyleSheet.create({
   nodeTextContainer: {
     paddingHorizontal: 4,
   },
+  webNodeTextContainer: {
+    cursor: 'pointer',
+    borderRadius: 4,
+    backgroundColor: 'rgba(0, 0, 0, 0.03)',
+    padding: 4,
+    position: 'relative',
+  },
+  clickIndicator: {
+    position: 'absolute',
+    right: 4,
+    top: 3,
+    width: 12,
+    height: 12,
+    opacity: 0.6,
+  },
   nodeText: {
     fontSize: 12,
     color: '#666',
-    // Add a subtle indicator that this is interactive
-    textDecorationLine: Platform.OS === 'web' ? 'underline' : 'none',
-    textDecorationColor: '#bbb',
-    textDecorationStyle: 'dotted',
+    // Add visual indicator that this is clickable
+    textDecorationLine: 'none',
   },
   edgeTouchTarget: {
     position: 'absolute',
