@@ -27,7 +27,7 @@ type MindMapScreenRouteProp = RouteProp<RootStackParamList, 'MindMap'>;
 type MindMapNavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
 const MindMapScreen: React.FC = () => {
-  const { t } = useTranslation(['graph', 'common']);
+  const { t } = useTranslation(['graph', 'common', 'visualization']);
   const navigation = useNavigation<MindMapNavigationProp>();
   const route = useRoute<MindMapScreenRouteProp>();
   const hasLoadedDefaultVersesRef = useRef(false);
@@ -340,7 +340,7 @@ const MindMapScreen: React.FC = () => {
       <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
         <Ionicons name="arrow-back" size={24} color="#333" />
       </TouchableOpacity>
-      <Text style={styles.title}>{t('mindMap')}</Text>
+      <Text style={styles.title}>{t('visualization:mindMap')}</Text>
       <TouchableOpacity style={styles.refreshButton} onPress={handleRefresh}>
         <Ionicons name="refresh" size={24} color="#333" />
       </TouchableOpacity>

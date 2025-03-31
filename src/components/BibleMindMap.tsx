@@ -68,6 +68,9 @@ const BibleMindMap: React.FC<BibleMindMapProps> = ({
         return;
       }
 
+      // Create a Map to track verse IDs we've already seen
+      const uniqueVerseIds = new Map<string, number>();
+      
       // Calculate layout dimensions based on number of nodes
       const nodeCount = verses.length;
       const columns = Math.ceil(Math.sqrt(nodeCount));
@@ -82,8 +85,21 @@ const BibleMindMap: React.FC<BibleMindMapProps> = ({
         const col = index % columns;
         const row = Math.floor(index / columns);
         
+        // Track if we've seen this ID before to handle duplicates
+        let uniqueId = verse.id;
+        const count = uniqueVerseIds.get(verse.id) || 0;
+        
+        if (count > 0) {
+          // If we've seen this ID before, make it unique by appending the count
+          uniqueId = `${verse.id}-dup${count}`;
+          console.warn(`BibleMindMap: Duplicate verse ID found: ${verse.id}, creating unique ID: ${uniqueId}`);
+        }
+        
+        // Increment the count for this ID
+        uniqueVerseIds.set(verse.id, count + 1);
+        
         return {
-          id: verse.id,
+          id: uniqueId,
           label: `${verse.book} ${verse.chapter}:${verse.verse}`,
           x: 100 + col * 200,
           y: 100 + row * 150,
@@ -95,8 +111,14 @@ const BibleMindMap: React.FC<BibleMindMapProps> = ({
         };
       });
 
-      // Create edges from connections
-      const newEdges: Edge[] = connections.map(connection => {
+      // Update connection references if we've modified any verse IDs
+      const updatedConnections = connections.map(connection => {
+        // Clone the connection to avoid modifying the original
+        return { ...connection };
+      });
+
+      // Create edges from connections with updated references if needed
+      const newEdges: Edge[] = updatedConnections.map(connection => {
         // Determine edge color based on connection type
         let color = '#999999';
         switch (connection.type) {
@@ -111,10 +133,28 @@ const BibleMindMap: React.FC<BibleMindMapProps> = ({
             break;
         }
 
+        // Find the correct source and target nodes from our newNodes array
+        // In case we've renamed any node IDs to make them unique
+        const sourceNode = newNodes.find(node => 
+          node.id === connection.sourceVerseId || 
+          node.id.startsWith(connection.sourceVerseId + '-dup')
+        );
+        
+        const targetNode = newNodes.find(node => 
+          node.id === connection.targetVerseId || 
+          node.id.startsWith(connection.targetVerseId + '-dup')
+        );
+
+        // Skip edges whose source or target nodes don't exist
+        if (!sourceNode || !targetNode) {
+          console.warn(`BibleMindMap: Skipping edge ${connection.id} due to missing source or target node`);
+          return null;
+        }
+
         return {
           id: connection.id,
-          source: connection.sourceVerseId,
-          target: connection.targetVerseId,
+          source: sourceNode.id,
+          target: targetNode.id,
           label: connection.type,
           color: color,
           data: {
@@ -122,7 +162,7 @@ const BibleMindMap: React.FC<BibleMindMapProps> = ({
             description: connection.description || '',
           }
         };
-      });
+      }).filter(edge => edge !== null) as Edge[];
 
       // If we have nodes but no edges, create some default edges to make a nicer layout
       if (newNodes.length > 0 && newEdges.length === 0 && newNodes.length > 1) {
@@ -160,7 +200,7 @@ const BibleMindMap: React.FC<BibleMindMapProps> = ({
   }, [verses, connections, transformData]);
 
   // Render each verse node
-  const renderNode = useCallback((node: Node) => {
+  const renderNode = useCallback((node: Node, index: number) => {
     const handlePress = () => {
       if (onNodeSelect) {
         onNodeSelect(node.id);
@@ -169,7 +209,7 @@ const BibleMindMap: React.FC<BibleMindMapProps> = ({
 
     return (
       <TouchableOpacity
-        key={`node-${node.id}`}
+        key={`node-${node.id}-${index}`}
         style={[
           styles.node,
           {
@@ -284,7 +324,7 @@ const BibleMindMap: React.FC<BibleMindMapProps> = ({
         {renderEdges()}
       </Svg>
       {renderEdgeTouchTargets()}
-      {nodes.map(node => renderNode(node))}
+      {nodes.map((node, index) => renderNode(node, index))}
     </ScrollView>
   );
 };
