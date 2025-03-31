@@ -942,14 +942,18 @@ const BibleMindMap: React.FC<BibleMindMapProps> = ({
                   {
                     left: (scrollPosition.x / mapSize.width) * minimapContainerSize.width,
                     top: (scrollPosition.y / mapSize.height) * minimapContainerSize.height,
-                    width: (viewportSize.width / mapSize.width) * minimapContainerSize.width,
-                    height: (viewportSize.height / mapSize.height) * minimapContainerSize.height,
+                    // Adjust width and height based on zoom level - smaller viewport when zoomed in
+                    width: (viewportSize.width / mapSize.width / zoomLevel) * minimapContainerSize.width,
+                    height: (viewportSize.height / mapSize.height / zoomLevel) * minimapContainerSize.height,
                   },
                 ]}
               />
             </View>
           </TouchableWithoutFeedback>
-          <Text style={styles.minimapHint}>Tap to navigate</Text>
+          <View style={styles.minimapFooter}>
+            <Text style={styles.minimapHint}>Tap to navigate</Text>
+            <Text style={styles.minimapZoom}>{Math.round(zoomLevel * 100)}%</Text>
+          </View>
         </View>
       )}
       
@@ -1198,8 +1202,6 @@ const styles = StyleSheet.create({
   minimapHint: {
     fontSize: 10,
     color: '#666',
-    textAlign: 'center',
-    marginTop: 4,
   },
   controlNote: {
     fontSize: 10,
@@ -1233,6 +1235,18 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.25,
     shadowRadius: 3.84,
+  },
+  minimapFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingTop: 4,
+    paddingHorizontal: 2,
+  },
+  minimapZoom: {
+    fontSize: 10,
+    fontWeight: 'bold',
+    color: '#333',
   },
 });
 
