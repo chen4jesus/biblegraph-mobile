@@ -9,6 +9,8 @@ export type RootStackParamList = {
   Search: undefined;
   VerseDetail: { verseId: string, activeTab?: 'notes' | 'connections' };
   GraphView: { verseId?: string; verseIds?: string[] };
+  GraphVisualizer: { initialNodes?: any[]; initialEdges?: any[]; verseId?: string; verseIds?: string[] };
+  MindMap: { verseId?: string; verseIds?: string[] };
   Notes: undefined;
   Profile: undefined;
   Settings: undefined;

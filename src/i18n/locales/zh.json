@@ -21,7 +21,10 @@
     "pleaseCheckInternetConnection": "请检查您的互联网连接",
     "someFeaturesMayNotWorkInWebBrowsers": "某些功能在网页浏览器中可能无法正常工作",
     "databasePerformance": "由于性能原因，数据库操作限制为每查询100条记录。",
-    "initializingDatabase": "初始化数据库..."
+    "initializingDatabase": "初始化数据库...",
+    "chooseVisualization": "选择可视化类型",
+    "selectVisualizationType": "选择一种可视化方式",
+    "selectedVerses": "已选择的经文"
   },
   "home": {
     "title": "圣经研读",
@@ -37,7 +40,8 @@
     "settings": "设置",
     "search": "搜索",
     "tagsManagement": "管理标签",
-    "bible": "圣经"
+    "bible": "圣经",
+    "visualization": "可视化"
   },
   "verses": {
     "chapter": "章",
@@ -275,5 +279,10 @@
     "darkMode": "深色模式",
     "darkModeDescription": "启用深色主题",
     "preferences": "偏好设置"
+  },
+  "visualization": {
+    "title": "可视化",
+    "graph": "图谱视图",
+    "mindMap": "思维导图"
   }
 } 

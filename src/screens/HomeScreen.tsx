@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -8,6 +8,8 @@ import {
   SafeAreaView,
   ActivityIndicator,
   Alert,
+  Modal,
+  Pressable,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -30,6 +32,7 @@ const HomeScreen: React.FC = () => {
   const [recentVerses, setRecentVerses] = useState<Verse[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isBibleSelectorVisible, setIsBibleSelectorVisible] = useState<boolean>(false);
+  const [isVisualizationModalVisible, setIsVisualizationModalVisible] = useState<boolean>(false);
 
   useEffect(() => {
     loadRecentVerses();
@@ -125,6 +128,10 @@ const HomeScreen: React.FC = () => {
     }
   };
 
+  const navigateToMindMap = useCallback((verseIds?: string[]) => {
+    navigation.navigate('MindMap', { verseIds: verseIds || [] });
+  }, [navigation]);
+
   const handleViewGraphWithVerses = async (selections: Array<{book: string, chapter: number, verse: number, chineseBook?: string}>) => {
     setIsLoading(true);
     console.debug('Selected verses:', selections);
@@ -177,9 +184,9 @@ const HomeScreen: React.FC = () => {
       console.debug(`Total verse IDs found: ${verseIds.length}`);
       
       if (verseIds.length > 0) {
-        // Navigate to graph view with all the verse IDs
+        // Navigate directly to the GraphView with the verse IDs
         console.debug('Navigating to GraphView with verse IDs:', verseIds);
-        navigation.navigate('GraphView', { verseIds: verseIds });
+        navigation.navigate('GraphView', { verseIds });
       } else {
         console.warn('No verse IDs found for selections');
         Alert.alert(
@@ -200,6 +207,73 @@ const HomeScreen: React.FC = () => {
     }
   };
 
+  const handleViewMindMapWithVerses = async (selections: Array<{book: string, chapter: number, verse: number, chineseBook?: string}>) => {
+    setIsLoading(true);
+    console.debug('Selected verses for mind map:', selections);
+    
+    try {
+      const verseIds: string[] = [];
+      
+      // Fetch all the verse IDs
+      for (const selection of selections) {
+        console.debug(`Fetching verse for mind map: ${selection.book} ${selection.chapter}:${selection.verse}`);
+        
+        let verse = await DatabaseService.getVerseByReference(
+          selection.book,
+          selection.chapter,
+          selection.verse
+        );
+        
+        if (!verse && selection.chineseBook) {
+          console.debug(`Trying with Chinese name: ${selection.chineseBook}`);
+          verse = await DatabaseService.getVerseByReference(
+            selection.chineseBook,
+            selection.chapter,
+            selection.verse
+          );
+        }
+        
+        if (!verse) {
+          console.debug(`Trying lowercase: ${selection.book.toLowerCase()}`);
+          verse = await DatabaseService.getVerseByReference(
+            selection.book.toLowerCase(),
+            selection.chapter,
+            selection.verse
+          );
+        }
+        
+        if (verse) {
+          console.debug(`Found verse ID for mind map: ${verse.id}`);
+          verseIds.push(verse.id);
+          updateRecentVerses(verse);
+        } else {
+          console.warn(`Verse not found for mind map: ${selection.book} ${selection.chapter}:${selection.verse}`);
+        }
+      }
+      
+      if (verseIds.length > 0) {
+        console.debug('Navigating to MindMap with verse IDs:', verseIds);
+        navigation.navigate('MindMap', { verseIds });
+      } else {
+        Alert.alert(
+          '未找到经文',
+          '未能找到选定的经文，请重试',
+          [{ text: '确定', style: 'default' }]
+        );
+      }
+    } catch (error) {
+      console.error('Error preparing mind map:', error);
+      Alert.alert(
+        '错误',
+        '准备思维导图时出错，请重试',
+        [{ text: '确定', style: 'default' }]
+      );
+    } finally {
+      setIsLoading(false);
+    }
+  };
+  
+  
   const renderVerseCard = ({ item }: { item: Verse }) => (
     <TouchableOpacity
       style={styles.verseCard}
@@ -243,6 +317,11 @@ const HomeScreen: React.FC = () => {
     }
   };
 
+  const showVisualizationOptions = useCallback(() => {
+    console.log('Opening visualization options');
+    setIsVisualizationModalVisible(true);
+  }, []);
+
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
@@ -263,13 +342,15 @@ const HomeScreen: React.FC = () => {
           <Ionicons name="book-outline" size={24} color="#007AFF" />
           <Text style={styles.actionText}>{t('navigation:bible')}</Text>
         </TouchableOpacity>
+        
         <TouchableOpacity
           style={styles.actionButton}
-          onPress={() => navigation.navigate('GraphView', {})}
+          onPress={showVisualizationOptions}
         >
-          <Ionicons name="git-network" size={24} color="#007AFF" />
-          <Text style={styles.actionText}>{t('navigation:graph')}</Text>
+          <Ionicons name="git-network-outline" size={24} color="#007AFF" />
+          <Text style={styles.actionText}>{t('navigation:visualization')}</Text>
         </TouchableOpacity>
+        
         <TouchableOpacity
           style={styles.actionButton}
           onPress={() => navigation.navigate('Notes')}
@@ -278,7 +359,6 @@ const HomeScreen: React.FC = () => {
           <Text style={styles.actionText}>{t('navigation:notes')}</Text>
         </TouchableOpacity>
       </View>
-
       <View style={styles.recentSection}>
         <Text style={styles.sectionTitle}>{t('home:recentVerses')}</Text>
         {isLoading ? (
@@ -310,7 +390,52 @@ const HomeScreen: React.FC = () => {
         onClose={() => setIsBibleSelectorVisible(false)}
         onSelect={handleVerseSelection}
         onViewGraph={handleViewGraphWithVerses}
+        onViewMindMap={handleViewMindMapWithVerses}
       />
+      
+      {/* Visualization Options Modal */}
+      <Modal
+        animationType="fade"
+        transparent={true}
+        visible={isVisualizationModalVisible}
+        onRequestClose={() => setIsVisualizationModalVisible(false)}
+      >
+        <Pressable 
+          style={styles.modalOverlay} 
+          onPress={() => setIsVisualizationModalVisible(false)}
+        >
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>{t('visualization:title')}</Text>
+              <TouchableOpacity onPress={() => setIsVisualizationModalVisible(false)}>
+                <Ionicons name="close" size={24} color="#666" />
+              </TouchableOpacity>
+            </View>
+            
+            <TouchableOpacity 
+              style={styles.modalOption} 
+              onPress={() => {
+                setIsVisualizationModalVisible(false);
+                navigation.navigate('GraphView', { verseIds: [] });
+              }}
+            >
+              <Ionicons name="git-network" size={24} color="#007AFF" />
+              <Text style={styles.modalOptionText}>{t('visualization:graph')}</Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity 
+              style={styles.modalOption} 
+              onPress={() => {
+                setIsVisualizationModalVisible(false);
+                navigateToMindMap();
+              }}
+            >
+              <Ionicons name="git-branch-outline" size={24} color="#007AFF" />
+              <Text style={styles.modalOptionText}>{t('visualization:mindMap')}</Text>
+            </TouchableOpacity>
+          </View>
+        </Pressable>
+      </Modal>
     </SafeAreaView>
   );
 };
@@ -345,15 +470,18 @@ const styles = StyleSheet.create({
   },
   actionButton: {
     alignItems: 'center',
-    padding: 12,
+    justifyContent: 'center',
+    padding: 16,
     backgroundColor: '#f0f8ff',
     borderRadius: 12,
     width: '30%',
+    height: 90,
   },
   actionText: {
-    marginTop: 4,
+    marginTop: 8,
     color: '#007AFF',
     fontWeight: '500',
+    textAlign: 'center',
   },
   recentSection: {
     flex: 1,
@@ -422,6 +550,60 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: 'bold',
     color: '#fff',
+  },
+  actionButtonActive: {
+    backgroundColor: '#007AFF',
+    transform: [{ scale: 1.05 }],
+  },
+  actionTextActive: {
+    color: '#fff',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalContent: {
+    backgroundColor: 'white',
+    borderRadius: 16,
+    padding: 20,
+    width: '80%',
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    elevation: 5,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+    paddingBottom: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#333',
+  },
+  modalOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    marginVertical: 8,
+    backgroundColor: '#f9f9f9',
+    borderRadius: 12,
+  },
+  modalOptionText: {
+    marginLeft: 16,
+    fontSize: 16,
+    color: '#007AFF',
   },
 });
 

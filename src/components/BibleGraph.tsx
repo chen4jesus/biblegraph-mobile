@@ -119,11 +119,15 @@ const BibleGraph: React.FC<BibleGraphProps> = ({
     const screenHeight = Dimensions.get('window').height;
     const centerX = screenWidth / 2;
     const centerY = screenHeight / 2;
-    const radius = Math.min(screenWidth, screenHeight) * 0.35;
+    
+    console.log(`BibleGraph: Initializing graph with ${verses.length} verses and ${connections.length} connections`);
+    
+    // If we have very few verses, arrange them in a smaller circle
+    const radius = Math.min(screenWidth, screenHeight) * (verses.length <= 3 ? 0.2 : 0.35);
     
     const newNodes: Node[] = verses.map((verse, index) => {
       // Arrange nodes in a circular pattern for better initial layout
-      const angle = (index / verses.length) * 2 * Math.PI;
+      const angle = (index / Math.max(1, verses.length)) * 2 * Math.PI;
       const x = centerX + radius * Math.cos(angle);
       const y = centerY + radius * Math.sin(angle);
       
@@ -136,6 +140,8 @@ const BibleGraph: React.FC<BibleGraphProps> = ({
       };
     });
 
+    console.log(`BibleGraph: Created ${newNodes.length} nodes`);
+
     // Create edges from connections
     const newEdges: Edge[] = connections.map(connection => ({
       id: connection.id,
@@ -144,6 +150,8 @@ const BibleGraph: React.FC<BibleGraphProps> = ({
       type: connection.type,
       description: connection.description,
     }));
+
+    console.log(`BibleGraph: Created ${newEdges.length} edges`);
 
     setNodes(newNodes);
     setEdges(newEdges);

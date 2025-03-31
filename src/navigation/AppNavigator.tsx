@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { NavigationContainer } from '@react-navigation/native';
+import { NavigationContainer, NavigationHelpers, ParamListBase } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { RootStackParamList, MainTabParamList } from './types';
@@ -10,8 +10,10 @@ import { useTranslation } from 'react-i18next';
 import { useFocusEffect } from '@react-navigation/native';
 import { WebViewProvider } from '../contexts/WebViewContext';
 import { GlobalWebViewManager } from '../contexts/WebViewManager';
-import { Platform, View, Text } from 'react-native';
+import { Platform, View, Text, Alert, Modal, TouchableOpacity, Pressable, StyleSheet } from 'react-native';
 import { theme, globalStyles } from '../styles/theme';
+import { BottomTabNavigationEventMap, BottomTabNavigationOptions } from '@react-navigation/bottom-tabs';
+import { useNavigation } from '@react-navigation/native';
 
 // Auth Screens
 import LoginScreen from '../screens/LoginScreen';
@@ -29,97 +31,155 @@ import SettingsScreen from '../screens/SettingsScreen';
 import LanguageSettingsScreen from '../screens/LanguageSettingsScreen';
 import GroupDetailScreen from '../screens/GroupDetailScreen';
 import TagsManagementScreen from '../screens/TagsManagementScreen';
+import MindMapScreen from '../screens/MindMapScreen';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 const Tab = createBottomTabNavigator<MainTabParamList>();
 
 const MainTabs = () => {
-  const { t } = useTranslation('navigation');
+  const { t } = useTranslation(['navigation', 'common']);
+  const [isVisualizationModalVisible, setIsVisualizationModalVisible] = useState<boolean>(false);
+  const navigation = useNavigation();
 
   return (
-    <Tab.Navigator
-      screenOptions={({ route }) => ({
-        tabBarIcon: ({ focused, color, size }) => {
-          let iconName;
+    <>
+      <Tab.Navigator
+        screenOptions={({ route }) => ({
+          tabBarIcon: ({ focused, color, size }) => {
+            let iconName;
 
-          if (route.name === 'Home') {
-            iconName = focused ? 'home' : 'home-outline';
-          } else if (route.name === 'Graph') {
-            iconName = focused ? 'git-network' : 'git-network-outline';
-          } else if (route.name === 'Notes') {
-            iconName = focused ? 'document-text' : 'document-text-outline';
-          } else if (route.name === 'Profile') {
-            iconName = focused ? 'person' : 'person-outline';
-          }
+            if (route.name === 'Home') {
+              iconName = focused ? 'home' : 'home-outline';
+            } else if (route.name === 'Graph') {
+              iconName = focused ? 'git-network' : 'git-network-outline';
+            } else if (route.name === 'Notes') {
+              iconName = focused ? 'document-text' : 'document-text-outline';
+            } else if (route.name === 'Profile') {
+              iconName = focused ? 'person' : 'person-outline';
+            }
 
-          return (
-            <View style={{
-              alignItems: 'center',
-              justifyContent: 'center',
-              paddingTop: theme.spacing.xs,
-            }}>
-              <Ionicons name={iconName as any} size={size} color={color} />
-              {focused && (
-                <View style={globalStyles.tabBarDot} />
-              )}
+            return (
+              <View style={{
+                alignItems: 'center',
+                justifyContent: 'center',
+                paddingTop: theme.spacing.xs,
+              }}>
+                <Ionicons name={iconName as any} size={size} color={color} />
+                {focused && (
+                  <View style={globalStyles.tabBarDot} />
+                )}
+              </View>
+            );
+          },
+          tabBarActiveTintColor: theme.colors.primary,
+          tabBarInactiveTintColor: theme.colors.textSecondary,
+          tabBarStyle: globalStyles.tabBar,
+          tabBarItemStyle: globalStyles.tabBarItem,
+          tabBarLabelStyle: {
+            ...theme.typography.tabLabel,
+            marginTop: -4,
+            paddingBottom: 0,
+            marginBottom: 8,
+          },
+          headerStyle: {
+            backgroundColor: theme.colors.background,
+            shadowColor: theme.colors.border,
+            shadowOffset: { width: 0, height: 1 },
+            shadowOpacity: 0.1,
+            shadowRadius: 2,
+            elevation: 2,
+          },
+          headerTintColor: theme.colors.text,
+          headerTitleStyle: {
+            ...theme.typography.h3,
+            color: theme.colors.primary,
+          },
+          headerShadowVisible: true,
+        })}
+      >
+        <Tab.Screen 
+          name="Home" 
+          component={HomeScreen} 
+          options={{ 
+            title: t('home'),
+          }}
+        />
+        <Tab.Screen 
+          name="Graph" 
+          component={GraphViewScreen} 
+          options={{
+            title: t('graph'),
+          }}
+          listeners={({ }) => ({
+            tabPress: (e) => {
+              // Prevent default behavior
+              e.preventDefault();
+              
+              // Show the custom modal
+              setIsVisualizationModalVisible(true);
+            }
+          })}
+        />
+        <Tab.Screen 
+          name="Notes" 
+          component={NotesScreen} 
+          options={{ 
+            title: t('notes'),
+          }}
+        />
+        <Tab.Screen 
+          name="Profile" 
+          component={ProfileScreen} 
+          options={{ 
+            title: t('profile'),
+          }}
+        />
+      </Tab.Navigator>
+      
+      {/* Visualization Options Modal */}
+      <Modal
+        animationType="fade"
+        transparent={true}
+        visible={isVisualizationModalVisible}
+        onRequestClose={() => setIsVisualizationModalVisible(false)}
+      >
+        <Pressable 
+          style={styles.modalOverlay} 
+          onPress={() => setIsVisualizationModalVisible(false)}
+        >
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>{t('visualization:title')}</Text>
+              <TouchableOpacity onPress={() => setIsVisualizationModalVisible(false)}>
+                <Ionicons name="close" size={24} color="#666" />
+              </TouchableOpacity>
             </View>
-          );
-        },
-        tabBarActiveTintColor: theme.colors.primary,
-        tabBarInactiveTintColor: theme.colors.textSecondary,
-        tabBarStyle: globalStyles.tabBar,
-        tabBarItemStyle: globalStyles.tabBarItem,
-        tabBarLabelStyle: {
-          ...theme.typography.tabLabel,
-          marginTop: -4,
-          paddingBottom: 0,
-          marginBottom: 8,
-        },
-        headerStyle: {
-          backgroundColor: theme.colors.background,
-          shadowColor: theme.colors.border,
-          shadowOffset: { width: 0, height: 1 },
-          shadowOpacity: 0.1,
-          shadowRadius: 2,
-          elevation: 2,
-        },
-        headerTintColor: theme.colors.text,
-        headerTitleStyle: {
-          ...theme.typography.h3,
-          color: theme.colors.primary,
-        },
-        headerShadowVisible: true,
-      })}
-    >
-      <Tab.Screen 
-        name="Home" 
-        component={HomeScreen} 
-        options={{ 
-          title: t('home'),
-        }}
-      />
-      <Tab.Screen 
-        name="Graph" 
-        component={GraphViewScreen} 
-        options={{ 
-          title: t('graph'),
-        }}
-      />
-      <Tab.Screen 
-        name="Notes" 
-        component={NotesScreen} 
-        options={{ 
-          title: t('notes'),
-        }}
-      />
-      <Tab.Screen 
-        name="Profile" 
-        component={ProfileScreen} 
-        options={{ 
-          title: t('profile'),
-        }}
-      />
-    </Tab.Navigator>
+            
+            <TouchableOpacity 
+              style={styles.modalOption} 
+              onPress={() => {
+                setIsVisualizationModalVisible(false);
+                navigation.navigate('GraphView' as never);
+              }}
+            >
+              <Ionicons name="git-network" size={24} color="#007AFF" />
+              <Text style={styles.modalOptionText}>{t('visualization:graph')}</Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity 
+              style={styles.modalOption} 
+              onPress={() => {
+                setIsVisualizationModalVisible(false);
+                navigation.navigate('MindMap' as never);
+              }}
+            >
+              <Ionicons name="git-branch-outline" size={24} color="#007AFF" />
+              <Text style={styles.modalOptionText}>{t('visualization:mindMap')}</Text>
+            </TouchableOpacity>
+          </View>
+        </Pressable>
+      </Modal>
+    </>
   );
 };
 
@@ -323,6 +383,11 @@ const AppNavigator: React.FC = () => {
                   headerShown: true,
                 }} 
               />
+              <Stack.Screen 
+                name="MindMap" 
+                component={MindMapScreen}
+                options={{ title: t('mindMap') }}
+              />
             </>
           )}
         </Stack.Navigator>
@@ -333,5 +398,55 @@ const AppNavigator: React.FC = () => {
     </WebViewProvider>
   );
 };
+
+const styles = StyleSheet.create({
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalContent: {
+    backgroundColor: 'white',
+    borderRadius: 16,
+    padding: 20,
+    width: '80%',
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    elevation: 5,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+    paddingBottom: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#333',
+  },
+  modalOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    marginVertical: 8,
+    backgroundColor: '#f9f9f9',
+    borderRadius: 12,
+  },
+  modalOptionText: {
+    marginLeft: 16,
+    fontSize: 16,
+    color: '#007AFF',
+  },
+});
 
 export default AppNavigator; 

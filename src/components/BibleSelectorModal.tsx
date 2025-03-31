@@ -10,12 +10,14 @@ import {
   ScrollView,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useTranslation } from 'react-i18next';
 
 interface BibleSelectorModalProps {
   isVisible: boolean;
   onClose: () => void;
   onSelect: (book: string, chapter: number, verse: number) => void;
   onViewGraph: (selections: Array<{book: string, chapter: number, verse: number}>) => void;
+  onViewMindMap: (selections: Array<{book: string, chapter: number, verse: number}>) => void;
 }
 
 // Define Bible structure with chapter counts
@@ -112,7 +114,9 @@ const BibleSelectorModal: React.FC<BibleSelectorModalProps> = ({
   onClose,
   onSelect,
   onViewGraph,
+  onViewMindMap,
 }) => {
+  const { t } = useTranslation(['common', 'visualization']);
   const [selectedBook, setSelectedBook] = useState<string | null>(null);
   const [selectedChapter, setSelectedChapter] = useState<number | null>(null);
   const [view, setView] = useState<'books' | 'chapters' | 'verses'>('books');
@@ -186,6 +190,21 @@ const BibleSelectorModal: React.FC<BibleSelectorModalProps> = ({
     if (selectedVerses.length > 0) {
       console.debug('BibleSelectorModal - Selected verses for graph:', selectedVerses);
       onViewGraph(selectedVerses.map(v => ({
+        book: v.englishBook,
+        chapter: v.chapter,
+        verse: v.verse,
+        // Also pass the Chinese name as backup
+        chineseBook: v.book
+      })));
+      resetSelection();
+      onClose();
+    }
+  };
+
+  const handleViewMindMap = () => {
+    if (selectedVerses.length > 0) {
+      console.debug('BibleSelectorModal - Selected verses for mind map:', selectedVerses);
+      onViewMindMap(selectedVerses.map(v => ({
         book: v.englishBook,
         chapter: v.chapter,
         verse: v.verse,
@@ -288,7 +307,7 @@ const BibleSelectorModal: React.FC<BibleSelectorModalProps> = ({
             {selectedVerses.length > 0 && (
               <View style={styles.selectedVersesContainer}>
                 <Text style={styles.selectedVersesTitle}>
-                  已选择 ({selectedVerses.length})
+                  {t('common:selectedVerses', { count: selectedVerses.length })}
                 </Text>
                 <ScrollView horizontal showsHorizontalScrollIndicator={false}>
                   {selectedVerses.map((verse, index) => (
@@ -311,7 +330,13 @@ const BibleSelectorModal: React.FC<BibleSelectorModalProps> = ({
                   style={styles.viewGraphButton}
                   onPress={handleViewGraph}
                 >
-                  <Text style={styles.viewGraphButtonText}>查看图表</Text>
+                  <Text style={styles.viewGraphButtonText}>{t('visualization:graph')}</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.viewGraphButton}
+                  onPress={handleViewMindMap}
+                >
+                  <Text style={styles.viewGraphButtonText}>{t('visualization:mindMap')}</Text>
                 </TouchableOpacity>
               </View>
             )}

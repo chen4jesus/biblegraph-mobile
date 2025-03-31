@@ -26,12 +26,18 @@ import ForceGraph from '../components/ForceGraph';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import theme from '../theme';
 import { showNotification } from '../utils/notifications';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
+// Storage keys for persistent data
+const GRAPHVIEW_VERSES_KEY = '@biblegraph:graphview_verses';
+const GRAPHVIEW_CONNECTIONS_KEY = '@biblegraph:graphview_connections';
+const GRAPHVIEW_LAST_VERSE_IDS_KEY = '@biblegraph:graphview_last_verse_ids';
 
 type GraphViewScreenRouteProp = RouteProp<RootStackParamList, 'GraphView'>;
 type GraphViewNavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
 const GraphViewScreen: React.FC = () => {
-  const { t } = useTranslation(['graph']);
+  const { t } = useTranslation(['graph', 'common']);
   const navigation = useNavigation<GraphViewNavigationProp>();
   const route = useRoute<GraphViewScreenRouteProp>();
   const initialVerseId = route.params?.verseId;
@@ -51,7 +57,240 @@ const GraphViewScreen: React.FC = () => {
   // Use a ref to track if initialVerses has been processed
   const initialVersesProcessedRef = useRef(false);
   // Add a ref to track the last processed initialVerseIds
-  const lastProcessedIdsRef = useRef<string | null>(null);
+  const lastLoadedVerseIdsRef = useRef<string[]>([]);
+  
+  // State for data
+  const [verses, setVerses] = useState<Verse[]>([]);
+  const [connections, setConnections] = useState<Connection[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [isNewData, setIsNewData] = useState(false);
+  
+  // Update the initialVersesProcessedRef to hasLoadedDefaultVersesRef
+  const hasLoadedDefaultVersesRef = useRef(false);
+  
+  // Load cached data on mount
+  useEffect(() => {
+    loadCachedData();
+  }, []);
+  
+  // Load cached verses and connections
+  const loadCachedData = async () => {
+    try {
+      setIsLoading(true);
+      
+      // Get cached verse IDs
+      const cachedVerseIdsStr = await AsyncStorage.getItem(GRAPHVIEW_LAST_VERSE_IDS_KEY);
+      let cachedVerseIds: string[] = [];
+      
+      if (cachedVerseIdsStr) {
+        cachedVerseIds = JSON.parse(cachedVerseIdsStr);
+        lastLoadedVerseIdsRef.current = cachedVerseIds;
+      }
+      
+      // Check if we need to load new data based on route params
+      const verseIdsToCheck = [...(initialVerseIds || [])];
+      if (initialVerseId) verseIdsToCheck.push(initialVerseId);
+      
+      // If we have specific verse IDs in navigation params, use them (explicit selection)
+      if (verseIdsToCheck.length > 0) {
+        console.log('GraphViewScreen: New verse IDs from navigation, using them instead of cache');
+        console.log('GraphViewScreen: Route verse IDs:', verseIdsToCheck);
+        setIsNewData(true);
+        fetchData();
+        return;
+      }
+      
+      // Otherwise, load cached data if we have it
+      const cachedVersesStr = await AsyncStorage.getItem(GRAPHVIEW_VERSES_KEY);
+      const cachedConnectionsStr = await AsyncStorage.getItem(GRAPHVIEW_CONNECTIONS_KEY);
+      
+      if (cachedVersesStr && cachedConnectionsStr) {
+        const cachedVerses = JSON.parse(cachedVersesStr);
+        const cachedConnections = JSON.parse(cachedConnectionsStr);
+        
+        // If we have valid cached data, use it
+        if (cachedVerses.length > 0) {
+          console.log('GraphViewScreen: Using cached graph view data with', cachedVerses.length, 'verses');
+          setVerses(cachedVerses);
+          setConnections(cachedConnections);
+          setIsLoading(false);
+          hasLoadedDefaultVersesRef.current = true;
+          return;
+        }
+      }
+      
+      // Otherwise load default verses
+      console.log('GraphViewScreen: No valid cache or explicit parameters, loading default verses');
+      fetchData();
+    } catch (err) {
+      console.error('Error loading cached graph view data:', err);
+      fetchData();
+    }
+  };
+  
+  // Cache the current verses and connections
+  const cacheCurrentData = async () => {
+    try {
+      if (verses.length > 0) {
+        console.log('GraphViewScreen: Caching', verses.length, 'verses and', connections.length, 'connections');
+        await AsyncStorage.setItem(GRAPHVIEW_VERSES_KEY, JSON.stringify(verses));
+        await AsyncStorage.setItem(GRAPHVIEW_CONNECTIONS_KEY, JSON.stringify(connections));
+        
+        // Store the verse IDs we loaded for future comparison
+        const verseIds = verses.map(v => v.id);
+        await AsyncStorage.setItem(GRAPHVIEW_LAST_VERSE_IDS_KEY, JSON.stringify(verseIds));
+        lastLoadedVerseIdsRef.current = verseIds;
+        
+        console.log('GraphViewScreen: Data cached successfully');
+      }
+    } catch (err) {
+      console.error('Error caching graph view data:', err);
+    }
+  };
+  
+  // Check if we need to load new data when navigation parameters change
+  useEffect(() => {
+    const verseIdsToCheck = [...(initialVerseIds || [])];
+    if (initialVerseId) verseIdsToCheck.push(initialVerseId);
+    
+    // Only reload if we have explicit verse IDs from navigation
+    if (verseIdsToCheck.length > 0) {
+      console.log('GraphViewScreen: Received explicit verse IDs, will reload data');
+      setIsNewData(true);
+      fetchData();
+    }
+  }, [initialVerseId, initialVerseIds]);
+  
+  // Update cache when data changes
+  useEffect(() => {
+    if (verses.length > 0 && !isLoading) {
+      cacheCurrentData();
+    }
+  }, [verses, connections, isLoading]);
+  
+  // Fetch data (verses and connections)
+  const fetchData = useCallback(async () => {
+    // If we don't have new data to fetch, and we're not forcing a reload
+    // due to explicit verse IDs, then don't fetch
+    if (!isNewData && 
+        hasLoadedDefaultVersesRef.current && 
+        !initialVerseId && 
+        (!initialVerseIds || initialVerseIds.length === 0)) {
+      return;
+    }
+    
+    setIsLoading(true);
+    setError(null);
+    setIsNewData(false);
+    
+    try {
+      // Collect verse IDs to fetch
+      const verseIdsToFetch: string[] = [];
+      let collectedVerses: Verse[] = [];
+      
+      if (initialVerseId) {
+        verseIdsToFetch.push(initialVerseId);
+      }
+      
+      if (initialVerseIds && initialVerseIds.length > 0) {
+        console.log('GraphViewScreen: Initial verse IDs:', initialVerseIds);
+        // Add all verse IDs that aren't already included
+        initialVerseIds.forEach((id: string) => {
+          if (!verseIdsToFetch.includes(id)) {
+            verseIdsToFetch.push(id);
+          }
+        });
+      }
+      
+      // Log the verse IDs we're fetching to help debugging
+      console.log('GraphViewScreen: Fetching verses with IDs:', verseIdsToFetch);
+      
+      // If no verse IDs specified, use some defaults
+      if (verseIdsToFetch.length === 0) {
+        // Only do this once
+        if (!hasLoadedDefaultVersesRef.current) {
+          // Fetch some popular verses
+          const popularReferences = [
+            { book: 'John', chapter: 3, verse: 16 },
+            { book: 'Psalm', chapter: 23, verse: 1 },
+            { book: 'Genesis', chapter: 1, verse: 1 }
+          ];
+          
+          for (const ref of popularReferences) {
+            const verse = await DatabaseService.getVerseByReference(
+              ref.book, 
+              ref.chapter, 
+              ref.verse
+            );
+            
+            if (verse) {
+              collectedVerses.push(verse);
+              verseIdsToFetch.push(verse.id);
+            }
+          }
+          
+          hasLoadedDefaultVersesRef.current = true;
+        }
+      } else {
+        // Fetch specified verses
+        const fetchedVerses = await DatabaseService.getVerses(undefined, verseIdsToFetch);
+        console.log(`GraphViewScreen: Fetched ${fetchedVerses.length} verses`);
+        collectedVerses = fetchedVerses;
+      }
+      
+      // Update state with collected verses
+      setVerses(collectedVerses);
+      
+      // Fetch all connections for the verses
+      const allConnections: Connection[] = [];
+      const relatedVerseIds = new Set<string>();
+      
+      for (const verseId of verseIdsToFetch) {
+        const verseConnections = await DatabaseService.getConnectionsForVerse(verseId);
+        console.log(`GraphViewScreen: Found ${verseConnections.length} connections for verse ${verseId}`);
+        
+        for (const connection of verseConnections) {
+          // Add connection if not already added
+          if (!allConnections.some(c => c.id === connection.id)) {
+            allConnections.push(connection);
+          }
+          
+          // Track related verse IDs
+          if (connection.sourceVerseId !== verseId) {
+            relatedVerseIds.add(connection.sourceVerseId);
+          }
+          if (connection.targetVerseId !== verseId) {
+            relatedVerseIds.add(connection.targetVerseId);
+          }
+        }
+      }
+      
+      console.log(`GraphViewScreen: Total connections: ${allConnections.length}`);
+      setConnections(allConnections);
+      
+      // Fetch related verses if any
+      const relatedVerseIdsArray = Array.from(relatedVerseIds).filter(
+        id => !verseIdsToFetch.includes(id)
+      );
+      
+      if (relatedVerseIdsArray.length > 0) {
+        console.log(`GraphViewScreen: Fetching ${relatedVerseIdsArray.length} related verses`);
+        const relatedVerses = await DatabaseService.getVerses(undefined, relatedVerseIdsArray);
+        // Add related verses to collected verses
+        setVerses(prev => [...prev, ...relatedVerses]);
+      }
+      
+      // Save the verse IDs we just loaded
+      lastLoadedVerseIdsRef.current = verseIdsToFetch;
+      
+      setIsLoading(false);
+    } catch (err) {
+      console.error('Error loading graph data:', err);
+      setError('Failed to load Bible data');
+      setIsLoading(false);
+    }
+  }, [initialVerseId, initialVerseIds, isNewData]);
   
   // Update the bibleGraphVerseIds whenever initialVerses changes - simplified to run only once per change
   useEffect(() => {
@@ -65,11 +304,15 @@ const GraphViewScreen: React.FC = () => {
   
   // Reset the processed flag only when initialVerseIds actually changes
   useEffect(() => {
-    const newIdsString = initialVerseIds && initialVerseIds.length > 0 
-      ? JSON.stringify([...initialVerseIds].sort())
-      : null;
+    const newIdsArray = initialVerseIds && initialVerseIds.length > 0 
+      ? [...initialVerseIds].sort()
+      : [];
       
-    if (newIdsString !== lastProcessedIdsRef.current) {
+    // Check if arrays are different by comparing their contents
+    const isDifferent = newIdsArray.length !== lastLoadedVerseIdsRef.current.length ||
+                      newIdsArray.some((id, index) => id !== lastLoadedVerseIdsRef.current[index]);
+    
+    if (isDifferent) {
       initialVersesProcessedRef.current = false;
     }
   }, [initialVerseIds]);
@@ -83,11 +326,14 @@ const GraphViewScreen: React.FC = () => {
       return;
     }
     
-    // Use a stable string representation for comparison
-    const currentIdsString = JSON.stringify([...initialVerseIds].sort());
+    // Use the actual array for comparison, not a string
+    const currentIdsArray = [...initialVerseIds].sort();
     
     // If we've already processed these exact IDs, don't reload
-    if (currentIdsString === lastProcessedIdsRef.current) {
+    const isSameArray = currentIdsArray.length === lastLoadedVerseIdsRef.current.length &&
+                      currentIdsArray.every((id, index) => id === lastLoadedVerseIdsRef.current[index]);
+    
+    if (isSameArray) {
       console.debug('These IDs were already processed, skipping fetch');
       return;
     }
@@ -107,8 +353,8 @@ const GraphViewScreen: React.FC = () => {
         console.debug(`Loaded ${verses.length} verses from ${initialVerseIds.length} IDs`);
         if (verses.length > 0) {
           setInitialVerses(verses);
-          // Store the processed IDs
-          lastProcessedIdsRef.current = currentIdsString;
+          // Store the processed IDs as array
+          lastLoadedVerseIdsRef.current = currentIdsArray;
         }
       } catch (error) {
         console.error('Error loading initial verses:', error);
@@ -119,7 +365,7 @@ const GraphViewScreen: React.FC = () => {
     };
     
     loadVerses();
-  }, [initialVerseIds]); // Removed initialVerses from dependencies
+  }, [initialVerseIds]);
   
   // Helper function to show notifications cross-platform
   const showNotification = (message: string, title?: string) => {
@@ -140,13 +386,13 @@ const GraphViewScreen: React.FC = () => {
   const {
     nodes,
     edges,
-    isLoading,
+    isLoading: bibleGraphLoading,
     isFetching,
     expandNode,
     currentVerseId,
     setCurrentVerseId,
     zoomToNode,
-    error
+    error: bibleGraphError
   } = useBibleGraph({
     initialVerseId,
     initialVerseIds: bibleGraphVerseIds
@@ -222,7 +468,7 @@ const GraphViewScreen: React.FC = () => {
     return (
       <View style={styles.errorContainer}>
         <Ionicons name="alert-circle-outline" size={48} color="#FF3B30" />
-        <Text style={styles.errorText}>Error: {error.message || String(error)}</Text>
+        <Text style={styles.errorText}>Error: {String(error)}</Text>
         <View style={styles.errorButtonContainer}>
           <TouchableOpacity style={styles.retryButton} onPress={handleRefresh}>
             <Text style={styles.retryButtonText}>{t('graph:retry')}</Text>

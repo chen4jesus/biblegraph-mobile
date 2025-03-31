@@ -21,7 +21,10 @@
     "pleaseCheckInternetConnection": "Please check your internet connection",
     "someFeaturesMayNotWorkInWebBrowsers": "Some features may not work in web browsers",
     "databasePerformance": "Due to performance reasons, database operations are limited to 100 records per query.",
-    "initializingDatabase": "Initializing Database..."
+    "initializingDatabase": "Initializing Database...",
+    "chooseVisualization": "Choose Visualization",
+    "selectVisualizationType": "Select a visualization type",
+    "selectedVerses": "Selected Verses"
   },
   "home": {
     "title": "Bible Graph",
@@ -37,7 +40,8 @@
     "settings": "Settings",
     "search": "Search",
     "tagsManagement": "Manage Tags",
-    "bible": "Bible"
+    "bible": "Bible",
+    "visualization": "Visualization"
   },
   "verses": {
     "chapter": "Chapter",
@@ -275,5 +279,10 @@
     "darkMode": "Dark Mode",
     "darkModeDescription": "Enable dark theme",
     "preferences": "Preferences"
-  }
+  },
+  "visualization": {
+    "title": "Visualization",
+    "graph": "Graph View",
+    "mindMap": "Mind Map"
+  } 
 } 
