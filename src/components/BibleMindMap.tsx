@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
-import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Dimensions, PanResponder, GestureResponderEvent, PanResponderGestureState, Animated, Platform } from 'react-native';
+import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Dimensions, PanResponder, GestureResponderEvent, PanResponderGestureState, Animated, Platform, Switch, TouchableWithoutFeedback } from 'react-native';
 import { Verse, Connection, ConnectionType, Note } from '../types/bible';
 import { Ionicons } from '@expo/vector-icons';
 import Svg, { Line } from 'react-native-svg';
@@ -104,9 +104,46 @@ const BibleMindMap: React.FC<BibleMindMapProps> = ({
   const [activeNodeId, setActiveNodeId] = useState<string | null>(null);
   const scrollViewRef = useRef<ScrollView>(null);
   const lastScrollPos = useRef({ x: 0, y: 0 });
+  const hasInitiallyCentered = useRef(false); // Track if initial centering has happened
   const [tooltipContent, setTooltipContent] = useState('');
   const [tooltipPosition, setTooltipPosition] = useState({ x: 0, y: 0 });
   const [tooltipVisible, setTooltipVisible] = useState(false);
+  
+  // Control panel states
+  const [zoomLevel, setZoomLevel] = useState(1);
+  const [showLabels, setShowLabels] = useState(true);
+  const [showMinimap, setShowMinimap] = useState(true);
+  const [scrollPosition, setScrollPosition] = useState({ x: 0, y: 0 });
+  const [viewportSize, setViewportSize] = useState({ width: 0, height: 0 });
+  const [controlsExpanded, setControlsExpanded] = useState(false);
+  const [minimapContainerSize, setMinimapContainerSize] = useState({ width: 0, height: 0 });
+
+  // Track scroll position for minimap
+  const handleScroll = (event: any) => {
+    const { contentOffset, layoutMeasurement, contentSize } = event.nativeEvent;
+    
+    // Debug scroll info
+    if (__DEV__) {
+      console.log('Scroll position:', {
+        x: contentOffset.x,
+        y: contentOffset.y,
+        viewportWidth: layoutMeasurement.width,
+        viewportHeight: layoutMeasurement.height,
+        contentWidth: contentSize.width,
+        contentHeight: contentSize.height,
+      });
+    }
+    
+    setScrollPosition({
+      x: contentOffset.x,
+      y: contentOffset.y
+    });
+    setViewportSize({
+      width: layoutMeasurement.width,
+      height: layoutMeasurement.height
+    });
+    lastScrollPos.current = contentOffset;
+  };
 
   // Transform verses, notes, and connections into nodes and edges with positions
   const transformData = useCallback(() => {
@@ -125,14 +162,10 @@ const BibleMindMap: React.FC<BibleMindMapProps> = ({
       // Create a Map to track node IDs we've already seen
       const uniqueIds = new Map<string, number>();
       
-      // Calculate layout dimensions based on number of nodes
+      // Initial grid calculation for node positioning
       const nodeCount = verses.length + (notes?.length || 0);
       const columns = Math.ceil(Math.sqrt(nodeCount));
       const rows = Math.ceil(nodeCount / columns);
-      const mapWidth = Math.max(screenWidth * 2, columns * 200);
-      const mapHeight = Math.max(screenHeight * 2, rows * 150);
-      
-      setMapSize({ width: mapWidth, height: mapHeight });
 
       // Create nodes from verses with positions in a grid layout
       const verseNodes: Node[] = verses.map((verse, index) => {
@@ -155,8 +188,8 @@ const BibleMindMap: React.FC<BibleMindMapProps> = ({
         return {
           id: uniqueId,
           label: `${verse.book} ${verse.chapter}:${verse.verse}`,
-          x: 100 + col * 200,
-          y: 100 + row * 150,
+          x: 100 + col * 250, // More spacing between nodes
+          y: 100 + row * 200, // More spacing between nodes
           type: 'verse',
           data: {
             text: verse.text || '',
@@ -192,8 +225,8 @@ const BibleMindMap: React.FC<BibleMindMapProps> = ({
         return {
           id: uniqueId,
           label: noteLabel,
-          x: 100 + col * 200,
-          y: 100 + row * 150,
+          x: 100 + col * 250, // More spacing between nodes
+          y: 100 + row * 200, // More spacing between nodes
           type: 'note',
           data: {
             text: note.content || '',
@@ -205,6 +238,33 @@ const BibleMindMap: React.FC<BibleMindMapProps> = ({
 
       // Combine all nodes
       const newNodes = [...verseNodes, ...noteNodes];
+
+      // Calculate the actual bounding box of all nodes
+      let minX = Number.MAX_VALUE;
+      let minY = Number.MAX_VALUE;
+      let maxX = Number.MIN_VALUE;
+      let maxY = Number.MIN_VALUE;
+
+      newNodes.forEach(node => {
+        minX = Math.min(minX, node.x - 80); // Account for node width
+        minY = Math.min(minY, node.y - 40); // Account for node height
+        maxX = Math.max(maxX, node.x + 80);
+        maxY = Math.max(maxY, node.y + 40);
+      });
+
+      // Calculate map dimensions based on the bounding box with margins
+      const margin = 300; // Increased margin around all nodes for better scrolling
+      
+      // Make sure the map is always large enough for free scrolling in any direction
+      // Use at least 2x the screen size to ensure there's always room to scroll
+      const contentWidth = maxX - minX + (2 * margin);
+      const contentHeight = maxY - minY + (2 * margin);
+      
+      const mapWidth = Math.max(screenWidth * 2, contentWidth);
+      const mapHeight = Math.max(screenHeight * 2, contentHeight);
+      
+      console.log(`BibleMindMap: Calculated map size: ${mapWidth}x${mapHeight} for ${newNodes.length} nodes`);
+      setMapSize({ width: mapWidth, height: mapHeight });
 
       // Update connection references if needed based on node map
       const nodeMap = new Map<string, string>();
@@ -327,8 +387,33 @@ const BibleMindMap: React.FC<BibleMindMapProps> = ({
   // Run transformData when verses, notes, or connections change
   useEffect(() => {
     console.log(`BibleMindMap: Received ${verses.length} verses, ${notes?.length || 0} notes, and ${connections.length} connections`);
+    // Reset centering flag when data changes
+    hasInitiallyCentered.current = false;
     transformData();
   }, [verses, notes, connections, transformData]);
+
+  // Center view when map is first loaded or resized
+  useEffect(() => {
+    // Only center view if we have a valid map size and nodes, and haven't centered yet
+    if (mapSize.width > 0 && mapSize.height > 0 && nodes.length > 0 && !isLoading && !hasInitiallyCentered.current) {
+      // Use requestAnimationFrame to ensure the ScrollView has rendered
+      requestAnimationFrame(() => {
+        if (scrollViewRef.current) {
+          // Calculate center position
+          const centerX = Math.max(0, (mapSize.width / 2) - (viewportSize.width / 2));
+          const centerY = Math.max(0, (mapSize.height / 2) - (viewportSize.height / 2));
+          
+          console.log('BibleMindMap: Centering initial view at', centerX, centerY);
+          scrollViewRef.current.scrollTo({
+            x: centerX,
+            y: centerY,
+            animated: false // Don't animate first centering
+          });
+          hasInitiallyCentered.current = true;
+        }
+      });
+    }
+  }, [mapSize, nodes.length, isLoading]);
 
   // Function to determine if a node has any connections
   const hasConnections = useCallback((nodeId: string): boolean => {
@@ -351,15 +436,13 @@ const BibleMindMap: React.FC<BibleMindMapProps> = ({
   const createPanResponder = (nodeId: string) => {
     return PanResponder.create({
       onStartShouldSetPanResponder: () => true,
-      onMoveShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: (_, gestureState) => {
+        // Only become the responder if the gesture is significant
+        return Math.abs(gestureState.dx) > 2 || Math.abs(gestureState.dy) > 2;
+      },
       onPanResponderGrant: () => {
         setIsDragging(true);
         setActiveNodeId(nodeId);
-
-        // Save current scroll position
-        if (scrollViewRef.current) {
-          scrollViewRef.current.flashScrollIndicators();
-        }
       },
       onPanResponderMove: (event: GestureResponderEvent, gestureState: PanResponderGestureState) => {
         const node = nodes.find(n => n.id === nodeId);
@@ -383,6 +466,8 @@ const BibleMindMap: React.FC<BibleMindMapProps> = ({
         setIsDragging(false);
         setActiveNodeId(null);
       },
+      // Allow the scroll view to capture scroll events and capture simultaneously
+      onPanResponderTerminationRequest: () => true,
     });
   };
 
@@ -539,24 +624,113 @@ const BibleMindMap: React.FC<BibleMindMapProps> = ({
           <TouchableOpacity
             {...textContainerProps}
           >
-            <Text 
-              style={styles.nodeText} 
-              numberOfLines={2}
+          <Text 
+            style={styles.nodeText} 
+            numberOfLines={2}
               selectable={false}
-            >
-              {node.data.text}
-            </Text>
+          >
+            {node.data.text}
+          </Text>
           </TouchableOpacity>
         )}
       </View>
     );
   }, [onNodeSelect, isDragging, activeNodeId, nodes, mapSize.width, mapSize.height, showTooltip, hideTooltip]);
 
+  // Handle zoom controls
+  const handleZoomIn = () => {
+    // Use smaller zoom increments on web for more precise control
+    const increment = Platform.OS === 'web' ? 0.1 : 0.25;
+    const newZoom = Math.min(zoomLevel + increment, 2);
+    setZoomLevel(newZoom);
+    
+    // Update state only - the ScrollView will use zoomLevel in its style
+    // setNativeProps is not available in web environments
+    if (Platform.OS !== 'web' && scrollViewRef.current && 'setNativeProps' in scrollViewRef.current) {
+      // Only call this method on native platforms where it's supported
+      (scrollViewRef.current as any).setNativeProps({
+        maximumZoomScale: newZoom,
+        zoomScale: newZoom
+      });
+    }
+  };
+
+  const handleZoomOut = () => {
+    // Use smaller zoom increments on web for more precise control
+    const increment = Platform.OS === 'web' ? 0.1 : 0.25;
+    const newZoom = Math.max(zoomLevel - increment, 0.5);
+    setZoomLevel(newZoom);
+    
+    // Update state only - the ScrollView will use zoomLevel in its style
+    // setNativeProps is not available in web environments
+    if (Platform.OS !== 'web' && scrollViewRef.current && 'setNativeProps' in scrollViewRef.current) {
+      // Only call this method on native platforms where it's supported
+      (scrollViewRef.current as any).setNativeProps({
+        zoomScale: newZoom
+      });
+    }
+  };
+
+  const handleResetZoom = () => {
+    setZoomLevel(1);
+    
+    // Update state only - the ScrollView will use zoomLevel in its style
+    // setNativeProps is not available in web environments
+    if (Platform.OS !== 'web' && scrollViewRef.current && 'setNativeProps' in scrollViewRef.current) {
+      // Only call this method on native platforms where it's supported
+      (scrollViewRef.current as any).setNativeProps({
+        zoomScale: 1
+      });
+    }
+  };
+
+  // Function to center the view
+  const handleCenterView = useCallback(() => {
+    if (scrollViewRef.current && mapSize.width > 0 && mapSize.height > 0) {
+      const centerX = Math.max(0, (mapSize.width / 2) - (viewportSize.width / 2));
+      const centerY = Math.max(0, (mapSize.height / 2) - (viewportSize.height / 2));
+      
+      console.log('BibleMindMap: Manually centering view at', centerX, centerY);
+      scrollViewRef.current.scrollTo({
+        x: centerX,
+        y: centerY,
+        animated: true // Animate when manually centering
+      });
+    }
+  }, [mapSize, viewportSize]);
+
+  // Handle minimap navigation
+  const handleMinimapPress = (event: GestureResponderEvent) => {
+    if (scrollViewRef.current && minimapContainerSize.width > 0 && minimapContainerSize.height > 0) {
+      // Get touch position relative to minimap
+      const { locationX, locationY } = event.nativeEvent;
+      
+      // Calculate ratio between minimap and full map
+      const xRatio = mapSize.width / minimapContainerSize.width;
+      const yRatio = mapSize.height / minimapContainerSize.height;
+      
+      // Calculate target scroll position
+      const targetX = locationX * xRatio - (viewportSize.width / 2);
+      const targetY = locationY * yRatio - (viewportSize.height / 2);
+      
+      console.log('BibleMindMap: Navigating via minimap to', targetX, targetY);
+      
+      // Scroll to position
+      scrollViewRef.current.scrollTo({
+        x: Math.max(0, Math.min(mapSize.width - viewportSize.width, targetX)),
+        y: Math.max(0, Math.min(mapSize.height - viewportSize.height, targetY)),
+        animated: true
+      });
+    }
+  };
+
   // Show loading state
   if (isLoading) {
     return (
       <View style={styles.loadingContainer}>
-        <Text>Loading mind map...</Text>
+        <Ionicons name="map-outline" size={40} color="#4285F4" />
+        <Text style={styles.loadingText}>Calculating mind map layout...</Text>
+        <Text style={styles.loadingSubtext}>Optimizing {verses.length} verses and {notes?.length || 0} notes</Text>
       </View>
     );
   }
@@ -578,57 +752,71 @@ const BibleMindMap: React.FC<BibleMindMapProps> = ({
         style={styles.container}
         contentContainerStyle={[
           styles.contentContainer, 
-          { width: mapSize.width, height: mapSize.height }
+          { 
+            width: mapSize.width,
+            height: mapSize.height,
+            // Add padding to ensure enough space for scrolling
+            paddingBottom: 200,
+            paddingRight: 200
+          },
+          // Apply transform scale on web platform directly
+          Platform.OS === 'web' ? {
+            transform: [{ scale: zoomLevel }],
+            transformOrigin: 'top left',
+          } : null
         ]}
-        horizontal={true}
+        nestedScrollEnabled={true}
         maximumZoomScale={2}
         minimumZoomScale={0.5}
         showsHorizontalScrollIndicator={true}
         showsVerticalScrollIndicator={true}
-        scrollEnabled={!isDragging}
+        scrollEnabled={true} // Always enable scrolling
+        onScroll={handleScroll}
+        scrollEventThrottle={16}
+        directionalLockEnabled={false} // Ensure both directions can scroll
       >
         <Svg width={mapSize.width} height={mapSize.height}>
           {edges.map((edge, index) => {
-            const sourceNode = nodes.find(n => n.id === edge.source);
-            const targetNode = nodes.find(n => n.id === edge.target);
+      const sourceNode = nodes.find(n => n.id === edge.source);
+      const targetNode = nodes.find(n => n.id === edge.target);
 
-            if (!sourceNode || !targetNode) return null;
+      if (!sourceNode || !targetNode) return null;
 
-            return (
-              <Line
-                key={`edge-${edge.id}-${index}`}
-                x1={sourceNode.x}
-                y1={sourceNode.y}
-                x2={targetNode.x}
-                y2={targetNode.y}
-                stroke={edge.color}
-                strokeWidth="2"
-              />
-            );
+      return (
+        <Line
+          key={`edge-${edge.id}-${index}`}
+          x1={sourceNode.x}
+          y1={sourceNode.y}
+          x2={targetNode.x}
+          y2={targetNode.y}
+          stroke={edge.color}
+          strokeWidth="2"
+        />
+      );
           })}
         </Svg>
-        {edges.map((edge, index) => {
-          const sourceNode = nodes.find(n => n.id === edge.source);
-          const targetNode = nodes.find(n => n.id === edge.target);
+        {showLabels && edges.map((edge, index) => {
+      const sourceNode = nodes.find(n => n.id === edge.source);
+      const targetNode = nodes.find(n => n.id === edge.target);
 
-          if (!sourceNode || !targetNode) return null;
+      if (!sourceNode || !targetNode) return null;
 
-          // Calculate line midpoint for the touch target
-          const midX = (sourceNode.x + targetNode.x) / 2;
-          const midY = (sourceNode.y + targetNode.y) / 2;
+      // Calculate line midpoint for the touch target
+      const midX = (sourceNode.x + targetNode.x) / 2;
+      const midY = (sourceNode.y + targetNode.y) / 2;
 
-          return (
-            <TouchableOpacity
-              key={`touch-${edge.id}-${index}`}
-              style={[
-                styles.edgeTouchTarget,
-                {
-                  left: midX - 30,
-                  top: midY - 15,
-                }
-              ]}
-              onPress={() => onConnectionSelect && onConnectionSelect(edge.id)}
-            >
+      return (
+        <TouchableOpacity
+          key={`touch-${edge.id}-${index}`}
+          style={[
+            styles.edgeTouchTarget,
+            {
+              left: midX - 30,
+              top: midY - 15,
+            }
+          ]}
+          onPress={() => onConnectionSelect && onConnectionSelect(edge.id)}
+        >
               <Text style={[
                 styles.edgeLabel,
                 { color: edge.color } 
@@ -641,12 +829,145 @@ const BibleMindMap: React.FC<BibleMindMapProps> = ({
           .map((node, index) => renderNode(node, index))}
       </ScrollView>
       
+      {/* Control Panel */}
+      <View style={styles.controlPanel}>
+        <TouchableOpacity 
+          style={styles.controlToggle} 
+          onPress={() => setControlsExpanded(!controlsExpanded)}
+        >
+          <Ionicons 
+            name={controlsExpanded ? "chevron-down" : "chevron-up"} 
+            size={24} 
+            color="#333" 
+          />
+        </TouchableOpacity>
+        
+        {controlsExpanded && (
+          <View style={styles.controlContent}>
+            {/* Zoom Controls */}
+            <View style={styles.controlGroup}>
+              <Text style={styles.controlLabel}>Zoom</Text>
+              <View style={styles.controlButtons}>
+                <TouchableOpacity 
+                  style={styles.controlButton} 
+                  onPress={handleZoomOut}
+                >
+                  <Ionicons name="remove" size={20} color="#333" />
+                </TouchableOpacity>
+                <Text style={styles.zoomText}>{Math.round(zoomLevel * 100)}%</Text>
+                <TouchableOpacity 
+                  style={styles.controlButton} 
+                  onPress={handleZoomIn}
+                >
+                  <Ionicons name="add" size={20} color="#333" />
+                </TouchableOpacity>
+                <TouchableOpacity 
+                  style={styles.controlButton} 
+                  onPress={handleResetZoom}
+                >
+                  <Ionicons name="refresh" size={20} color="#333" />
+                </TouchableOpacity>
+              </View>
+              {Platform.OS === 'web' && (
+                <Text style={styles.controlNote}>
+                  You can also use Ctrl+Mouse wheel to zoom
+                </Text>
+              )}
+            </View>
+            
+            {/* Center View Button */}
+            <TouchableOpacity 
+              style={styles.controlFullButton} 
+              onPress={handleCenterView}
+            >
+              <Ionicons name="locate" size={16} color="#333" />
+              <Text style={styles.controlButtonText}>Center View</Text>
+            </TouchableOpacity>
+            
+            {/* Show Labels Toggle */}
+            <View style={styles.controlRow}>
+              <Text style={styles.controlLabel}>Show Labels</Text>
+              <Switch
+                value={showLabels}
+                onValueChange={setShowLabels}
+                trackColor={{ false: "#ccc", true: "#4285F4" }}
+              />
+            </View>
+            
+            {/* Show Minimap Toggle */}
+            <View style={styles.controlRow}>
+              <Text style={styles.controlLabel}>Show Minimap</Text>
+              <Switch
+                value={showMinimap}
+                onValueChange={setShowMinimap}
+                trackColor={{ false: "#ccc", true: "#4285F4" }}
+              />
+            </View>
+          </View>
+        )}
+      </View>
+      
+      {/* Minimap for navigation */}
+      {showMinimap && (
+        <View style={styles.minimapContainer}>
+          <TouchableWithoutFeedback onPress={handleMinimapPress}>
+            <View 
+              style={styles.minimap}
+              onLayout={(e) => {
+                setMinimapContainerSize({
+                  width: e.nativeEvent.layout.width,
+                  height: e.nativeEvent.layout.height
+                });
+              }}
+            >
+              {/* Miniature version of the nodes */}
+              {nodes.map((node) => (
+                <View
+                  key={`minimap-${node.id}`}
+                  style={[
+                    styles.minimapNode,
+                    {
+                      left: (node.x / mapSize.width) * minimapContainerSize.width,
+                      top: (node.y / mapSize.height) * minimapContainerSize.height,
+                      backgroundColor: node.type === 'verse' ? '#3498db' : '#e74c3c'
+                    },
+                  ]}
+                />
+              ))}
+              
+              {/* Viewport indicator */}
+              <View
+                style={[
+                  styles.minimapViewport,
+                  {
+                    left: (scrollPosition.x / mapSize.width) * minimapContainerSize.width,
+                    top: (scrollPosition.y / mapSize.height) * minimapContainerSize.height,
+                    width: (viewportSize.width / mapSize.width) * minimapContainerSize.width,
+                    height: (viewportSize.height / mapSize.height) * minimapContainerSize.height,
+                  },
+                ]}
+              />
+            </View>
+          </TouchableWithoutFeedback>
+          <Text style={styles.minimapHint}>Tap to navigate</Text>
+        </View>
+      )}
+      
       {/* Tooltip for displaying full content */}
       <Tooltip 
         content={tooltipContent}
         position={tooltipPosition}
         visible={tooltipVisible}
       />
+      
+      {/* Center view button */}
+      <TouchableOpacity 
+        style={styles.centerButton} 
+        onPress={handleCenterView}
+        activeOpacity={0.7}
+      >
+        <Ionicons name="locate" size={24} color="#fff" />
+      </TouchableOpacity>
     </View>
   );
 };
@@ -655,14 +976,17 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#f8f9fa',
+    overflow: 'scroll',
   },
   contentContainer: {
     position: 'relative',
+    padding: 20,
   },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    backgroundColor: '#f8f9fa',
   },
   errorContainer: {
     flex: 1,
@@ -762,6 +1086,153 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 14,
     lineHeight: 20,
+  },
+  controlPanel: {
+    position: 'absolute',
+    top: 10,
+    right: 10,
+    backgroundColor: 'white',
+    borderRadius: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+    overflow: 'hidden',
+    zIndex: 100,
+  },
+  controlToggle: {
+    padding: 8,
+    alignItems: 'center',
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
+  },
+  controlContent: {
+    padding: 10,
+    width: 180,
+  },
+  controlGroup: {
+    marginBottom: 10,
+  },
+  controlLabel: {
+    fontSize: 12,
+    fontWeight: 'bold',
+    marginBottom: 4,
+    color: '#666',
+  },
+  controlButtons: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  controlButton: {
+    backgroundColor: '#f0f0f0',
+    borderRadius: 4,
+    padding: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  zoomText: {
+    fontSize: 12,
+    fontWeight: 'bold',
+    width: 40,
+    textAlign: 'center',
+  },
+  controlFullButton: {
+    backgroundColor: '#f0f0f0',
+    borderRadius: 4,
+    padding: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 10,
+  },
+  controlButtonText: {
+    fontSize: 12,
+    fontWeight: 'bold',
+    marginLeft: 6,
+  },
+  controlRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  minimapContainer: {
+    position: 'absolute',
+    bottom: 10,
+    right: 10,
+    backgroundColor: 'rgba(255, 255, 255, 0.8)',
+    borderRadius: 4,
+    padding: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    elevation: 3,
+    zIndex: 100,
+  },
+  minimap: {
+    width: '100%',
+    height: 120,
+    backgroundColor: 'rgba(240, 240, 240, 0.7)',
+    borderRadius: 8,
+    position: 'relative',
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: '#ccc',
+  },
+  minimapNode: {
+    width: 4,
+    height: 4,
+    borderRadius: 2,
+    position: 'absolute',
+    margin: -2,
+  },
+  minimapViewport: {
+    position: 'absolute',
+    borderWidth: 1,
+    borderColor: 'rgba(0, 0, 0, 0.5)',
+    backgroundColor: 'rgba(0, 0, 0, 0.1)',
+  },
+  minimapHint: {
+    fontSize: 10,
+    color: '#666',
+    textAlign: 'center',
+    marginTop: 4,
+  },
+  controlNote: {
+    fontSize: 10,
+    color: '#666',
+    textAlign: 'center',
+    marginTop: 5,
+  },
+  loadingText: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginTop: 12,
+    color: '#333',
+  },
+  loadingSubtext: {
+    fontSize: 14,
+    color: '#666',
+    marginTop: 8,
+  },
+  centerButton: {
+    position: 'absolute',
+    bottom: 20,
+    left: 20,
+    backgroundColor: '#4a90e2',
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    justifyContent: 'center',
+    alignItems: 'center',
+    elevation: 5,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
   },
 });
 
