@@ -1,5 +1,5 @@
-import React, { useEffect, useState, useCallback } from 'react';
-import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Dimensions } from 'react-native';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
+import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Dimensions, PanResponder, GestureResponderEvent, PanResponderGestureState } from 'react-native';
 import { Verse, Connection, ConnectionType, Note } from '../types/bible';
 import { Ionicons } from '@expo/vector-icons';
 import Svg, { Line } from 'react-native-svg';
@@ -57,6 +57,10 @@ const BibleMindMap: React.FC<BibleMindMapProps> = ({
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [mapSize, setMapSize] = useState({ width: 0, height: 0 });
+  const [isDragging, setIsDragging] = useState(false);
+  const [activeNodeId, setActiveNodeId] = useState<string | null>(null);
+  const scrollViewRef = useRef<ScrollView>(null);
+  const lastScrollPos = useRef({ x: 0, y: 0 });
 
   // Transform verses, notes, and connections into nodes and edges with positions
   const transformData = useCallback(() => {
@@ -211,20 +215,23 @@ const BibleMindMap: React.FC<BibleMindMapProps> = ({
         };
       }).filter(edge => edge !== null) as Edge[];
 
-      // If we have nodes but no edges and more than one node, create some default edges
-      if (newNodes.length > 1 && newEdges.length === 0) {
-        console.log('BibleMindMap: Creating default layout for disconnected nodes');
-        
-        // First connect verses with their notes
-        noteNodes.forEach(noteNode => {
-          if (noteNode.data.verseId) {
-            // Find the verse node for this note
-            const verseNode = verseNodes.find(v => 
-              v.id === noteNode.data.verseId || 
-              v.id.startsWith(noteNode.data.verseId + '-dup')
+      // Always create edges between notes and their verses
+      noteNodes.forEach(noteNode => {
+        if (noteNode.data.verseId) {
+          // Find the verse node for this note
+          const verseNode = verseNodes.find(v => 
+            v.id === noteNode.data.verseId || 
+            v.id.startsWith(noteNode.data.verseId + '-dup')
+          );
+          
+          if (verseNode) {
+            // Check if this connection already exists in newEdges
+            const connectionExists = newEdges.some(edge => 
+              (edge.source === verseNode.id && edge.target === noteNode.id) ||
+              (edge.source === noteNode.id && edge.target === verseNode.id)
             );
             
-            if (verseNode) {
+            if (!connectionExists) {
               newEdges.push({
                 id: `note-edge-${noteNode.id}`,
                 source: verseNode.id,
@@ -238,23 +245,26 @@ const BibleMindMap: React.FC<BibleMindMapProps> = ({
               });
             }
           }
-        });
+        }
+      });
+
+      // If we have nodes but no edges and more than one node, create some default edges
+      if (newNodes.length > 1 && newEdges.length === 0) {
+        console.log('BibleMindMap: Creating default layout for disconnected nodes');
         
         // If we still have no edges, create a chain layout connecting all nodes
-        if (newEdges.length === 0) {
-          for (let i = 0; i < newNodes.length - 1; i++) {
-            newEdges.push({
-              id: `default-edge-${i}`,
-              source: newNodes[i].id,
-              target: newNodes[i + 1].id,
-              label: ConnectionType.THEME,
-              color: '#dddddd',
-              data: {
-                type: ConnectionType.THEME,
-                description: 'Shown together'
-              }
-            });
-          }
+        for (let i = 0; i < newNodes.length - 1; i++) {
+          newEdges.push({
+            id: `default-edge-${i}`,
+            source: newNodes[i].id,
+            target: newNodes[i + 1].id,
+            label: ConnectionType.THEME,
+            color: '#dddddd',
+            data: {
+              type: ConnectionType.THEME,
+              description: 'Shown together'
+            }
+          });
         }
       }
 
@@ -274,10 +284,61 @@ const BibleMindMap: React.FC<BibleMindMapProps> = ({
     transformData();
   }, [verses, notes, connections, transformData]);
 
+  // Handle node movement
+  const updateNodePosition = (nodeId: string, newX: number, newY: number) => {
+    setNodes(prevNodes => {
+      return prevNodes.map(node => {
+        if (node.id === nodeId) {
+          return { ...node, x: newX, y: newY };
+        }
+        return node;
+      });
+    });
+  };
+
+  // Create pan responder for handling node drag events
+  const createPanResponder = (nodeId: string) => {
+    return PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: () => true,
+      onPanResponderGrant: () => {
+        setIsDragging(true);
+        setActiveNodeId(nodeId);
+
+        // Save current scroll position
+        if (scrollViewRef.current) {
+          scrollViewRef.current.flashScrollIndicators();
+        }
+      },
+      onPanResponderMove: (event: GestureResponderEvent, gestureState: PanResponderGestureState) => {
+        const node = nodes.find(n => n.id === nodeId);
+        if (!node) return;
+
+        // Calculate new position
+        const newX = node.x + gestureState.dx;
+        const newY = node.y + gestureState.dy;
+        
+        // Ensure node stays within bounds
+        const boundedX = Math.max(80, Math.min(mapSize.width - 80, newX));
+        const boundedY = Math.max(40, Math.min(mapSize.height - 40, newY));
+
+        updateNodePosition(nodeId, boundedX, boundedY);
+      },
+      onPanResponderRelease: () => {
+        setIsDragging(false);
+        setActiveNodeId(null);
+      },
+      onPanResponderTerminate: () => {
+        setIsDragging(false);
+        setActiveNodeId(null);
+      },
+    });
+  };
+
   // Render each node (verse, note, or theme)
   const renderNode = useCallback((node: Node, index: number) => {
     const handlePress = () => {
-      if (onNodeSelect) {
+      if (!isDragging && onNodeSelect) {
         onNodeSelect(node.id, node.type);
       }
     };
@@ -296,8 +357,10 @@ const BibleMindMap: React.FC<BibleMindMapProps> = ({
       }
     };
 
+    const panResponder = createPanResponder(node.id);
+
     return (
-      <TouchableOpacity
+      <View
         key={`node-${node.id}-${index}`}
         style={[
           styles.node,
@@ -308,25 +371,33 @@ const BibleMindMap: React.FC<BibleMindMapProps> = ({
                             node.type === 'theme' ? '#f0f8ff' : '#fff9f0',
             borderColor: node.type === 'verse' ? '#4285F4' : 
                         node.type === 'theme' ? '#34C759' : '#FF9500',
+            zIndex: activeNodeId === node.id ? 100 : 10,
+            elevation: activeNodeId === node.id ? 10 : 3,
           }
         ]}
-        onPress={handlePress}
+        {...panResponder.panHandlers}
       >
-        <View style={styles.nodeHeader}>
-          {getNodeIcon()}
-          <Text style={styles.nodeLabel} numberOfLines={1}>{node.label}</Text>
-        </View>
-        {node.data.text && (
-          <Text 
-            style={styles.nodeText} 
-            numberOfLines={2}
-          >
-            {node.data.text}
-          </Text>
-        )}
-      </TouchableOpacity>
+        <TouchableOpacity
+          onPress={handlePress}
+          style={styles.nodeContent}
+          activeOpacity={0.8}
+        >
+          <View style={styles.nodeHeader}>
+            {getNodeIcon()}
+            <Text style={styles.nodeLabel} numberOfLines={1}>{node.label}</Text>
+          </View>
+          {node.data.text && (
+            <Text 
+              style={styles.nodeText} 
+              numberOfLines={2}
+            >
+              {node.data.text}
+            </Text>
+          )}
+        </TouchableOpacity>
+      </View>
     );
-  }, [onNodeSelect]);
+  }, [onNodeSelect, isDragging, activeNodeId, nodes, mapSize.width, mapSize.height]);
 
   // Show loading state
   if (isLoading) {
@@ -349,6 +420,7 @@ const BibleMindMap: React.FC<BibleMindMapProps> = ({
 
   return (
     <ScrollView 
+      ref={scrollViewRef}
       style={styles.container}
       contentContainerStyle={[
         styles.contentContainer, 
@@ -359,6 +431,7 @@ const BibleMindMap: React.FC<BibleMindMapProps> = ({
       minimumZoomScale={0.5}
       showsHorizontalScrollIndicator={true}
       showsVerticalScrollIndicator={true}
+      scrollEnabled={!isDragging}
     >
       <Svg width={mapSize.width} height={mapSize.height}>
         {edges.map((edge, index) => {
@@ -450,6 +523,9 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 3,
+  },
+  nodeContent: {
+    width: '100%',
   },
   nodeHeader: {
     flexDirection: 'row',

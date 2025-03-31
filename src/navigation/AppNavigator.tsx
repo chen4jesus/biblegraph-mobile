@@ -387,7 +387,7 @@ const AppNavigator: React.FC = () => {
               <Stack.Screen 
                 name="MindMap" 
                 component={MindMapScreen}
-                options={{ title: t('mindMap') }}
+                options={{ title: t('visualization:mindMap') }}
               />
             </>
           )}
