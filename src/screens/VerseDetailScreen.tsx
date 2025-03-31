@@ -36,8 +36,18 @@ const SHOW_LABELS_KEY = '@biblegraph:show_connection_labels';
 
 // Tag colors for random assignment
 const TAG_COLORS = [
-  '#FF6B6B', '#4ECDC4', '#FFD166', '#06D6A0', '#118AB2', 
-  '#EF476F', '#FFC43D', '#1B9AAA', '#6F2DBD', '#84BC9C'
+  '#8B4513', '#2E8B57', '#9932CC', '#FF69B4', '#4682B4',
+  '#DC143C', '#20B2AA', '#FF8C00', '#9370DB', '#3CB371',
+  '#FF1493', '#00CED1', '#FFA07A', '#7B68EE', '#32CD32',
+  '#FF4500', '#48D1CC', '#DDA0DD', '#6495ED', '#98FB98',
+  '#FF0000', '#40E0D0', '#FA8072', '#483D8B', '#90EE90',
+  '#FF6347', '#00FA9A', '#FFB6C1', '#4169E1', '#87CEEB',
+  '#FF7F50', '#66CDAA', '#DB7093', '#1E90FF', '#7FFFD4',
+  '#CD5C5C', '#00FF7F', '#FFE4E1', '#0000FF', '#E0FFFF',
+  '#F08080', '#7CFC00', '#FFC0CB', '#0000CD', '#AFEEEE',
+  '#FA8072', '#7FFF00', '#FFB6C1', '#000080', '#B0E0E6',
+  '#E9967A', '#ADFF2F', '#FF69B4', '#00008B', '#87CEFA',
+  '#FFA07A', '#32CD32', '#FF1493', '#191970', '#ADD8E6'
 ];
 
 // Add this after the SHOW_LABELS_KEY constant

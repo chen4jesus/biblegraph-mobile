@@ -51,7 +51,7 @@ const MainTabs = () => {
             if (route.name === 'Home') {
               iconName = focused ? 'home' : 'home-outline';
             } else if (route.name === 'Graph') {
-              iconName = focused ? 'git-network' : 'git-network-outline';
+              iconName = focused ? 'logo-electron' : 'logo-electron';
             } else if (route.name === 'Notes') {
               iconName = focused ? 'document-text' : 'document-text-outline';
             } else if (route.name === 'Profile') {
@@ -162,7 +162,7 @@ const MainTabs = () => {
                 navigation.navigate('GraphView' as never);
               }}
             >
-              <Ionicons name="git-network" size={24} color="#007AFF" />
+              <Ionicons name="git-pull-request-outline" size={24} color="#007AFF" />
               <Text style={styles.modalOptionText}>{t('visualization:graph')}</Text>
             </TouchableOpacity>
             
@@ -173,7 +173,7 @@ const MainTabs = () => {
                 navigation.navigate('MindMap' as never);
               }}
             >
-              <Ionicons name="git-branch-outline" size={24} color="#007AFF" />
+              <Ionicons name="map-outline" size={24} color="#007AFF" />
               <Text style={styles.modalOptionText}>{t('visualization:mindMap')}</Text>
             </TouchableOpacity>
           </View>

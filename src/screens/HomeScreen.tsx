@@ -347,7 +347,7 @@ const HomeScreen: React.FC = () => {
           style={styles.actionButton}
           onPress={showVisualizationOptions}
         >
-          <Ionicons name="git-network-outline" size={24} color="#007AFF" />
+          <Ionicons name="logo-electron" size={24} color="#007AFF" />
           <Text style={styles.actionText}>{t('navigation:visualization')}</Text>
         </TouchableOpacity>
         
@@ -419,7 +419,7 @@ const HomeScreen: React.FC = () => {
                 navigation.navigate('GraphView', { verseIds: [] });
               }}
             >
-              <Ionicons name="git-network" size={24} color="#007AFF" />
+              <Ionicons name="git-pull-request-outline" size={24} color="#007AFF" />
               <Text style={styles.modalOptionText}>{t('visualization:graph')}</Text>
             </TouchableOpacity>
             
@@ -430,7 +430,7 @@ const HomeScreen: React.FC = () => {
                 navigateToMindMap();
               }}
             >
-              <Ionicons name="git-branch-outline" size={24} color="#007AFF" />
+              <Ionicons name="map-outline" size={24} color="#007AFF" />
               <Text style={styles.modalOptionText}>{t('visualization:mindMap')}</Text>
             </TouchableOpacity>
           </View>
