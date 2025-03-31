@@ -45,11 +45,13 @@ interface Edge {
 interface TooltipProps {
   content: string;
   position: { x: number; y: number };
+  nodePosition: { x: number; y: number };
   visible: boolean;
+  isBelow?: boolean;
   maxWidth?: number;
 }
 
-const Tooltip: React.FC<TooltipProps> = ({ content, position, visible, maxWidth = 300 }) => {
+const Tooltip: React.FC<TooltipProps> = ({ content, position, nodePosition, visible, isBelow = false, maxWidth = 300 }) => {
   const opacity = useRef(new Animated.Value(0)).current;
   
   useEffect(() => {
@@ -61,6 +63,16 @@ const Tooltip: React.FC<TooltipProps> = ({ content, position, visible, maxWidth 
   }, [visible, opacity]);
 
   if (!visible) return null;
+
+  // Calculate arrow position based on node position relative to tooltip
+  // This ensures arrow points at the node even when tooltip is edge-aligned
+  let arrowLeftOffset = nodePosition.x - position.x;
+  
+  // Constrain arrow position to within the tooltip (with padding)
+  const minArrowPos = 15; // minimum distance from tooltip edge
+  const maxArrowPos = maxWidth - 15; // maximum distance from tooltip left edge
+  
+  arrowLeftOffset = Math.max(minArrowPos, Math.min(maxArrowPos, arrowLeftOffset));
 
   return (
     <Animated.View 
@@ -79,7 +91,13 @@ const Tooltip: React.FC<TooltipProps> = ({ content, position, visible, maxWidth 
       ]}
     >
       <Text style={styles.tooltipText}>{content}</Text>
-      <View style={styles.tooltipArrow} />
+      <View 
+        style={[
+          styles.tooltipArrow,
+          isBelow ? styles.tooltipArrowTop : styles.tooltipArrowBottom,
+          { left: arrowLeftOffset }
+        ]} 
+      />
     </Animated.View>
   );
 };
@@ -106,6 +124,7 @@ const BibleMindMap: React.FC<BibleMindMapProps> = ({
   const [mapSize, setMapSize] = useState({ width: 0, height: 0 });
   const [isDragging, setIsDragging] = useState(false);
   const [activeNodeId, setActiveNodeId] = useState<string | null>(null);
+  const [activeNodePosition, setActiveNodePosition] = useState({ x: 0, y: 0 });
   const horizontalScrollViewRef = useRef<ScrollView>(null);
   const verticalScrollViewRef = useRef<ScrollView>(null);
   const lastScrollPos = useRef({ x: 0, y: 0 });
@@ -113,6 +132,7 @@ const BibleMindMap: React.FC<BibleMindMapProps> = ({
   const [tooltipContent, setTooltipContent] = useState('');
   const [tooltipPosition, setTooltipPosition] = useState({ x: 0, y: 0 });
   const [tooltipVisible, setTooltipVisible] = useState(false);
+  const [tooltipBelow, setTooltipBelow] = useState(false);
   
   // Control panel states
   const [zoomLevel, setZoomLevel] = useState(1);
@@ -273,8 +293,8 @@ const BibleMindMap: React.FC<BibleMindMapProps> = ({
         // Find the verse this note belongs to
         const relatedVerse = verses.find(v => v.id === note.verseId);
         const noteLabel = relatedVerse 
-          ? t('visualization:noteOn', { reference: `${relatedVerse.book} ${relatedVerse.chapter}:${relatedVerse.verse}` })
-          : t('visualization:note');
+          ? `${relatedVerse.book} ${relatedVerse.chapter}:${relatedVerse.verse}` 
+          : '';
         
         return {
           id: uniqueId,
@@ -535,35 +555,56 @@ const BibleMindMap: React.FC<BibleMindMapProps> = ({
     // Approximate tooltip dimensions
     const estimatedTooltipWidth = Math.min(Math.min(text.length * 8, 300), screenWidth * 0.8);
     const estimatedTooltipHeight = 120; // Rough estimate based on typical tooltip content
+    const nodeHeight = 80; // Height of a node
     
-    // Default position above the node
-    let x = nodeX - (estimatedTooltipWidth / 2);
-    let y = nodeY - estimatedTooltipHeight - 20; // 20px gap
+    // Calculate positions relative to the viewport (accounting for scroll)
+    // For web platform with scaling, we need to account for zoom level
+    const zoomFactor = Platform.OS === 'web' ? zoomLevel : 1;
+    const nodeViewportX = (nodeX * zoomFactor) - scrollPosition.x;
+    const nodeViewportY = (nodeY * zoomFactor) - scrollPosition.y;
     
-    // Check if tooltip would go off the left edge
-    if (x < 20) {
-      x = 20; // 20px padding from left edge
+    // Start by positioning tooltip above the node
+    let x = nodeViewportX - (estimatedTooltipWidth / 2);
+    let y = nodeViewportY - ((nodeHeight / 2) * zoomFactor) - estimatedTooltipHeight - 10;
+    
+    // Keep tooltip within viewport horizontal bounds
+    const horizontalPadding = 10;
+    if (x < horizontalPadding) {
+      x = horizontalPadding;
+    } else if (x + estimatedTooltipWidth > viewportSize.width - horizontalPadding) {
+      x = viewportSize.width - estimatedTooltipWidth - horizontalPadding;
     }
     
-    // Check if tooltip would go off the right edge
-    if (x + estimatedTooltipWidth > mapSize.width - 20) {
-      x = mapSize.width - estimatedTooltipWidth - 20; // 20px padding from right edge
+    // Ensure tooltip stays within viewport vertical bounds
+    const verticalPadding = 10;
+    if (y < verticalPadding) {
+      // If can't fit above the node, try below
+      const belowNodeY = nodeViewportY + ((nodeHeight / 2) * zoomFactor) + verticalPadding;
+      
+      // Check if there's enough space below
+      if (belowNodeY + estimatedTooltipHeight < viewportSize.height - verticalPadding) {
+        y = belowNodeY;
+      } else {
+        // If no space below either, just place at top of screen with padding
+        y = verticalPadding;
+      }
     }
     
-    // Check if tooltip would go off the top edge
-    if (y < 20) {
-      // Position below the node instead
-      y = nodeY + 60; // 60px below node center (nodes are ~80px tall)
-    }
-    
-    return { x, y };
+    // Return both viewport position and a flag indicating if tooltip is below the node
+    return { 
+      x,
+      y,
+      isBelow: y > nodeViewportY
+    };
   };
   
   // Function to show tooltip
   const showTooltip = (content: string, nodeX: number, nodeY: number) => {
-    const position = calculateTooltipPosition(nodeX, nodeY, content);
+    const tooltipInfo = calculateTooltipPosition(nodeX, nodeY, content);
     setTooltipContent(content);
-    setTooltipPosition(position);
+    setTooltipPosition({ x: tooltipInfo.x, y: tooltipInfo.y });
+    setActiveNodePosition({ x: nodeX - scrollPosition.x, y: nodeY - scrollPosition.y });
+    setTooltipBelow(tooltipInfo.isBelow);
     setTooltipVisible(true);
   };
 
@@ -604,8 +645,8 @@ const BibleMindMap: React.FC<BibleMindMapProps> = ({
         // Position tooltip above the node
         showTooltip(
           node.data.text,
-          node.x, // Center horizontally
-          node.y - 120 // Position above the node
+          node.x, // Center of node horizontally
+          node.y  // Center of node vertically
         );
       }
     };
@@ -615,8 +656,8 @@ const BibleMindMap: React.FC<BibleMindMapProps> = ({
         // Position tooltip above the node
         showTooltip(
           node.data.text,
-          node.x, // Center horizontally
-          node.y - 120 // Position above the node
+          node.x, // Center of node horizontally
+          node.y  // Center of node vertically
         );
       }
     };
@@ -1120,7 +1161,9 @@ const BibleMindMap: React.FC<BibleMindMapProps> = ({
         <Tooltip 
           content={tooltipContent}
           position={tooltipPosition}
+          nodePosition={activeNodePosition}
           visible={tooltipVisible}
+          isBelow={tooltipBelow}
         />
         
         {/* Center view button */}
@@ -1243,14 +1286,20 @@ const styles = StyleSheet.create({
   },
   tooltipArrow: {
     position: 'absolute',
-    bottom: -10,
-    left: '50%',
-    marginLeft: -10,
-    borderWidth: 5,
-    borderColor: 'transparent',
-    borderTopColor: 'rgba(30, 30, 30, 0.95)',
     width: 0,
     height: 0,
+    borderWidth: 8,
+    borderColor: 'transparent',
+  },
+  tooltipArrowBottom: {
+    bottom: -16,
+    borderTopColor: 'rgba(30, 30, 30, 0.95)',
+    borderTopWidth: 10,
+  },
+  tooltipArrowTop: {
+    top: -16,
+    borderBottomColor: 'rgba(30, 30, 30, 0.95)',
+    borderBottomWidth: 10,
   },
   tooltipText: {
     color: '#fff',
