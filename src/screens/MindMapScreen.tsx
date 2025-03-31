@@ -331,18 +331,29 @@ const MindMapScreen: React.FC = () => {
   // Handle verse selection
   const handleNodeSelect = useCallback((nodeId: string, nodeType: string) => {
     if (nodeType === 'verse') {
-      // Find the verse and navigate to verse detail
-      const selectedVerse = verses.find(v => v.id === nodeId);
+      // Handle the case where the node ID might have a "-dup" suffix due to duplicate handling
+      const originalId = nodeId.includes('-dup') 
+        ? nodeId.substring(0, nodeId.indexOf('-dup')) 
+        : nodeId;
+      
+      // Find the verse using the original ID
+      const selectedVerse = verses.find(v => v.id === originalId);
       
       if (selectedVerse) {
         navigation.navigate('VerseDetail', {
-          verseId: nodeId,
+          verseId: originalId, // Use the original verse ID for navigation
           activeTab: 'connections'
         });
+      } else {
+        console.warn(`Verse not found for nodeId: ${nodeId}, originalId: ${originalId}`);
       }
     } else if (nodeType === 'note') {
       // Find the note
-      const selectedNote = notes.find(n => n.id === nodeId);
+      const originalId = nodeId.includes('-dup') 
+        ? nodeId.substring(0, nodeId.indexOf('-dup')) 
+        : nodeId;
+      
+      const selectedNote = notes.find(n => n.id === originalId);
       
       if (selectedNote) {
         // Navigate to verse detail with the note's verse and open notes tab

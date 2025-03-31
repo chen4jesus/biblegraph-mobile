@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
-import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Dimensions, PanResponder, GestureResponderEvent, PanResponderGestureState } from 'react-native';
+import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Dimensions, PanResponder, GestureResponderEvent, PanResponderGestureState, Animated, Platform } from 'react-native';
 import { Verse, Connection, ConnectionType, Note } from '../types/bible';
 import { Ionicons } from '@expo/vector-icons';
 import Svg, { Line } from 'react-native-svg';
@@ -40,6 +40,49 @@ interface Edge {
   };
 }
 
+// Tooltip component for displaying full content
+interface TooltipProps {
+  content: string;
+  position: { x: number; y: number };
+  visible: boolean;
+  maxWidth?: number;
+}
+
+const Tooltip: React.FC<TooltipProps> = ({ content, position, visible, maxWidth = 300 }) => {
+  const opacity = useRef(new Animated.Value(0)).current;
+  
+  useEffect(() => {
+    Animated.timing(opacity, {
+      toValue: visible ? 1 : 0,
+      duration: 200,
+      useNativeDriver: true,
+    }).start();
+  }, [visible, opacity]);
+
+  if (!visible) return null;
+
+  return (
+    <Animated.View 
+      style={[
+        styles.tooltip, 
+        {
+          left: position.x,
+          top: position.y,
+          maxWidth: maxWidth,
+          opacity: opacity,
+          transform: [{ scale: opacity.interpolate({
+            inputRange: [0, 1],
+            outputRange: [0.9, 1]
+          })}]
+        }
+      ]}
+    >
+      <Text style={styles.tooltipText}>{content}</Text>
+      <View style={styles.tooltipArrow} />
+    </Animated.View>
+  );
+};
+
 const BibleMindMap: React.FC<BibleMindMapProps> = ({
   verses,
   notes,
@@ -61,6 +104,9 @@ const BibleMindMap: React.FC<BibleMindMapProps> = ({
   const [activeNodeId, setActiveNodeId] = useState<string | null>(null);
   const scrollViewRef = useRef<ScrollView>(null);
   const lastScrollPos = useRef({ x: 0, y: 0 });
+  const [tooltipContent, setTooltipContent] = useState('');
+  const [tooltipPosition, setTooltipPosition] = useState({ x: 0, y: 0 });
+  const [tooltipVisible, setTooltipVisible] = useState(false);
 
   // Transform verses, notes, and connections into nodes and edges with positions
   const transformData = useCallback(() => {
@@ -340,11 +386,94 @@ const BibleMindMap: React.FC<BibleMindMapProps> = ({
     });
   };
 
+  // Calculate the optimal tooltip position based on node position and screen boundaries
+  const calculateTooltipPosition = (nodeX: number, nodeY: number, text: string) => {
+    // Approximate tooltip dimensions
+    const estimatedTooltipWidth = Math.min(Math.min(text.length * 8, 300), screenWidth * 0.8);
+    const estimatedTooltipHeight = 120; // Rough estimate based on typical tooltip content
+    
+    // Default position above the node
+    let x = nodeX - (estimatedTooltipWidth / 2);
+    let y = nodeY - estimatedTooltipHeight - 20; // 20px gap
+    
+    // Check if tooltip would go off the left edge
+    if (x < 20) {
+      x = 20; // 20px padding from left edge
+    }
+    
+    // Check if tooltip would go off the right edge
+    if (x + estimatedTooltipWidth > mapSize.width - 20) {
+      x = mapSize.width - estimatedTooltipWidth - 20; // 20px padding from right edge
+    }
+    
+    // Check if tooltip would go off the top edge
+    if (y < 20) {
+      // Position below the node instead
+      y = nodeY + 60; // 60px below node center (nodes are ~80px tall)
+    }
+    
+    return { x, y };
+  };
+  
+  // Function to show tooltip
+  const showTooltip = (content: string, nodeX: number, nodeY: number) => {
+    const position = calculateTooltipPosition(nodeX, nodeY, content);
+    setTooltipContent(content);
+    setTooltipPosition(position);
+    setTooltipVisible(true);
+  };
+
+  // Function to hide tooltip
+  const hideTooltip = () => {
+    setTooltipVisible(false);
+  };
+
+  // Function to handle text container interactions properly
+  const getTextContainerProps = (handlePress: () => void, handleMouseEnter?: () => void, handleMouseLeave?: () => void) => {
+    const props: any = {
+      style: styles.nodeTextContainer,
+      onPress: handlePress,
+      activeOpacity: 0.8,
+      delayPressIn: 200,
+    };
+
+    // Only add mouse event handlers on web platform
+    if (Platform.OS === 'web') {
+      props.onMouseEnter = handleMouseEnter;
+      props.onMouseLeave = handleMouseLeave;
+    }
+
+    return props;
+  };
+
   // Render each node (verse, note, or theme)
   const renderNode = useCallback((node: Node, index: number) => {
     const handlePress = () => {
       if (!isDragging && onNodeSelect) {
+        // Pass both node ID and type to allow proper navigation in parent component
         onNodeSelect(node.id, node.type);
+      }
+    };
+
+    const handleContentHover = () => {
+      if (Platform.OS === 'web' && node.data.text) {
+        // Position tooltip above the node
+        showTooltip(
+          node.data.text,
+          node.x, // Center horizontally
+          node.y - 120 // Position above the node
+        );
+      }
+    };
+
+    const handleContentPress = () => {
+      if (node.data.text && !isDragging) {
+        // Position tooltip above the node
+        showTooltip(
+          node.data.text,
+          node.x, // Center horizontally
+          node.y - 120 // Position above the node
+        );
       }
     };
 
@@ -363,6 +492,13 @@ const BibleMindMap: React.FC<BibleMindMapProps> = ({
     };
 
     const panResponder = createPanResponder(node.id);
+
+    // Get props for text container with proper platform-specific event handlers
+    const textContainerProps = getTextContainerProps(
+      handleContentPress,
+      handleContentHover,
+      hideTooltip
+    );
 
     return (
       <View
@@ -384,25 +520,37 @@ const BibleMindMap: React.FC<BibleMindMapProps> = ({
       >
         <TouchableOpacity
           onPress={handlePress}
-          style={styles.nodeContent}
-          activeOpacity={0.8}
+          style={[
+            styles.nodeHeaderClickable,
+            node.type === 'verse' && styles.verseHeaderClickable
+          ]}
+          activeOpacity={0.6}
         >
           <View style={styles.nodeHeader}>
             {getNodeIcon()}
-            <Text style={styles.nodeLabel} numberOfLines={1}>{node.label}</Text>
+            <Text 
+              style={styles.nodeLabel} 
+              numberOfLines={1}
+              selectable={false}
+            >{node.label}</Text>
           </View>
-          {node.data.text && (
+        </TouchableOpacity>
+        {node.data.text && (
+          <TouchableOpacity
+            {...textContainerProps}
+          >
             <Text 
               style={styles.nodeText} 
               numberOfLines={2}
+              selectable={false}
             >
               {node.data.text}
             </Text>
-          )}
-        </TouchableOpacity>
+          </TouchableOpacity>
+        )}
       </View>
     );
-  }, [onNodeSelect, isDragging, activeNodeId, nodes, mapSize.width, mapSize.height]);
+  }, [onNodeSelect, isDragging, activeNodeId, nodes, mapSize.width, mapSize.height, showTooltip, hideTooltip]);
 
   // Show loading state
   if (isLoading) {
@@ -424,73 +572,82 @@ const BibleMindMap: React.FC<BibleMindMapProps> = ({
   }
 
   return (
-    <ScrollView 
-      ref={scrollViewRef}
-      style={styles.container}
-      contentContainerStyle={[
-        styles.contentContainer, 
-        { width: mapSize.width, height: mapSize.height }
-      ]}
-      horizontal={true}
-      maximumZoomScale={2}
-      minimumZoomScale={0.5}
-      showsHorizontalScrollIndicator={true}
-      showsVerticalScrollIndicator={true}
-      scrollEnabled={!isDragging}
-    >
-      <Svg width={mapSize.width} height={mapSize.height}>
+    <View style={{ flex: 1 }}>
+      <ScrollView 
+        ref={scrollViewRef}
+        style={styles.container}
+        contentContainerStyle={[
+          styles.contentContainer, 
+          { width: mapSize.width, height: mapSize.height }
+        ]}
+        horizontal={true}
+        maximumZoomScale={2}
+        minimumZoomScale={0.5}
+        showsHorizontalScrollIndicator={true}
+        showsVerticalScrollIndicator={true}
+        scrollEnabled={!isDragging}
+      >
+        <Svg width={mapSize.width} height={mapSize.height}>
+          {edges.map((edge, index) => {
+            const sourceNode = nodes.find(n => n.id === edge.source);
+            const targetNode = nodes.find(n => n.id === edge.target);
+
+            if (!sourceNode || !targetNode) return null;
+
+            return (
+              <Line
+                key={`edge-${edge.id}-${index}`}
+                x1={sourceNode.x}
+                y1={sourceNode.y}
+                x2={targetNode.x}
+                y2={targetNode.y}
+                stroke={edge.color}
+                strokeWidth="2"
+              />
+            );
+          })}
+        </Svg>
         {edges.map((edge, index) => {
           const sourceNode = nodes.find(n => n.id === edge.source);
           const targetNode = nodes.find(n => n.id === edge.target);
 
           if (!sourceNode || !targetNode) return null;
 
+          // Calculate line midpoint for the touch target
+          const midX = (sourceNode.x + targetNode.x) / 2;
+          const midY = (sourceNode.y + targetNode.y) / 2;
+
           return (
-            <Line
-              key={`edge-${edge.id}-${index}`}
-              x1={sourceNode.x}
-              y1={sourceNode.y}
-              x2={targetNode.x}
-              y2={targetNode.y}
-              stroke={edge.color}
-              strokeWidth="2"
-            />
+            <TouchableOpacity
+              key={`touch-${edge.id}-${index}`}
+              style={[
+                styles.edgeTouchTarget,
+                {
+                  left: midX - 30,
+                  top: midY - 15,
+                }
+              ]}
+              onPress={() => onConnectionSelect && onConnectionSelect(edge.id)}
+            >
+              <Text style={[
+                styles.edgeLabel,
+                { color: edge.color } 
+              ]}>{edge.label}</Text>
+            </TouchableOpacity>
           );
         })}
-      </Svg>
-      {edges.map((edge, index) => {
-        const sourceNode = nodes.find(n => n.id === edge.source);
-        const targetNode = nodes.find(n => n.id === edge.target);
-
-        if (!sourceNode || !targetNode) return null;
-
-        // Calculate line midpoint for the touch target
-        const midX = (sourceNode.x + targetNode.x) / 2;
-        const midY = (sourceNode.y + targetNode.y) / 2;
-
-        return (
-          <TouchableOpacity
-            key={`touch-${edge.id}-${index}`}
-            style={[
-              styles.edgeTouchTarget,
-              {
-                left: midX - 30,
-                top: midY - 15,
-              }
-            ]}
-            onPress={() => onConnectionSelect && onConnectionSelect(edge.id)}
-          >
-            <Text style={[
-              styles.edgeLabel,
-              { color: edge.color } 
-            ]}>{edge.label}</Text>
-          </TouchableOpacity>
-        );
-      })}
-      {nodes
-        .filter(node => hasConnections(node.id))
-        .map((node, index) => renderNode(node, index))}
-    </ScrollView>
+        {nodes
+          .filter(node => hasConnections(node.id))
+          .map((node, index) => renderNode(node, index))}
+      </ScrollView>
+      
+      {/* Tooltip for displaying full content */}
+      <Tooltip 
+        content={tooltipContent}
+        position={tooltipPosition}
+        visible={tooltipVisible}
+      />
+    </View>
   );
 };
 
@@ -534,10 +691,18 @@ const styles = StyleSheet.create({
   nodeContent: {
     width: '100%',
   },
+  nodeHeaderClickable: {
+    backgroundColor: 'rgba(0,0,0,0.03)',
+    borderRadius: 4,
+    marginBottom: 6,
+    padding: 4,
+  },
+  verseHeaderClickable: {
+    backgroundColor: 'rgba(66, 133, 244, 0.05)', // Light blue background for verse headers
+  },
   nodeHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 4,
   },
   nodeLabel: {
     fontSize: 14,
@@ -545,9 +710,16 @@ const styles = StyleSheet.create({
     marginLeft: 4,
     flex: 1,
   },
+  nodeTextContainer: {
+    paddingHorizontal: 4,
+  },
   nodeText: {
     fontSize: 12,
     color: '#666',
+    // Add a subtle indicator that this is interactive
+    textDecorationLine: Platform.OS === 'web' ? 'underline' : 'none',
+    textDecorationColor: '#bbb',
+    textDecorationStyle: 'dotted',
   },
   edgeTouchTarget: {
     position: 'absolute',
@@ -562,6 +734,34 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: 'bold',
     textAlign: 'center',
+  },
+  tooltip: {
+    position: 'absolute',
+    backgroundColor: 'rgba(30, 30, 30, 0.95)',
+    padding: 12,
+    borderRadius: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 5,
+    zIndex: 1000,
+  },
+  tooltipArrow: {
+    position: 'absolute',
+    bottom: -10,
+    left: '50%',
+    marginLeft: -10,
+    borderWidth: 5,
+    borderColor: 'transparent',
+    borderTopColor: 'rgba(30, 30, 30, 0.95)',
+    width: 0,
+    height: 0,
+  },
+  tooltipText: {
+    color: '#fff',
+    fontSize: 14,
+    lineHeight: 20,
   },
 });
 
