@@ -10,6 +10,8 @@
     "edit": "Edit",
     "discard": "Discard",
     "search": "Search Bible verses...",
+    "searchNotes": "Search notes...",
+    "clearFilters": "Clear filters",
     "all": "All",
     "ok": "OK",
     "confirm": "Confirm",
@@ -176,7 +178,8 @@
     "enterNoteHere": "Enter your note here...",
     "noteContentRequired": "Note content is required",
     "discardChanges": "Discard unsaved changes?",
-    "noNotesYet": "No notes yet"
+    "noNotesYet": "No notes yet",
+    "noMatchingNotes": "No notes match your filters"
   },
   "graph": {
     "title": "Bible Graph",

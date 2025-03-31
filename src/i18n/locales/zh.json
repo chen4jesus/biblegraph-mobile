@@ -10,6 +10,8 @@
     "edit": "编辑",
     "discard": "丢弃",
     "search": "搜索圣经经文...",
+    "searchNotes": "搜索笔记...",
+    "clearFilters": "清除筛选",
     "all": "全部",
     "ok": "确定",
     "confirm": "确认",
@@ -176,7 +178,8 @@
     "enterNoteHere": "在此输入笔记内容...",
     "noteContentRequired": "笔记内容不能为空",
     "discardChanges": "放弃未保存的更改？",
-    "noNotesYet": "还没有笔记"
+    "noNotesYet": "还没有笔记",
+    "noMatchingNotes": "没有符合筛选条件的笔记"
   },
   "graph": {
     "title": "圣经图谱",

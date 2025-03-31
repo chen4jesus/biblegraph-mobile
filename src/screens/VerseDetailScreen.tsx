@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View,
   Text,
@@ -110,6 +110,21 @@ const VerseDetailScreen: React.FC = () => {
   // Add state for active bottom tab
   const [activeBottomTab, setActiveBottomTab] = useState<string>('none');
 
+  // Add these state variables with the other state declarations
+  const [searchQuery, setSearchQuery] = useState<string>('');
+  const [selectedTags, setSelectedTags] = useState<string[]>([]);
+
+  // Add this function to extract all unique tags from notes
+  const extractAllTags = useCallback((notesList: Note[]) => {
+    const tagsSet = new Set<string>();
+    notesList.forEach(note => {
+      if (note.tags && Array.isArray(note.tags)) {
+        note.tags.forEach(tag => tagsSet.add(tag));
+      }
+    });
+    return Array.from(tagsSet).sort();
+  }, []);
+
   useEffect(() => {
     loadVerseDetails();
     loadLabelPreference();
@@ -123,11 +138,9 @@ const VerseDetailScreen: React.FC = () => {
 
   // Extract all unique tags from notes
   useEffect(() => {
-    const uniqueTags = Array.from(
-      new Set(notes.flatMap(note => note.tags || []))
-    );
+    const uniqueTags = extractAllTags(notes);
     setAllTags(uniqueTags);
-  }, [notes]);
+  }, [notes, extractAllTags]);
 
   const loadLabelPreference = async () => {
     try {
@@ -1410,6 +1423,40 @@ const VerseDetailScreen: React.FC = () => {
     setShowVisualizationModal(true);
   };
 
+  // Add this to filter notes based on search query and selected tags
+  const getFilteredNotes = useCallback(() => {
+    if (!searchQuery && selectedTags.length === 0) {
+      return notes; // Return all notes if no filters applied
+    }
+    
+    return notes.filter(note => {
+      // Filter by search query
+      const matchesQuery = !searchQuery || 
+        note.content.toLowerCase().includes(searchQuery.toLowerCase());
+      
+      // Filter by selected tags
+      const matchesTags = selectedTags.length === 0 || 
+        selectedTags.every(tag => note.tags?.includes(tag));
+      
+      return matchesQuery && matchesTags;
+    });
+  }, [notes, searchQuery, selectedTags]);
+
+  // Add this function to handle tag selection/deselection
+  const toggleTagFilter = (tag: string) => {
+    if (selectedTags.includes(tag)) {
+      setSelectedTags(prev => prev.filter(t => t !== tag));
+    } else {
+      setSelectedTags(prev => [...prev, tag]);
+    }
+  };
+
+  // Add this function to clear all filters
+  const clearFilters = () => {
+    setSearchQuery('');
+    setSelectedTags([]);
+  };
+
   if (isLoading) {
     return (
       <View style={styles.loadingContainer}>
@@ -1501,14 +1548,83 @@ const VerseDetailScreen: React.FC = () => {
         {/* Notes Tab Content */}
         {activeTab === 'notes' && (
           <View style={styles.section}>
-            {notes.length > 0 ? (
-              notes.map((note, index) => (
+            {/* Search Bar */}
+            <View style={styles.searchContainer}>
+              <View style={styles.searchInputContainer}>
+                <Ionicons name="search" size={20} color="#666" style={styles.searchIcon} />
+                <TextInput
+                  style={styles.searchInput}
+                  placeholder={t('common:searchNotes')}
+                  placeholderTextColor="#999"
+                  value={searchQuery}
+                  onChangeText={setSearchQuery}
+                  returnKeyType="search"
+                />
+                {searchQuery.length > 0 && (
+                  <TouchableOpacity onPress={() => setSearchQuery('')}>
+                    <Ionicons name="close-circle" size={18} color="#999" />
+                  </TouchableOpacity>
+                )}
+              </View>
+              
+              {(searchQuery.length > 0 || selectedTags.length > 0) && (
+                <TouchableOpacity 
+                  style={styles.clearFiltersButton} 
+                  onPress={clearFilters}
+                >
+                  <Text style={styles.clearFiltersText}>{t('common:clearFilters')}</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+            
+            {/* Tags Filtering */}
+            {allTags.length > 0 && (
+              <ScrollView 
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                style={styles.tagsScrollContainer}
+                contentContainerStyle={styles.tagsContainer}
+              >
+                {allTags.map(tag => (
+                  <TouchableOpacity
+                    key={`filter-${tag}`}
+                    style={[
+                      styles.tagFilterChip,
+                      selectedTags.includes(tag) && styles.tagFilterChipSelected
+                    ]}
+                    onPress={() => toggleTagFilter(tag)}
+                  >
+                    <Text 
+                      style={[
+                        styles.tagFilterText,
+                        selectedTags.includes(tag) && styles.tagFilterTextSelected
+                      ]}
+                    >
+                      #{tag}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            )}
+            
+            {/* Notes List */}
+            {getFilteredNotes().length > 0 ? (
+              getFilteredNotes().map((note, index) => (
                 <React.Fragment key={`note-${note.id || index}`}>
                   {renderNoteItem(note)}
                 </React.Fragment>
               ))
             ) : (
-              <Text style={styles.emptyNotesText}>{t('verseDetail:noNotesYet')}</Text>
+              <View style={styles.emptyFilterContainer}>
+                {notes.length > 0 ? (
+                  <>
+                    <Ionicons name="filter" size={24} color="#999" />
+                    <Text style={styles.emptyFilterText}>{t('verseDetail:noMatchingNotes')}</Text>
+                  </>
+                ) : (
+                  <Text style={styles.emptyNotesText}>{t('verseDetail:noNotesYet')}</Text>
+                )}
+              </View>
             )}
           </View>
         )}
@@ -2461,6 +2577,72 @@ const styles = StyleSheet.create({
     marginLeft: 16,
     fontSize: 16,
     color: '#007AFF',
+  },
+  searchContainer: {
+    marginBottom: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  searchInputContainer: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f0f0f0',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    height: 40,
+  },
+  searchIcon: {
+    marginRight: 6,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 15,
+    color: '#333',
+  },
+  clearFiltersButton: {
+    marginLeft: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    backgroundColor: '#e2e8f0',
+    borderRadius: 6,
+  },
+  clearFiltersText: {
+    fontSize: 13,
+    color: '#666',
+  },
+  tagsScrollContainer: {
+    marginBottom: 12,
+  },
+  tagFilterChip: {
+    backgroundColor: '#f0f0f0',
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 20,
+    marginRight: 8,
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+  },
+  tagFilterChipSelected: {
+    backgroundColor: '#4F46E5',
+    borderColor: '#4F46E5',
+  },
+  tagFilterText: {
+    fontSize: 13,
+    color: '#666',
+  },
+  tagFilterTextSelected: {
+    color: '#fff',
+  },
+  emptyFilterContainer: {
+    alignItems: 'center',
+    padding: 24,
+  },
+  emptyFilterText: {
+    marginTop: 8,
+    fontSize: 15,
+    color: '#999',
+    textAlign: 'center',
   },
 });
 
