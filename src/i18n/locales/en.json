@@ -286,6 +286,22 @@
   "visualization": {
     "title": "Visualization",
     "graph": "Graph View",
-    "mindMap": "Mind Map"
+    "mindMap": "Mind Map",
+    "calculatingLayout": "Calculating mind map layout...",
+    "optimizingNodes": "Optimizing {verses} verses and {notes} notes",
+    "noContentToDisplay": "No content to display",
+    "failedToCreateMindMap": "Failed to create mind map",
+    "zoom": "Zoom",
+    "centerView": "Center View",
+    "showLabels": "Show Labels",
+    "showMinimap": "Show Minimap",
+    "tapToNavigate": "Tap to navigate",
+    "ctrlMouseWheelToZoom": "You can also use Ctrl+Mouse wheel to zoom",
+    "noteOn": "Note on {reference}",
+    "crossReference": "Cross Reference",
+    "theme": "Theme",
+    "note": "Note",
+    "parallel": "Parallel",
+    "shownTogether": "Shown together"
   } 
 } 

@@ -285,7 +285,23 @@
   },
   "visualization": {
     "title": "可视化",
-    "graph": "图谱视图",
-    "mindMap": "思维导图"
+    "graph": "图表视图",
+    "mindMap": "思维导图",
+    "calculatingLayout": "计算思维导图布局...",
+    "optimizingNodes": "正在优化 {verses} 个经文和 {notes} 个笔记",
+    "noContentToDisplay": "没有内容可显示",
+    "failedToCreateMindMap": "创建思维导图失败",
+    "zoom": "缩放",
+    "centerView": "居中视图",
+    "showLabels": "显示标签",
+    "showMinimap": "显示小地图",
+    "tapToNavigate": "点击导航",
+    "ctrlMouseWheelToZoom": "您也可以使用Ctrl+鼠标滚轮缩放",
+    "noteOn": "{reference} 的笔记",
+    "crossReference": "交叉引用",
+    "theme": "主题",
+    "note": "笔记",
+    "parallel": "平行经文",
+    "shownTogether": "一起显示"
   }
 } 

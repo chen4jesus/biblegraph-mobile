@@ -3,6 +3,7 @@ import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Dimensions, PanRe
 import { Verse, Connection, ConnectionType, Note } from '../types/bible';
 import { Ionicons } from '@expo/vector-icons';
 import Svg, { Line } from 'react-native-svg';
+import { useTranslation } from 'react-i18next';
 
 interface BibleMindMapProps {
   verses: Verse[];
@@ -93,6 +94,9 @@ const BibleMindMap: React.FC<BibleMindMapProps> = ({
   // Get screen dimensions
   const screenWidth = Dimensions.get('window').width;
   const screenHeight = Dimensions.get('window').height;
+  
+  // Get translation functions
+  const { t } = useTranslation(['visualization', 'common']);
   
   // State declarations - always keep these at the top level
   const [nodes, setNodes] = useState<Node[]>([]);
@@ -205,7 +209,7 @@ const BibleMindMap: React.FC<BibleMindMapProps> = ({
       if ((!verses || verses.length === 0) && (!notes || notes.length === 0)) {
         console.warn('BibleMindMap: No content to display');
         setIsLoading(false);
-        setError('No content to display');
+        setError(t('visualization:noContentToDisplay'));
         return;
       }
 
@@ -269,14 +273,14 @@ const BibleMindMap: React.FC<BibleMindMapProps> = ({
         // Find the verse this note belongs to
         const relatedVerse = verses.find(v => v.id === note.verseId);
         const noteLabel = relatedVerse 
-          ? `Note on ${relatedVerse.book} ${relatedVerse.chapter}:${relatedVerse.verse}` 
-          : 'Note';
+          ? t('visualization:noteOn', { reference: `${relatedVerse.book} ${relatedVerse.chapter}:${relatedVerse.verse}` })
+          : t('visualization:note');
         
         return {
           id: uniqueId,
           label: noteLabel,
-          x: 100 + col * 250, // More spacing between nodes
-          y: 100 + row * 200, // More spacing between nodes
+          x: 100 + col * 300, // More spacing between nodes horizontally
+          y: 100 + row * 250, // More spacing between nodes vertically
           type: 'note',
           data: {
             text: note.content || '',
@@ -362,7 +366,7 @@ const BibleMindMap: React.FC<BibleMindMapProps> = ({
           id: connection.id,
           source: sourceNode.id,
           target: targetNode.id,
-          label: connection.type,
+          label: getEdgeLabel(connection.type),
           color: color,
           data: {
             type: connection.type,
@@ -392,7 +396,7 @@ const BibleMindMap: React.FC<BibleMindMapProps> = ({
                 id: `note-edge-${noteNode.id}`,
                 source: verseNode.id,
                 target: noteNode.id,
-                label: ConnectionType.NOTE,
+                label: getEdgeLabel(ConnectionType.NOTE),
                 color: '#4285F4',
                 data: {
                   type: ConnectionType.NOTE,
@@ -414,11 +418,11 @@ const BibleMindMap: React.FC<BibleMindMapProps> = ({
             id: `default-edge-${i}`,
             source: newNodes[i].id,
             target: newNodes[i + 1].id,
-            label: ConnectionType.THEME,
+            label: getEdgeLabel(ConnectionType.THEME),
             color: '#dddddd',
             data: {
               type: ConnectionType.THEME,
-              description: 'Shown together'
+              description: t('visualization:shownTogether')
             }
           });
         }
@@ -429,10 +433,10 @@ const BibleMindMap: React.FC<BibleMindMapProps> = ({
       setIsLoading(false);
     } catch (err) {
       console.error('Error transforming mind map data:', err);
-      setError('Failed to create mind map');
+      setError(t('visualization:failedToCreateMindMap'));
       setIsLoading(false);
     }
-  }, [verses, notes, connections, screenWidth, screenHeight]);
+  }, [verses, notes, connections, screenWidth, screenHeight, t]);
 
   // Run transformData when verses, notes, or connections change
   useEffect(() => {
@@ -449,59 +453,31 @@ const BibleMindMap: React.FC<BibleMindMapProps> = ({
 
   // Center view when map is first loaded or resized
   useEffect(() => {
-    // Only center view if we have a valid map size and nodes, and haven't centered yet
-    if (mapSize.width > 0 && mapSize.height > 0 && nodes.length > 0 && !isLoading && !hasInitiallyCentered.current) {
-      // Calculate the bounding box of connected nodes
-      const connectedNodes = nodes.filter(node => hasConnections(node.id));
+    // Only initialize viewport position if we have a valid map size and haven't done it yet
+    if (mapSize.width > 0 && mapSize.height > 0 && !isLoading && !hasInitiallyCentered.current) {
+      console.log('BibleMindMap: Setting initial view to top-left corner');
       
-      if (connectedNodes.length > 0) {
-        // Calculate the center position of connected nodes
-        let minX = Number.MAX_VALUE;
-        let minY = Number.MAX_VALUE;
-        let maxX = Number.MIN_VALUE;
-        let maxY = Number.MIN_VALUE;
-        
-        // Find the bounding box of connected nodes
-        connectedNodes.forEach(node => {
-          minX = Math.min(minX, node.x);
-          minY = Math.min(minY, node.y);
-          maxX = Math.max(maxX, node.x);
-          maxY = Math.max(maxY, node.y);
-        });
-        
-        // Calculate center of connected nodes
-        const centerNodesX = (minX + maxX) / 2;
-        const centerNodesY = (minY + maxY) / 2;
-        
-        // Calculate scroll position to center these nodes in viewport
-        const targetScrollX = Math.max(0, centerNodesX - (viewportSize.width / 2));
-        const targetScrollY = Math.max(0, centerNodesY - (viewportSize.height / 2));
-        
-        console.log('BibleMindMap: Centering initial view on connected nodes at', targetScrollX, targetScrollY);
-        
-        // Use requestAnimationFrame to ensure the ScrollView has rendered
-        requestAnimationFrame(() => {
-          if (horizontalScrollViewRef.current && verticalScrollViewRef.current) {
-            // Scroll horizontally
-            horizontalScrollViewRef.current.scrollTo({
-              x: targetScrollX,
-              y: 0,
-              animated: false
-            });
-            
-            // Scroll vertically
-            verticalScrollViewRef.current.scrollTo({
-              x: 0,
-              y: targetScrollY,
-              animated: false
-            });
-            
-            hasInitiallyCentered.current = true;
-          }
-        });
-      }
+      // Use requestAnimationFrame to ensure the ScrollView has rendered
+      requestAnimationFrame(() => {
+        if (horizontalScrollViewRef.current && verticalScrollViewRef.current) {
+          // Scroll to top-left corner with a small padding
+          horizontalScrollViewRef.current.scrollTo({
+            x: 0,
+            y: 0,
+            animated: false
+          });
+          
+          verticalScrollViewRef.current.scrollTo({
+            x: 0,
+            y: 0,
+            animated: false
+          });
+          
+          hasInitiallyCentered.current = true;
+        }
+      });
     }
-  }, [mapSize, nodes, isLoading, viewportSize, hasConnections]);
+  }, [mapSize, isLoading]);
 
   // Handle node movement
   const updateNodePosition = (nodeId: string, newX: number, newY: number) => {
@@ -867,13 +843,37 @@ const BibleMindMap: React.FC<BibleMindMapProps> = ({
     }
   };
 
+  // Function to determine the label for a note node
+  const getNoteLabel = (verseRef: string | undefined) => {
+    if (!verseRef) return t('visualization:note');
+    return t('visualization:noteOn', { reference: verseRef });
+  };
+
+  // Function to get the edge label based on type
+  const getEdgeLabel = (type: ConnectionType) => {
+    switch (type) {
+      case ConnectionType.CROSS_REFERENCE:
+        return t('visualization:crossReference');
+      case ConnectionType.THEME:
+        return t('visualization:theme');
+      case ConnectionType.NOTE:
+        return t('visualization:note');
+      case ConnectionType.PARALLEL:
+        return t('visualization:parallel');
+      default:
+        return t('visualization:shownTogether');
+    }
+  };
+
   // Show loading state
   if (isLoading) {
     return (
       <View style={styles.loadingContainer}>
         <Ionicons name="map-outline" size={40} color="#4285F4" />
-        <Text style={styles.loadingText}>Calculating mind map layout...</Text>
-        <Text style={styles.loadingSubtext}>Optimizing {verses.length} verses and {notes?.length || 0} notes</Text>
+        <Text style={styles.loadingText}>{t('visualization:calculatingLayout')}</Text>
+        <Text style={styles.loadingSubtext}>
+          {t('visualization:optimizingNodes', { verses: verses.length, notes: notes?.length || 0 })}
+        </Text>
       </View>
     );
   }
@@ -883,7 +883,7 @@ const BibleMindMap: React.FC<BibleMindMapProps> = ({
     return (
       <View style={styles.errorContainer}>
         <Ionicons name="alert-circle-outline" size={48} color="#FF3B30" />
-        <Text style={styles.errorText}>{error}</Text>
+        <Text style={styles.errorText}>{t('visualization:failedToCreateMindMap')}</Text>
       </View>
     );
   }
@@ -974,7 +974,7 @@ const BibleMindMap: React.FC<BibleMindMapProps> = ({
                     <Text style={[
                       styles.edgeLabel,
                       { color: edge.color } 
-                    ]}>{edge.label}</Text>
+                    ]}>{getEdgeLabel(edge.data.type)}</Text>
         </TouchableOpacity>
       );
                 })}
@@ -1003,7 +1003,7 @@ const BibleMindMap: React.FC<BibleMindMapProps> = ({
             <View style={styles.controlContent}>
               {/* Zoom Controls */}
               <View style={styles.controlGroup}>
-                <Text style={styles.controlLabel}>Zoom</Text>
+                <Text style={styles.controlLabel}>{t('visualization:zoom')}</Text>
                 <View style={styles.controlButtons}>
                   <TouchableOpacity 
                     style={styles.controlButton} 
@@ -1027,7 +1027,7 @@ const BibleMindMap: React.FC<BibleMindMapProps> = ({
                 </View>
                 {Platform.OS === 'web' && (
                   <Text style={styles.controlNote}>
-                    You can also use Ctrl+Mouse wheel to zoom
+                    {t('visualization:ctrlMouseWheelToZoom')}
                   </Text>
                 )}
               </View>
@@ -1038,12 +1038,12 @@ const BibleMindMap: React.FC<BibleMindMapProps> = ({
                 onPress={handleCenterView}
               >
                 <Ionicons name="locate" size={16} color="#333" />
-                <Text style={styles.controlButtonText}>Center View</Text>
+                <Text style={styles.controlButtonText}>{t('visualization:centerView')}</Text>
               </TouchableOpacity>
               
               {/* Show Labels Toggle */}
               <View style={styles.controlRow}>
-                <Text style={styles.controlLabel}>Show Labels</Text>
+                <Text style={styles.controlLabel}>{t('visualization:showLabels')}</Text>
                 <Switch
                   value={showLabels}
                   onValueChange={setShowLabels}
@@ -1053,7 +1053,7 @@ const BibleMindMap: React.FC<BibleMindMapProps> = ({
               
               {/* Show Minimap Toggle */}
               <View style={styles.controlRow}>
-                <Text style={styles.controlLabel}>Show Minimap</Text>
+                <Text style={styles.controlLabel}>{t('visualization:showMinimap')}</Text>
                 <Switch
                   value={showMinimap}
                   onValueChange={setShowMinimap}
@@ -1110,7 +1110,7 @@ const BibleMindMap: React.FC<BibleMindMapProps> = ({
               </View>
             </TouchableWithoutFeedback>
             <View style={styles.minimapFooter}>
-              <Text style={styles.minimapHint}>Tap to navigate</Text>
+              <Text style={styles.minimapHint}>{t('visualization:tapToNavigate')}</Text>
               <Text style={styles.minimapZoom}>{Math.round(zoomLevel * 100)}%</Text>
             </View>
           </View>
