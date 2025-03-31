@@ -13,7 +13,7 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import { DatabaseService } from '../services';
 import BibleMindMap from '../components/BibleMindMap';
-import { Verse, Connection } from '../types/bible';
+import { Verse, Connection, ConnectionType, Note, NodeType } from '../types/bible';
 import { RootStackParamList } from '../navigation/types';
 import { useTranslation } from 'react-i18next';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -22,6 +22,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 const MINDMAP_VERSES_KEY = '@biblegraph:mindmap_verses';
 const MINDMAP_CONNECTIONS_KEY = '@biblegraph:mindmap_connections';
 const MINDMAP_LAST_VERSE_IDS_KEY = '@biblegraph:mindmap_last_verse_ids';
+const MINDMAP_NOTES_KEY = '@biblegraph:mindmap_notes';
 
 type MindMapScreenRouteProp = RouteProp<RootStackParamList, 'MindMap'>;
 type MindMapNavigationProp = NativeStackNavigationProp<RootStackParamList>;
@@ -39,6 +40,7 @@ const MindMapScreen: React.FC = () => {
   
   // State for data
   const [verses, setVerses] = useState<Verse[]>([]);
+  const [notes, setNotes] = useState<Note[]>([]);
   const [connections, setConnections] = useState<Connection[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -121,16 +123,19 @@ const MindMapScreen: React.FC = () => {
       // Load cached data if we have it
       const cachedVersesStr = await AsyncStorage.getItem(MINDMAP_VERSES_KEY);
       const cachedConnectionsStr = await AsyncStorage.getItem(MINDMAP_CONNECTIONS_KEY);
+      const cachedNotesStr = await AsyncStorage.getItem(MINDMAP_NOTES_KEY);
       
       if (cachedVersesStr && cachedConnectionsStr) {
         const cachedVerses = JSON.parse(cachedVersesStr);
         const cachedConnections = JSON.parse(cachedConnectionsStr);
+        const cachedNotes = cachedNotesStr ? JSON.parse(cachedNotesStr) : [];
         
         // If we have valid cached data, use it
         if (cachedVerses.length > 0) {
           console.log('Using cached mind map data');
           setVerses(cachedVerses);
           setConnections(cachedConnections);
+          setNotes(cachedNotes);
           setIsLoading(false);
           hasLoadedDefaultVersesRef.current = true;
           return;
@@ -151,6 +156,7 @@ const MindMapScreen: React.FC = () => {
       if (verses.length > 0) {
         await AsyncStorage.setItem(MINDMAP_VERSES_KEY, JSON.stringify(verses));
         await AsyncStorage.setItem(MINDMAP_CONNECTIONS_KEY, JSON.stringify(connections));
+        await AsyncStorage.setItem(MINDMAP_NOTES_KEY, JSON.stringify(notes));
         
         // Store the verse IDs we loaded for future comparison
         const verseIds = verses.map(v => v.id);
@@ -162,14 +168,14 @@ const MindMapScreen: React.FC = () => {
     } catch (err) {
       console.error('Error caching mind map data:', err);
     }
-  }, [verses, connections]);
+  }, [verses, connections, notes]);
   
   // Update cache when data changes
   useEffect(() => {
     if (verses.length > 0 && !isLoading) {
       cacheCurrentData();
     }
-  }, [verses, connections, isLoading, cacheCurrentData]);
+  }, [verses, connections, notes, isLoading, cacheCurrentData]);
   
   // Fetch popular verses as default data
   const fetchDefaultVerses = useCallback(async () => {
@@ -261,10 +267,11 @@ const MindMapScreen: React.FC = () => {
             allConnections.push(connection);
           }
           
-          // Track related verse IDs
+          // Track all connected verse IDs to fetch them later
           if (connection.sourceVerseId !== verseId) {
             relatedVerseIds.add(connection.sourceVerseId);
           }
+          
           if (connection.targetVerseId !== verseId) {
             relatedVerseIds.add(connection.targetVerseId);
           }
@@ -284,6 +291,32 @@ const MindMapScreen: React.FC = () => {
         setVerses(prev => [...prev, ...relatedVerses]); 
       }
       
+      // Collect all verse IDs (initial + related) to fetch notes for
+      const allVerseIds = [...verseIdsToFetch, ...relatedVerseIdsArray];
+      
+      // Fetch notes for all verses
+      const allNotes: Note[] = [];
+      for (const verseId of allVerseIds) {
+        try {
+          const notes = await DatabaseService.getNotesForVerse(verseId);
+          if (notes && notes.length > 0) {
+            allNotes.push(...notes);
+          }
+        } catch (err) {
+          console.error(`Error fetching notes for verse ${verseId}:`, err);
+        }
+      }
+      
+      // Set notes state, avoiding duplicates by using a Map
+      if (allNotes.length > 0) {
+        const uniqueNotesMap = new Map<string, Note>();
+        allNotes.forEach(note => {
+          uniqueNotesMap.set(note.id, note);
+        });
+        
+        setNotes(Array.from(uniqueNotesMap.values()));
+      }
+      
       // Save the verse IDs we just loaded
       lastLoadedVerseIdsRef.current = verseIdsToFetch;
       
@@ -296,17 +329,30 @@ const MindMapScreen: React.FC = () => {
   }, [initialVerseId, initialVerseIds, isNewData, fetchDefaultVerses]);
   
   // Handle verse selection
-  const handleNodeSelect = useCallback((verseId: string) => {
-    // Find if this is a verse node (might be a note or other type)
-    const selectedVerse = verses.find(v => v.id === verseId);
-    
-    if (selectedVerse) {
-      navigation.navigate('VerseDetail', {
-        verseId: verseId,
-        activeTab: 'connections'
-      });
+  const handleNodeSelect = useCallback((nodeId: string, nodeType: string) => {
+    if (nodeType === 'verse') {
+      // Find the verse and navigate to verse detail
+      const selectedVerse = verses.find(v => v.id === nodeId);
+      
+      if (selectedVerse) {
+        navigation.navigate('VerseDetail', {
+          verseId: nodeId,
+          activeTab: 'connections'
+        });
+      }
+    } else if (nodeType === 'note') {
+      // Find the note
+      const selectedNote = notes.find(n => n.id === nodeId);
+      
+      if (selectedNote) {
+        // Navigate to verse detail with the note's verse and open notes tab
+        navigation.navigate('VerseDetail', {
+          verseId: selectedNote.verseId,
+          activeTab: 'notes'
+        });
+      }
     }
-  }, [verses, navigation]);
+  }, [verses, notes, navigation]);
   
   // Handle connection selection
   const handleConnectionSelect = useCallback((connectionId: string) => {
@@ -397,6 +443,7 @@ const MindMapScreen: React.FC = () => {
         {verses.length > 0 ? (
           <BibleMindMap
             verses={verses}
+            notes={notes}
             connections={connections}
             onNodeSelect={handleNodeSelect}
             onConnectionSelect={handleConnectionSelect}

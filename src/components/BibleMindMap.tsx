@@ -1,13 +1,14 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Dimensions } from 'react-native';
-import { Verse, Connection, ConnectionType } from '../types/bible';
+import { Verse, Connection, ConnectionType, Note } from '../types/bible';
 import { Ionicons } from '@expo/vector-icons';
 import Svg, { Line } from 'react-native-svg';
 
 interface BibleMindMapProps {
   verses: Verse[];
+  notes: Note[];
   connections: Connection[];
-  onNodeSelect?: (verseId: string) => void;
+  onNodeSelect?: (nodeId: string, nodeType: string) => void;
   onConnectionSelect?: (connectionId: string) => void;
 }
 
@@ -21,6 +22,8 @@ interface Node {
   data: {
     text?: string;
     reference?: string;
+    content?: string;
+    verseId?: string;
   };
 }
 
@@ -39,6 +42,7 @@ interface Edge {
 
 const BibleMindMap: React.FC<BibleMindMapProps> = ({
   verses,
+  notes,
   connections,
   onNodeSelect,
   onConnectionSelect,
@@ -54,25 +58,25 @@ const BibleMindMap: React.FC<BibleMindMapProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [mapSize, setMapSize] = useState({ width: 0, height: 0 });
 
-  // Transform verses and connections into nodes and edges with positions
+  // Transform verses, notes, and connections into nodes and edges with positions
   const transformData = useCallback(() => {
     setIsLoading(true);
     setError(null);
 
     try {
-      // If no verses, return empty data
-      if (!verses || verses.length === 0) {
-        console.warn('BibleMindMap: No verses provided');
+      // If no verses or notes, return empty data
+      if ((!verses || verses.length === 0) && (!notes || notes.length === 0)) {
+        console.warn('BibleMindMap: No content to display');
         setIsLoading(false);
-        setError('No verses to display');
+        setError('No content to display');
         return;
       }
 
-      // Create a Map to track verse IDs we've already seen
-      const uniqueVerseIds = new Map<string, number>();
+      // Create a Map to track node IDs we've already seen
+      const uniqueIds = new Map<string, number>();
       
       // Calculate layout dimensions based on number of nodes
-      const nodeCount = verses.length;
+      const nodeCount = verses.length + (notes?.length || 0);
       const columns = Math.ceil(Math.sqrt(nodeCount));
       const rows = Math.ceil(nodeCount / columns);
       const mapWidth = Math.max(screenWidth * 2, columns * 200);
@@ -81,13 +85,13 @@ const BibleMindMap: React.FC<BibleMindMapProps> = ({
       setMapSize({ width: mapWidth, height: mapHeight });
 
       // Create nodes from verses with positions in a grid layout
-      const newNodes: Node[] = verses.map((verse, index) => {
+      const verseNodes: Node[] = verses.map((verse, index) => {
         const col = index % columns;
         const row = Math.floor(index / columns);
         
         // Track if we've seen this ID before to handle duplicates
         let uniqueId = verse.id;
-        const count = uniqueVerseIds.get(verse.id) || 0;
+        const count = uniqueIds.get(verse.id) || 0;
         
         if (count > 0) {
           // If we've seen this ID before, make it unique by appending the count
@@ -96,7 +100,7 @@ const BibleMindMap: React.FC<BibleMindMapProps> = ({
         }
         
         // Increment the count for this ID
-        uniqueVerseIds.set(verse.id, count + 1);
+        uniqueIds.set(verse.id, count + 1);
         
         return {
           id: uniqueId,
@@ -111,14 +115,61 @@ const BibleMindMap: React.FC<BibleMindMapProps> = ({
         };
       });
 
-      // Update connection references if we've modified any verse IDs
-      const updatedConnections = connections.map(connection => {
-        // Clone the connection to avoid modifying the original
-        return { ...connection };
-      });
+      // Create nodes from notes (starting from where verse nodes ended)
+      const noteNodes: Node[] = notes ? notes.map((note, index) => {
+        const col = (verses.length + index) % columns;
+        const row = Math.floor((verses.length + index) / columns);
+        
+        // Track if we've seen this ID before to handle duplicates
+        let uniqueId = note.id;
+        const count = uniqueIds.get(note.id) || 0;
+        
+        if (count > 0) {
+          // If we've seen this ID before, make it unique by appending the count
+          uniqueId = `${note.id}-dup${count}`;
+          console.warn(`BibleMindMap: Duplicate note ID found: ${note.id}, creating unique ID: ${uniqueId}`);
+        }
+        
+        // Increment the count for this ID
+        uniqueIds.set(note.id, count + 1);
+        
+        // Find the verse this note belongs to
+        const relatedVerse = verses.find(v => v.id === note.verseId);
+        const noteLabel = relatedVerse 
+          ? `Note on ${relatedVerse.book} ${relatedVerse.chapter}:${relatedVerse.verse}` 
+          : 'Note';
+        
+        return {
+          id: uniqueId,
+          label: noteLabel,
+          x: 100 + col * 200,
+          y: 100 + row * 150,
+          type: 'note',
+          data: {
+            text: note.content || '',
+            content: note.content || '',
+            verseId: note.verseId,
+          }
+        };
+      }) : [];
 
+      // Combine all nodes
+      const newNodes = [...verseNodes, ...noteNodes];
+
+      // Update connection references if needed based on node map
+      const nodeMap = new Map<string, string>();
+      newNodes.forEach(node => {
+        // Split out the original ID from any duplicate suffix
+        const originalId = node.id.includes('-dup') 
+          ? node.id.substring(0, node.id.indexOf('-dup')) 
+          : node.id;
+        
+        // Map the original ID to this node ID
+        nodeMap.set(originalId, node.id);
+      });
+      
       // Create edges from connections with updated references if needed
-      const newEdges: Edge[] = updatedConnections.map(connection => {
+      const newEdges: Edge[] = connections.map(connection => {
         // Determine edge color based on connection type
         let color = '#999999';
         switch (connection.type) {
@@ -133,17 +184,13 @@ const BibleMindMap: React.FC<BibleMindMapProps> = ({
             break;
         }
 
-        // Find the correct source and target nodes from our newNodes array
-        // In case we've renamed any node IDs to make them unique
-        const sourceNode = newNodes.find(node => 
-          node.id === connection.sourceVerseId || 
-          node.id.startsWith(connection.sourceVerseId + '-dup')
-        );
+        // Find the correct source and target nodes using our nodeMap
+        const sourceNodeId = nodeMap.get(connection.sourceVerseId) || connection.sourceVerseId;
+        const targetNodeId = nodeMap.get(connection.targetVerseId) || connection.targetVerseId;
         
-        const targetNode = newNodes.find(node => 
-          node.id === connection.targetVerseId || 
-          node.id.startsWith(connection.targetVerseId + '-dup')
-        );
+        // Get the actual node objects
+        const sourceNode = newNodes.find(node => node.id === sourceNodeId);
+        const targetNode = newNodes.find(node => node.id === targetNodeId);
 
         // Skip edges whose source or target nodes don't exist
         if (!sourceNode || !targetNode) {
@@ -164,22 +211,50 @@ const BibleMindMap: React.FC<BibleMindMapProps> = ({
         };
       }).filter(edge => edge !== null) as Edge[];
 
-      // If we have nodes but no edges, create some default edges to make a nicer layout
-      if (newNodes.length > 0 && newEdges.length === 0 && newNodes.length > 1) {
+      // If we have nodes but no edges and more than one node, create some default edges
+      if (newNodes.length > 1 && newEdges.length === 0) {
         console.log('BibleMindMap: Creating default layout for disconnected nodes');
-        // Create a chain layout connecting all nodes
-        for (let i = 0; i < newNodes.length - 1; i++) {
-          newEdges.push({
-            id: `default-edge-${i}`,
-            source: newNodes[i].id,
-            target: newNodes[i + 1].id,
-            label: ConnectionType.THEME,
-            color: '#dddddd',
-            data: {
-              type: ConnectionType.THEME,
-              description: 'Verses displayed together'
+        
+        // First connect verses with their notes
+        noteNodes.forEach(noteNode => {
+          if (noteNode.data.verseId) {
+            // Find the verse node for this note
+            const verseNode = verseNodes.find(v => 
+              v.id === noteNode.data.verseId || 
+              v.id.startsWith(noteNode.data.verseId + '-dup')
+            );
+            
+            if (verseNode) {
+              newEdges.push({
+                id: `note-edge-${noteNode.id}`,
+                source: verseNode.id,
+                target: noteNode.id,
+                label: ConnectionType.NOTE,
+                color: '#4285F4',
+                data: {
+                  type: ConnectionType.NOTE,
+                  description: 'Note for verse'
+                }
+              });
             }
-          });
+          }
+        });
+        
+        // If we still have no edges, create a chain layout connecting all nodes
+        if (newEdges.length === 0) {
+          for (let i = 0; i < newNodes.length - 1; i++) {
+            newEdges.push({
+              id: `default-edge-${i}`,
+              source: newNodes[i].id,
+              target: newNodes[i + 1].id,
+              label: ConnectionType.THEME,
+              color: '#dddddd',
+              data: {
+                type: ConnectionType.THEME,
+                description: 'Shown together'
+              }
+            });
+          }
         }
       }
 
@@ -191,19 +266,33 @@ const BibleMindMap: React.FC<BibleMindMapProps> = ({
       setError('Failed to create mind map');
       setIsLoading(false);
     }
-  }, [verses, connections, screenWidth, screenHeight]);
+  }, [verses, notes, connections, screenWidth, screenHeight]);
 
-  // Run transformData when verses or connections change
+  // Run transformData when verses, notes, or connections change
   useEffect(() => {
-    console.log(`BibleMindMap: Received ${verses.length} verses and ${connections.length} connections`);
+    console.log(`BibleMindMap: Received ${verses.length} verses, ${notes?.length || 0} notes, and ${connections.length} connections`);
     transformData();
-  }, [verses, connections, transformData]);
+  }, [verses, notes, connections, transformData]);
 
-  // Render each verse node
+  // Render each node (verse, note, or theme)
   const renderNode = useCallback((node: Node, index: number) => {
     const handlePress = () => {
       if (onNodeSelect) {
-        onNodeSelect(node.id);
+        onNodeSelect(node.id, node.type);
+      }
+    };
+
+    // Get appropriate icon based on node type
+    const getNodeIcon = () => {
+      switch (node.type) {
+        case 'verse':
+          return <Ionicons name="book-outline" size={16} color="#4285F4" />;
+        case 'note':
+          return <Ionicons name="document-text-outline" size={16} color="#FF9500" />;
+        case 'theme':
+          return <Ionicons name="pricetag-outline" size={16} color="#34C759" />;
+        default:
+          return null;
       }
     };
 
@@ -216,14 +305,17 @@ const BibleMindMap: React.FC<BibleMindMapProps> = ({
             left: node.x - 80,
             top: node.y - 40,
             backgroundColor: node.type === 'verse' ? '#ffffff' : 
-                            node.type === 'theme' ? '#f0f8ff' : '#fffef0',
+                            node.type === 'theme' ? '#f0f8ff' : '#fff9f0',
             borderColor: node.type === 'verse' ? '#4285F4' : 
                         node.type === 'theme' ? '#34C759' : '#FF9500',
           }
         ]}
         onPress={handlePress}
       >
-        <Text style={styles.nodeLabel}>{node.label}</Text>
+        <View style={styles.nodeHeader}>
+          {getNodeIcon()}
+          <Text style={styles.nodeLabel} numberOfLines={1}>{node.label}</Text>
+        </View>
         {node.data.text && (
           <Text 
             style={styles.nodeText} 
@@ -255,58 +347,6 @@ const BibleMindMap: React.FC<BibleMindMapProps> = ({
     );
   }
 
-  // Render all edges as components
-  const renderEdges = () => {
-    return edges.map((edge, index) => {
-      const sourceNode = nodes.find(n => n.id === edge.source);
-      const targetNode = nodes.find(n => n.id === edge.target);
-
-      if (!sourceNode || !targetNode) return null;
-
-      return (
-        <Line
-          key={`edge-${edge.id}-${index}`}
-          x1={sourceNode.x}
-          y1={sourceNode.y}
-          x2={targetNode.x}
-          y2={targetNode.y}
-          stroke={edge.color}
-          strokeWidth="2"
-        />
-      );
-    });
-  };
-
-  // Render edge touch targets
-  const renderEdgeTouchTargets = () => {
-    return edges.map((edge, index) => {
-      const sourceNode = nodes.find(n => n.id === edge.source);
-      const targetNode = nodes.find(n => n.id === edge.target);
-
-      if (!sourceNode || !targetNode) return null;
-
-      // Calculate line midpoint for the touch target
-      const midX = (sourceNode.x + targetNode.x) / 2;
-      const midY = (sourceNode.y + targetNode.y) / 2;
-
-      return (
-        <TouchableOpacity
-          key={`touch-${edge.id}-${index}`}
-          style={[
-            styles.edgeTouchTarget,
-            {
-              left: midX - 30,
-              top: midY - 15,
-            }
-          ]}
-          onPress={() => onConnectionSelect && onConnectionSelect(edge.id)}
-        >
-          <Text style={styles.edgeLabel}>{edge.label}</Text>
-        </TouchableOpacity>
-      );
-    });
-  };
-
   return (
     <ScrollView 
       style={styles.container}
@@ -321,9 +361,54 @@ const BibleMindMap: React.FC<BibleMindMapProps> = ({
       showsVerticalScrollIndicator={true}
     >
       <Svg width={mapSize.width} height={mapSize.height}>
-        {renderEdges()}
+        {edges.map((edge, index) => {
+          const sourceNode = nodes.find(n => n.id === edge.source);
+          const targetNode = nodes.find(n => n.id === edge.target);
+
+          if (!sourceNode || !targetNode) return null;
+
+          return (
+            <Line
+              key={`edge-${edge.id}-${index}`}
+              x1={sourceNode.x}
+              y1={sourceNode.y}
+              x2={targetNode.x}
+              y2={targetNode.y}
+              stroke={edge.color}
+              strokeWidth="2"
+            />
+          );
+        })}
       </Svg>
-      {renderEdgeTouchTargets()}
+      {edges.map((edge, index) => {
+        const sourceNode = nodes.find(n => n.id === edge.source);
+        const targetNode = nodes.find(n => n.id === edge.target);
+
+        if (!sourceNode || !targetNode) return null;
+
+        // Calculate line midpoint for the touch target
+        const midX = (sourceNode.x + targetNode.x) / 2;
+        const midY = (sourceNode.y + targetNode.y) / 2;
+
+        return (
+          <TouchableOpacity
+            key={`touch-${edge.id}-${index}`}
+            style={[
+              styles.edgeTouchTarget,
+              {
+                left: midX - 30,
+                top: midY - 15,
+              }
+            ]}
+            onPress={() => onConnectionSelect && onConnectionSelect(edge.id)}
+          >
+            <Text style={[
+              styles.edgeLabel,
+              { color: edge.color } 
+            ]}>{edge.label}</Text>
+          </TouchableOpacity>
+        );
+      })}
       {nodes.map((node, index) => renderNode(node, index))}
     </ScrollView>
   );
@@ -366,11 +451,16 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 3,
   },
+  nodeHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
   nodeLabel: {
     fontSize: 14,
     fontWeight: 'bold',
-    textAlign: 'center',
-    marginBottom: 4,
+    marginLeft: 4,
+    flex: 1,
   },
   nodeText: {
     fontSize: 12,
@@ -380,13 +470,15 @@ const styles = StyleSheet.create({
     position: 'absolute',
     width: 60,
     height: 30,
-    backgroundColor: 'transparent',
+    backgroundColor: 'rgba(255,255,255,0.8)',
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   edgeLabel: {
     fontSize: 12,
     fontWeight: 'bold',
     textAlign: 'center',
-    color: '#000',
   },
 });
 
