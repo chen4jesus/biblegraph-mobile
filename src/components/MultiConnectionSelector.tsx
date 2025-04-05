@@ -11,8 +11,8 @@ import {
   Switch,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { Verse, ConnectionType, Connection, GroupConnection } from '../types/bible';
-import { DatabaseService } from '../services';
+import { Verse, ConnectionType, Connection, GroupConnection, User } from '../types/bible';
+import { DatabaseService, AuthService } from '../services';
 import { useTranslation } from 'react-i18next';
 
 interface VerseConnection {
@@ -49,6 +49,21 @@ const MultiConnectionSelector: React.FC<MultiConnectionSelectorProps> = ({
   const [isSaving, setIsSaving] = useState(false);
   const [useGroupConnection, setUseGroupConnection] = useState(false);
   const [groupName, setGroupName] = useState('');
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+
+  // Load the current user
+  useEffect(() => {
+    const fetchCurrentUser = async () => {
+      try {
+        const user = await AuthService.getCurrentUser();
+        setCurrentUser(user);
+      } catch (error) {
+        console.error('Error fetching current user:', error);
+      }
+    };
+    
+    fetchCurrentUser();
+  }, []);
 
   // Load the target verse if not provided
   useEffect(() => {
@@ -171,7 +186,7 @@ const MultiConnectionSelector: React.FC<MultiConnectionSelectorProps> = ({
         }));
 
         // Save connections to Neo4j
-        const results = await DatabaseService.createConnectionsBatch(connections);
+        const results = await DatabaseService.createConnectionsBatch(connections, currentUser?.id);
         
         if (results.length > 0) {
           Alert.alert(

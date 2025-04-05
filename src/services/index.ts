@@ -152,8 +152,8 @@ export const DatabaseService = {
   /**
    * Create a new note
    */
-  createNote: (verseId: string, content: string, tags?: string[]) => 
-    neo4jDatabaseService.createNote(verseId, content, tags),
+  createNote: (verseId: string, content: string, tags?: string[], userId?: string) => 
+    neo4jDatabaseService.createNote(verseId, content, tags, userId),
 
   /**
    * Update an existing note
@@ -240,7 +240,25 @@ export const DatabaseService = {
    * Get group connections for a verse
    */
   getGroupConnectionsByVerseId: (verseId: string) =>
-    neo4jDatabaseService.getGroupConnectionsByVerseId(verseId)
+    neo4jDatabaseService.getGroupConnectionsByVerseId(verseId),
+
+  /**
+   * Get connections owned by the current user
+   */
+  getMyConnections: () =>
+    neo4jDatabaseService.getMyConnections(),
+
+  /**
+   * Manage connection ownership
+   */
+  attachUserToConnection: (connectionId: string, userId: string) =>
+    neo4jDatabaseService.attachUserToConnection(connectionId, userId),
+
+  /**
+   * Manage connection ownership
+   */
+  detachUserFromConnection: (connectionId: string, userId: string) =>
+    neo4jDatabaseService.detachUserFromConnection(connectionId, userId)
 };
 
 // Authentication Service API
@@ -334,7 +352,25 @@ export const StorageService = {
   /**
    * Clear all storage
    */
-  clearAll: () => storageService.clearAll()
+  clearAll: () => storageService.clearAll(),
+
+  /**
+   * Get notes owned by the current user
+   */
+  getMyNotes: () =>
+    neo4jDatabaseService.getMyNotes(),
+
+  /**
+   * Manage note ownership
+   */
+  attachUserToNote: (noteId: string, userId: string) =>
+    neo4jDatabaseService.attachUserToNote(noteId, userId),
+
+  /**
+   * Manage note ownership
+   */
+  detachUserFromNote: (noteId: string, userId: string) =>
+    neo4jDatabaseService.detachUserFromNote(noteId, userId)
 };
 
 // Sync Service API

@@ -32,6 +32,7 @@ import LanguageSettingsScreen from '../screens/LanguageSettingsScreen';
 import GroupDetailScreen from '../screens/GroupDetailScreen';
 import TagsManagementScreen from '../screens/TagsManagementScreen';
 import MindMapScreen from '../screens/MindMapScreen';
+import MyContentScreen from '../screens/MyContentScreen';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 const Tab = createBottomTabNavigator<MainTabParamList>();
@@ -388,6 +389,14 @@ const AppNavigator: React.FC = () => {
                 name="MindMap" 
                 component={MindMapScreen}
                 options={{ title: t('visualization:mindMap') }}
+              />
+              <Stack.Screen
+                name="MyContent"
+                component={MyContentScreen}
+                options={{
+                  title: t('myContent.title'),
+                  headerShown: true,
+                }}
               />
             </>
           )}

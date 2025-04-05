@@ -29,6 +29,7 @@ export type RootStackParamList = {
     multiSelect?: boolean;
   };
   GroupDetail: { groupId: string };
+  MyContent: undefined;
 };
 
 export type MainTabParamList = {

@@ -42,7 +42,7 @@ export type NodeType = 'VERSE' | 'GROUP' | 'NOTE' | 'TAG' | 'TOPIC';
 
 export interface GroupConnection {
   id: string;
-  name?: string;
+  name: string;
   connectionIds: string[];
   type: ConnectionType;
   description?: string;
@@ -59,6 +59,7 @@ export interface GroupConnection {
   
   // Optional metadata for rich connections
   metadata?: Record<string, any>;
+  userId?: string;
 }
 
 export interface Note {

@@ -1,4 +1,7 @@
 {
+  "app": {
+    "title": "BibleGraph"
+  },
   "common": {
     "loading": "Loading...",
     "error": "Error",
@@ -9,7 +12,7 @@
     "delete": "Delete",
     "edit": "Edit",
     "discard": "Discard",
-    "search": "Search Bible verses...",
+    "search": "Search",
     "searchNotes": "Search notes...",
     "clearFilters": "Clear filters",
     "all": "All",
@@ -26,7 +29,8 @@
     "initializingDatabase": "Initializing Database...",
     "chooseVisualization": "Choose Visualization",
     "selectVisualizationType": "Select a visualization type",
-    "selectedVerses": "Selected Verses"
+    "selectedVerses": "Selected Verses",
+    "share": "Share"
   },
   "home": {
     "title": "Bible Graph",
@@ -283,7 +287,8 @@
     "darkModeDescription": "Enable dark theme",
     "preferences": "Preferences",
     "confirmLogout": "Are you sure you want to logout?",
-    "logoutError": "Failed to logout. Please try again."
+    "logoutError": "Failed to logout. Please try again.",
+    "myContent": "My Notes & Connections"
   },
   "visualization": {
     "title": "Visualization",
@@ -305,5 +310,28 @@
     "note": "Note",
     "parallel": "Parallel",
     "shownTogether": "Shown together"
-  } 
+  },
+  "myContent": {
+    "title": "My Content",
+    "notes": "Notes",
+    "connections": "Connections",
+    "noNotes": "You haven't created any notes yet",
+    "noConnections": "You haven't created any connections yet",
+    "createNote": "Create a Note",
+    "createConnection": "Create a Connection",
+    "shareTitle": "Share with User",
+    "emailPlaceholder": "Enter user email",
+    "shareSuccess": "Content shared successfully",
+    "deleteConfirm": "Are you sure you want to delete this item?",
+    "deleteSuccess": "Item deleted successfully",
+    "loginPrompt": "Please log in to view your content"
+  },
+  "errors": {
+    "general": "Something went wrong. Please try again.",
+    "network": "Network error. Please check your connection.",
+    "loadingContent": "Error loading your content. Please try again.",
+    "refreshingContent": "Error refreshing content. Please try again.",
+    "sharingItem": "Error sharing the item. Please try again.",
+    "deletingItem": "Error deleting the item. Please try again."
+  }
 } 

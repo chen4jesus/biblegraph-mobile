@@ -19,7 +19,7 @@ import {
 import { useRoute, RouteProp, useNavigation } from '@react-navigation/native';
 import { RootStackParamList } from '../navigation/types';
 import { Verse, Note, Connection, ConnectionType, VerseGroup, GroupConnection, NodeType, Tag } from '../types/bible';
-import { DatabaseService } from '../services';
+import { DatabaseService, AuthService } from '../services';
 import { Ionicons } from '@expo/vector-icons';
 import { useTranslation } from 'react-i18next';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -72,11 +72,11 @@ interface ConnectionWithVerse extends Connection {
 // Update the component type declaration
 const VerseDetailScreen: React.FC = () => {
   const { t } = useTranslation(['verseDetail', 'common', 'navigation']);
-  const route = useRoute<VerseDetailScreenRouteProp>();
-  const navigation = useNavigation<VerseDetailNavigationProp>();
+  const route = useRoute<RouteProp<RootStackParamList, 'VerseDetail'>>();
+  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const [verse, setVerse] = useState<Verse | null>(null);
   const [notes, setNotes] = useState<Note[]>([]);
-  const [connections, setConnections] = useState<ConnectionWithVerse[]>([]);
+  const [connections, setConnections] = useState<Connection[]>([]);
   const [newNote, setNewNote] = useState('');
   const [newNoteTags, setNewNoteTags] = useState<string[]>([]);
   const [newTagInput, setNewTagInput] = useState('');
@@ -387,7 +387,10 @@ const VerseDetailScreen: React.FC = () => {
     if (!newNote.trim() || !verse) return;
 
     try {
-      const note = await DatabaseService.createNote(verse.id, newNote, newNoteTags);
+      // Get current user for ownership
+      const currentUser = await AuthService.getCurrentUser();
+      DatabaseService.createNote(verse.id, newNote, newNoteTags, currentUser);
+      const note = await DatabaseService.createNote(verse.id, newNote, newNoteTags, currentUser?.id);
       setNotes([...notes, note]);
       setNewNote('');
       setNewNoteTags([]);
@@ -473,6 +476,9 @@ const VerseDetailScreen: React.FC = () => {
     }
 
     try {
+      // Get current user for ownership
+      const currentUser = await AuthService.getCurrentUser();
+      
       const formattedRef = formatVerseReference(targetVerseRef);
       
       // First check if the target verse exists
@@ -527,7 +533,8 @@ const VerseDetailScreen: React.FC = () => {
         description: '',
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
-        connectedVerse: targetVerse
+        connectedVerse: targetVerse,
+        userId: currentUser?.id
       };
       
       await DatabaseService.createConnection(connection);
@@ -1033,7 +1040,10 @@ const VerseDetailScreen: React.FC = () => {
   };
 
   // Add function for adding new notes via modal
-  const handleAddNoteViaModal = () => {
+  const handleAddNoteViaModal = async () => {
+    // Get current user for ownership
+    const currentUser = await AuthService.getCurrentUser();
+    
     // Create a temporary note object
     const tempNote: Note = {
       id: 'temp-' + Date.now(),
@@ -1041,7 +1051,8 @@ const VerseDetailScreen: React.FC = () => {
       content: '',
       tags: [],
       createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
+      updatedAt: new Date().toISOString(),
+      userId: currentUser?.id
     };
     
     setCurrentNote(tempNote);
@@ -1051,6 +1062,9 @@ const VerseDetailScreen: React.FC = () => {
   // Update the handleSaveNoteFromModal function to trigger animation
   const handleSaveNoteFromModal = async (content: string, tags: string[], noteId?: string, isNew?: boolean) => {
     try {
+      // Get current user for ownership
+      const currentUser = await AuthService.getCurrentUser();
+      
       // Check if this is a new note by checking for temp- prefix in the ID
       const isNewNote = !noteId || noteId.startsWith('temp-') || isNew === true;
       
@@ -1077,8 +1091,8 @@ const VerseDetailScreen: React.FC = () => {
           notesScreen.updateSingleNote(noteId, false);
         }
       } else {
-        // Creating new note
-        const newNote = await DatabaseService.createNote(verse!.id, content, tags);
+        // Creating new note with user ID for ownership
+        const newNote = await DatabaseService.createNote(verse!.id, content, tags, currentUser?.id);
         
         // Add to local notes state
         setNotes(prevNotes => [newNote, ...prevNotes]);

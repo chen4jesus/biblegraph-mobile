@@ -393,101 +393,99 @@ class Neo4jDriver {
     }
   }
 
-  public async createConnection(connection: ConnectionCreateInput): Promise<Connection> {
+  public async createConnection(
+    connection: ConnectionCreateInput,
+    userId?: string
+  ): Promise<Connection> {
     const session = this.getSession();
-    const now = new Date().toISOString();
-    const id = uuidv4();
-    
     try {
-      // First verify both verses exist
-      const versesResult = await session.run(`
-        MATCH (source:Verse {id: $sourceId})
-        MATCH (target:Verse {id: $targetId}) 
-        RETURN source, target
-      `, { 
-        sourceId: connection.sourceVerseId,
-        targetId: connection.targetVerseId
-      });
-
-      if (versesResult.records.length === 0) {
-        throw new Error(`One or both verses not found: ${connection.sourceVerseId} -> ${connection.targetVerseId}`);
+      // Generate ID and timestamp
+      const id = uuidv4();
+      const timestamp = new Date().toISOString();
+      
+      // Start building the query
+      let query = `
+        MATCH (source:Verse {id: $sourceVerseId})
+        MATCH (target:Verse {id: $targetVerseId})
+      `;
+      
+      // Add user match if userId is provided
+      if (userId) {
+        query += `
+          MATCH (user:User {id: $userId})
+        `;
       }
       
-      // Check if connection already exists
-      const existingResult = await session.run(`
-        MATCH (v1:Verse {id: $sourceId})-[c:CONNECTS_TO]->(v2:Verse {id: $targetId})
-        WHERE c.type = $type
-        RETURN c
-      `, {
-        sourceId: connection.sourceVerseId,
-        targetId: connection.targetVerseId,
-        type: connection.type
-      });
-      
-      // If connection already exists, return it
-      if (existingResult.records.length > 0) {
-        const existingProps = existingResult.records[0].get('c').properties;
-        return {
-          id: existingProps.id.toString(),
-          sourceVerseId: connection.sourceVerseId,
-          targetVerseId: connection.targetVerseId,
-          type: connection.type,
-          description: existingProps.description,
-          createdAt: existingProps.createdAt,
-          updatedAt: existingProps.updatedAt,
-        };
-      }
-      
-      // Create new connection
-      const result = await session.run(`
-        MATCH (v1:Verse {id: $sourceId})
-        MATCH (v2:Verse {id: $targetId})
-        CREATE (v1)-[c:CONNECTS_TO {
+      // Create the connection
+      query += `
+        CREATE (c:Connection {
           id: $id,
           type: $type,
           description: $description,
-          createdAt: $now,
-          updatedAt: $now
-        }]->(v2)
-        RETURN c, v1.id as sourceId, v2.id as targetId
-      `, {
+          sourceVerseId: $sourceVerseId,
+          targetVerseId: $targetVerseId,
+          createdAt: $timestamp,
+          updatedAt: $timestamp
+        })
+        CREATE (c)-[:FROM]->(source)
+        CREATE (c)-[:TO]->(target)
+      `;
+      
+      // Add user ownership relationship if userId is provided
+      if (userId) {
+        query += `
+          CREATE (user)-[:OWNS]->(c)
+        `;
+      }
+      
+      // Return the connection
+      query += `
+        RETURN c
+      `;
+      
+      const result = await session.run(query, {
         id,
-        sourceId: connection.sourceVerseId,
-        targetId: connection.targetVerseId,
         type: connection.type,
-        description: connection.description,
-        now
+        description: connection.description || '',
+        sourceVerseId: connection.sourceVerseId,
+        targetVerseId: connection.targetVerseId,
+        userId: userId || null,
+        timestamp
       });
       
       if (result.records.length === 0) {
-        throw new Error(`Failed to create connection between ${connection.sourceVerseId} and ${connection.targetVerseId}`);
+        throw new Error('Failed to create connection');
       }
       
-      const record = result.records[0];
-      const connectionProps = record.get('c').properties;
+      const connectionProps = result.records[0].get('c').properties;
       
       return {
-        id: connectionProps.id.toString(),
-        sourceVerseId: record.get('sourceId'),
-        targetVerseId: record.get('targetId'),
+        id: connectionProps.id,
+        sourceVerseId: connectionProps.sourceVerseId,
+        targetVerseId: connectionProps.targetVerseId,
         type: connectionProps.type as ConnectionType,
-        description: connectionProps.description,
+        description: connectionProps.description || undefined,
         createdAt: connectionProps.createdAt,
-        updatedAt: connectionProps.updatedAt,
+        updatedAt: connectionProps.updatedAt
       };
-    } catch (error) {
-      console.error(`Error creating connection from ${connection.sourceVerseId} to ${connection.targetVerseId}:`, error);
-      throw error;
     } finally {
       await session.close();
     }
   }
 
-  public async updateConnection(connectionId: string, updates: Partial<Connection>): Promise<Connection> {
+  public async updateConnection(connectionId: string, updates: Partial<Connection>, userId?: string): Promise<Connection> {
     const session = this.getSession();
     const now = new Date().toISOString();
     
     try {
+      // Check ownership if userId is provided
+      if (userId) {
+        const ownershipCheck = await this.userOwnsConnection(userId, connectionId);
+        if (!ownershipCheck) {
+          throw new Error(`User ${userId} does not have permission to update connection ${connectionId}`);
+        }
+      }
+      
       // Build dynamic update properties
       const updateProps = Object.entries(updates)
         .filter(([key]) => !['id', 'sourceVerseId', 'targetVerseId', 'createdAt'].includes(key))
@@ -529,9 +527,17 @@ class Neo4jDriver {
     }
   }
 
-  public async deleteConnection(connectionId: string): Promise<boolean> {
+  public async deleteConnection(connectionId: string, userId?: string): Promise<boolean> {
     const session = this.getSession();
     try {
+      // Check ownership if userId is provided
+      if (userId) {
+        const ownershipCheck = await this.userOwnsConnection(userId, connectionId);
+        if (!ownershipCheck) {
+          throw new Error(`User ${userId} does not have permission to delete connection ${connectionId}`);
+        }
+      }
+      
       const result = await session.run(`
         MATCH (v1:Verse)-[c:CONNECTS_TO {id: $id}]->(v2:Verse)
         DELETE c
@@ -644,113 +650,103 @@ class Neo4jDriver {
     }
   }
 
-  public async createNote(verseId: string, content: string, tags: string[] = []): Promise<Note> {
+  public async createNote(verseId: string, content: string, tags: string[] = [], userId?: string): Promise<Note> {
     const session = this.getSession();
-    const now = new Date().toISOString();
-    const id = uuidv4();
-    
     try {
-      // First verify the verse exists
-      const verseResult = await session.run(`
+      const noteId = uuidv4();
+      const timestamp = new Date().toISOString();
+      
+      // Prepare the query to create the note with user ownership
+      let query = `
         MATCH (v:Verse {id: $verseId})
-        RETURN v
-      `, { verseId });
-
-      if (verseResult.records.length === 0) {
-        throw new Error(`Verse with id ${verseId} not found`);
-      }
-
-      // Ensure tags is a proper string array
-      const tagsArray = Array.isArray(tags) 
-        ? tags.filter(tag => tag && typeof tag === 'string').map(tag => tag.trim())
-        : [];
+      `;
       
-      // Use a transaction to create the note and its tag relationships
-      const txc = session.beginTransaction();
-      
-      try {
-        // Create the note
-        const createResult = await txc.run(`
-          MATCH (v:Verse {id: $verseId})
-          CREATE (n:Note {
-            id: $id,
-            content: $content,
-            createdAt: $now,
-            updatedAt: $now
-          })-[:ABOUT]->(v)
-          RETURN n
-        `, {
-          id,
-          verseId,
-          content,
-          now
-        });
-        
-        if (createResult.records.length === 0) {
-          await txc.rollback();
-          throw new Error('Failed to create note');
-        }
-        
-        // If we have tags, create relationships to them
-        if (tagsArray.length > 0) {
-          // For each tag name, either find or create the tag node
-          for (const tagName of tagsArray) {
-            // Use MERGE with ON CREATE to only set properties if the tag is new
-            await txc.run(`
-              MERGE (t:Tag {name: $tagName})
-              ON CREATE SET 
-                t.id = $tagId, 
-                t.color = $color, 
-                t.createdAt = $now, 
-                t.updatedAt = $now
-              WITH t
-              MATCH (n:Note {id: $noteId})
-              MERGE (n)-[:HAS_TAG]->(t)
-            `, {
-              tagName,
-              tagId: uuidv4(),
-              color: this.getRandomTagColor(),
-              now,
-              noteId: id
-            });
-          }
-        }
-        
-        await txc.commit();
-        
-        // Return the complete note with tags
-        const noteResult = await session.run(`
-          MATCH (n:Note {id: $id})
-          OPTIONAL MATCH (n)-[:HAS_TAG]->(t:Tag)
-          RETURN n, collect(t.name) as tagNames
-        `, { id });
-        
-        const noteProps = noteResult.records[0].get('n').properties;
-        const noteTags = noteResult.records[0].get('tagNames');
-        
-        return {
-          id: noteProps.id.toString(),
-          content: noteProps.content,
-          tags: noteTags,
-          createdAt: noteProps.createdAt,
-          updatedAt: noteProps.updatedAt,
-          verseId
-        };
-      } catch (txError) {
-        await txc.rollback();
-        console.error('Transaction error creating note:', txError);
-        throw txError;
+      // Add user relationship if userId is provided
+      if (userId) {
+        query += `
+          MATCH (u:User {id: $userId})
+        `;
       }
+      
+      query += `
+        CREATE (n:Note {
+          id: $noteId,
+          content: $content,
+          createdAt: $timestamp,
+          updatedAt: $timestamp
+        })
+        CREATE (n)-[:ABOUT]->(v)
+      `;
+      
+      // Create OWNS relationship if userId is provided
+      if (userId) {
+        query += `
+          CREATE (u)-[:OWNS]->(n)
+        `;
+      }
+      
+      // Add tags if any are provided
+      if (tags.length > 0) {
+        query += `
+          WITH n
+          UNWIND $tags as tagName
+          MERGE (t:Tag {name: tagName})
+          ON CREATE SET t.id = ${"'" + uuidv4() + "'"},
+                        t.color = $randomColor,
+                        t.createdAt = $timestamp,
+                        t.updatedAt = $timestamp
+          CREATE (n)-[:HAS_TAG]->(t)
+        `;
+      }
+      
+      query += `
+        RETURN n
+      `;
+      
+      const randomColor = this.getRandomTagColor();
+      
+      const result = await session.run(query, {
+        verseId,
+        noteId,
+        content,
+        userId: userId || null,
+        timestamp,
+        tags,
+        randomColor
+      });
+      
+      if (result.records.length === 0) {
+        throw new Error('Failed to create note');
+      }
+      
+      const noteProps = result.records[0].get('n').properties;
+      
+      return {
+        id: noteProps.id,
+        verseId,
+        content: noteProps.content,
+        tags: tags,
+        createdAt: noteProps.createdAt,
+        updatedAt: noteProps.updatedAt
+      };
     } finally {
       await session.close();
     }
   }
 
-  public async updateNote(noteId: string, updates: Partial<Note>): Promise<Note> {
+  public async updateNote(noteId: string, updates: Partial<Note>, userId?: string): Promise<Note> {
     const session = this.getSession();
     const now = new Date().toISOString();
     
     try {
+      // Check ownership if userId is provided
+      if (userId) {
+        const ownershipCheck = await this.userOwnsNote(userId, noteId);
+        if (!ownershipCheck) {
+          throw new Error(`User ${userId} does not have permission to update note ${noteId}`);
+        }
+      }
+      
       // Use a transaction to update the note and its tag relationships
       const txc = session.beginTransaction();
       
@@ -839,9 +835,17 @@ class Neo4jDriver {
     }
   }
 
-  public async deleteNote(noteId: string): Promise<boolean> {
+  public async deleteNote(noteId: string, userId?: string): Promise<boolean> {
     const session = this.getSession();
     try {
+      // Check ownership if userId is provided
+      if (userId) {
+        const ownershipCheck = await this.userOwnsNote(userId, noteId);
+        if (!ownershipCheck) {
+          throw new Error(`User ${userId} does not have permission to delete note ${noteId}`);
+        }
+      }
+      
       // First verify the note exists
       const checkResult = await session.run(`
         MATCH (n:Note {id: $id})
@@ -992,7 +996,7 @@ class Neo4jDriver {
   }
 
   // Batch create multiple connections
-  public async createConnectionsBatch(connections: ConnectionCreateInput[]): Promise<Connection[]> {
+  public async createConnectionsBatch(connections: ConnectionCreateInput[], userId?: string): Promise<Connection[]> {
     if (!connections || connections.length === 0) {
       return [];
     }
@@ -1050,10 +1054,21 @@ class Neo4jDriver {
             continue;
           }
           
-          // Create new connection
-          const result = await txc.run(`
+          // Build the query based on whether userId is provided
+          let query = `
             MATCH (v1:Verse {id: $sourceId})
             MATCH (v2:Verse {id: $targetId})
+          `;
+          
+          // Add user match if userId is provided
+          if (userId) {
+            query += `
+              MATCH (user:User {id: $userId})
+            `;
+          }
+          
+          // Create the connection
+          query += `
             CREATE (v1)-[c:CONNECTS_TO {
               id: $id,
               type: $type,
@@ -1061,13 +1076,27 @@ class Neo4jDriver {
               createdAt: $now,
               updatedAt: $now
             }]->(v2)
+          `;
+          
+          // Add user ownership relationship if userId is provided
+          if (userId) {
+            query += `
+              CREATE (user)-[:OWNS]->(c)
+            `;
+          }
+          
+          // Return the connection
+          query += `
             RETURN c, v1.id as sourceId, v2.id as targetId
-          `, {
+          `;
+          
+          const result = await txc.run(query, {
             id,
             sourceId: connection.sourceVerseId,
             targetId: connection.targetVerseId,
             type: connection.type,
             description: connection.description,
+            userId: userId || null,
             now
           });
           
@@ -1090,7 +1119,6 @@ class Neo4jDriver {
         // Commit the transaction if all operations were successful
         await txc.commit();
         return results;
-        
       } catch (error) {
         // Rollback the transaction if there was an error
         await txc.rollback();
@@ -1228,7 +1256,8 @@ class Neo4jDriver {
       targetType: NodeType,
       relationshipType?: string,
       metadata?: Record<string, any>,
-      name?: string
+      name?: string,
+      userId?: string
     }
   ): Promise<GroupConnection> {
     const session = this.getSession();
@@ -1266,6 +1295,7 @@ class Neo4jDriver {
                 groupConnectionId: $groupConnectionId,
                 type: $type,
                 description: $description,
+                userId: $userId,
                 createdAt: $now,
                 updatedAt: $now
               }]->(target)
@@ -1276,6 +1306,7 @@ class Neo4jDriver {
               groupConnectionId,
               type,
               description,
+              userId: options.userId || null,
               now
             });
           }
@@ -1284,8 +1315,21 @@ class Neo4jDriver {
         // Convert metadata to a JSON string if it exists
         const metadataString = options.metadata ? JSON.stringify(options.metadata) : null;
 
-        // Create the group connection node
+        // Prepare to create the group connection node
+        let userMatch = '';
+        let userRelationship = '';
+        let userParams: Record<string, any> = {};
+        
+        // If userId is provided, set up user relationship creation
+        if (options.userId) {
+          userMatch = 'MATCH (user:User {id: $userId})';
+          userRelationship = 'CREATE (user)-[:OWNS]->(gc)';
+          userParams = { userId: options.userId };
+        }
+
+        // Create the group connection node with optional user relationship
         const result = await txc.run(`
+          ${userMatch}
           CREATE (gc:GroupConnection {
             id: $groupConnectionId,
             name: $name,
@@ -1297,11 +1341,14 @@ class Neo4jDriver {
             sourceType: $sourceType,
             targetType: $targetType,
             metadata: $metadata,
+            userId: $userId,
             createdAt: $now,
             updatedAt: $now
           })
+          ${userRelationship}
           RETURN gc
         `, { 
+          ...userParams,
           groupConnectionId, 
           name, 
           connectionIds,
@@ -1312,6 +1359,7 @@ class Neo4jDriver {
           sourceType: options.sourceType,
           targetType: options.targetType,
           metadata: metadataString, // Pass the stringified metadata
+          userId: options.userId || null,
           now 
         });
         
@@ -1335,7 +1383,8 @@ class Neo4jDriver {
           targetIds: gcProps.targetIds,
           sourceType: gcProps.sourceType,
           targetType: gcProps.targetType,
-          metadata: parsedMetadata // Return the parsed metadata
+          metadata: parsedMetadata, // Return the parsed metadata
+          userId: gcProps.userId || undefined
         };
       } catch (error) {
         await txc.rollback();
@@ -1765,6 +1814,276 @@ class Neo4jDriver {
       '#EF476F', '#FFC43D', '#1B9AAA', '#6F2DBD', '#84BC9C'
     ];
     return colors[Math.floor(Math.random() * colors.length)];
+  }
+
+  // User ownership methods
+  // These methods implement ownership through Neo4j relationships rather than schema modifications
+  
+  // Associate a user with a note
+  public async attachUserToNote(userId: string, noteId: string): Promise<boolean> {
+    const session = this.getSession();
+    try {
+      const result = await session.run(`
+        MATCH (u:User {id: $userId})
+        MATCH (n:Note {id: $noteId})
+        MERGE (u)-[r:OWNS]->(n)
+        RETURN r
+      `, { userId, noteId });
+      
+      return result.records.length > 0;
+    } catch (error) {
+      console.error(`Error attaching user ${userId} to note ${noteId}:`, error);
+      throw error;
+    } finally {
+      await session.close();
+    }
+  }
+  
+  // Disassociate a user from a note
+  public async detachUserFromNote(userId: string, noteId: string): Promise<boolean> {
+    const session = this.getSession();
+    try {
+      const result = await session.run(`
+        MATCH (u:User {id: $userId})-[r:OWNS]->(n:Note {id: $noteId})
+        DELETE r
+        RETURN count(r) as deleted
+      `, { userId, noteId });
+      
+      return result.records[0].get('deleted').toNumber() > 0;
+    } catch (error) {
+      console.error(`Error detaching user ${userId} from note ${noteId}:`, error);
+      throw error;
+    } finally {
+      await session.close();
+    }
+  }
+  
+  // Get all notes owned by a user
+  public async getNotesOwnedByUser(userId: string): Promise<Note[]> {
+    const session = this.getSession();
+    try {
+      const result = await session.run(`
+        MATCH (u:User {id: $userId})-[:OWNS]->(n:Note)-[:ABOUT]->(v:Verse)
+        OPTIONAL MATCH (n)-[:HAS_TAG]->(t:Tag)
+        WITH n, v, collect(t.name) as tagNames
+        RETURN n, v.id as verseId, tagNames
+        ORDER BY n.updatedAt DESC
+      `, { userId });
+      
+      return result.records.map(record => {
+        const noteProps = record.get('n').properties;
+        const tagNames = record.get('tagNames') || [];
+        return {
+          id: noteProps.id.toString(),
+          verseId: record.get('verseId'),
+          content: noteProps.content,
+          tags: tagNames,
+          createdAt: noteProps.createdAt,
+          updatedAt: noteProps.updatedAt,
+        };
+      });
+    } catch (error) {
+      console.error(`Error getting notes owned by user ${userId}:`, error);
+      throw error;
+    } finally {
+      await session.close();
+    }
+  }
+  
+  // Associate a user with a connection
+  public async attachUserToConnection(userId: string, connectionId: string): Promise<boolean> {
+    const session = this.getSession();
+    try {
+      const result = await session.run(`
+        MATCH (u:User {id: $userId})
+        MATCH (c:Connection {id: $connectionId})
+        MERGE (u)-[r:OWNS]->(c)
+        RETURN r
+      `, { userId, connectionId });
+      
+      return result.records.length > 0;
+    } catch (error) {
+      console.error(`Error attaching user ${userId} to connection ${connectionId}:`, error);
+      throw error;
+    } finally {
+      await session.close();
+    }
+  }
+  
+  // Disassociate a user from a connection
+  public async detachUserFromConnection(userId: string, connectionId: string): Promise<boolean> {
+    const session = this.getSession();
+    try {
+      const result = await session.run(`
+        MATCH (u:User {id: $userId})-[r:OWNS]->(c:Connection {id: $connectionId})
+        DELETE r
+        RETURN count(r) as deleted
+      `, { userId, connectionId });
+      
+      return result.records[0].get('deleted').toNumber() > 0;
+    } catch (error) {
+      console.error(`Error detaching user ${userId} from connection ${connectionId}:`, error);
+      throw error;
+    } finally {
+      await session.close();
+    }
+  }
+  
+  // Get all connections owned by a user
+  public async getConnectionsOwnedByUser(userId: string): Promise<Connection[]> {
+    const session = this.getSession();
+    try {
+      const result = await session.run(`
+        MATCH (u:User {id: $userId})-[:OWNS]->(c:Connection)
+        MATCH (c)-[:FROM]->(source:Verse)
+        MATCH (c)-[:TO]->(target:Verse)
+        RETURN c, source.id as sourceId, target.id as targetId
+        ORDER BY c.updatedAt DESC
+      `, { userId });
+      
+      return result.records.map(record => {
+        const connectionProps = record.get('c').properties;
+        return {
+          id: connectionProps.id.toString(),
+          sourceVerseId: record.get('sourceId'),
+          targetVerseId: record.get('targetId'),
+          type: connectionProps.type as ConnectionType,
+          description: connectionProps.description || '',
+          groupConnectionId: connectionProps.groupConnectionId || undefined,
+          createdAt: connectionProps.createdAt,
+          updatedAt: connectionProps.updatedAt,
+        };
+      });
+    } catch (error) {
+      console.error(`Error getting connections owned by user ${userId}:`, error);
+      throw error;
+    } finally {
+      await session.close();
+    }
+  }
+  
+  // Associate a user with a verse
+  public async attachUserToVerse(userId: string, verseId: string): Promise<boolean> {
+    const session = this.getSession();
+    try {
+      const result = await session.run(`
+        MATCH (u:User {id: $userId})
+        MATCH (v:Verse {id: $verseId})
+        MERGE (u)-[r:OWNS]->(v)
+        RETURN r
+      `, { userId, verseId });
+      
+      return result.records.length > 0;
+    } catch (error) {
+      console.error(`Error attaching user ${userId} to verse ${verseId}:`, error);
+      throw error;
+    } finally {
+      await session.close();
+    }
+  }
+  
+  // Disassociate a user from a verse
+  public async detachUserFromVerse(userId: string, verseId: string): Promise<boolean> {
+    const session = this.getSession();
+    try {
+      const result = await session.run(`
+        MATCH (u:User {id: $userId})-[r:OWNS]->(v:Verse {id: $verseId})
+        DELETE r
+        RETURN count(r) as deleted
+      `, { userId, verseId });
+      
+      return result.records[0].get('deleted').toNumber() > 0;
+    } catch (error) {
+      console.error(`Error detaching user ${userId} from verse ${verseId}:`, error);
+      throw error;
+    } finally {
+      await session.close();
+    }
+  }
+  
+  // Get all verses owned by a user
+  public async getVersesOwnedByUser(userId: string): Promise<Verse[]> {
+    const session = this.getSession();
+    try {
+      const result = await session.run(`
+        MATCH (u:User {id: $userId})-[:OWNS]->(v:Verse)
+        RETURN v
+        ORDER BY v.book, v.chapter, v.verse
+      `, { userId });
+      
+      return result.records.map(record => {
+        const verseProps = record.get('v').properties;
+        return {
+          id: verseProps.id.toString(),
+          book: verseProps.book,
+          chapter: this.toLongInt(verseProps.chapter),
+          verse: this.toLongInt(verseProps.verse),
+          text: verseProps.text,
+          translation: verseProps.translation || 'ESV',
+          createdAt: verseProps.createdAt || new Date().toISOString(),
+          updatedAt: verseProps.updatedAt || new Date().toISOString(),
+        };
+      });
+    } catch (error) {
+      console.error(`Error getting verses owned by user ${userId}:`, error);
+      throw error;
+    } finally {
+      await session.close();
+    }
+  }
+  
+  // Check if a user owns a note
+  public async userOwnsNote(userId: string, noteId: string): Promise<boolean> {
+    const session = this.getSession();
+    try {
+      const result = await session.run(`
+        MATCH (u:User {id: $userId})-[:OWNS]->(n:Note {id: $noteId})
+        RETURN count(n) as count
+      `, { userId, noteId });
+      
+      return result.records[0].get('count').toNumber() > 0;
+    } catch (error) {
+      console.error(`Error checking if user ${userId} owns note ${noteId}:`, error);
+      throw error;
+    } finally {
+      await session.close();
+    }
+  }
+  
+  // Check if a user owns a connection
+  public async userOwnsConnection(userId: string, connectionId: string): Promise<boolean> {
+    const session = this.getSession();
+    try {
+      const result = await session.run(`
+        MATCH (u:User {id: $userId})-[:OWNS]->(c:Connection {id: $connectionId})
+        RETURN count(c) as count
+      `, { userId, connectionId });
+      
+      return result.records[0].get('count').toNumber() > 0;
+    } catch (error) {
+      console.error(`Error checking if user ${userId} owns connection ${connectionId}:`, error);
+      throw error;
+    } finally {
+      await session.close();
+    }
+  }
+  
+  // Check if a user owns a verse
+  public async userOwnsVerse(userId: string, verseId: string): Promise<boolean> {
+    const session = this.getSession();
+    try {
+      const result = await session.run(`
+        MATCH (u:User {id: $userId})-[:OWNS]->(v:Verse {id: $verseId})
+        RETURN count(v) as count
+      `, { userId, verseId });
+      
+      return result.records[0].get('count').toNumber() > 0;
+    } catch (error) {
+      console.error(`Error checking if user ${userId} owns verse ${verseId}:`, error);
+      throw error;
+    } finally {
+      await session.close();
+    }
   }
 }
 

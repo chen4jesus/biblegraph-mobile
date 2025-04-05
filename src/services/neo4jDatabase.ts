@@ -239,17 +239,44 @@ class Neo4jDatabaseService {
 
   public async createConnection(connection: Omit<Connection, 'id' | 'createdAt' | 'updatedAt'>): Promise<Connection> {
     await this.ensureInitialized();
-    return neo4jDriverService.createConnection(connection);
+    
+    // Get current user for ownership
+    const currentUser = await this.getCurrentUser();
+    const userId = currentUser?.id;
+    
+    return neo4jDriverService.createConnection(connection, userId);
   }
 
   public async updateConnection(connectionId: string, updates: Partial<Connection>): Promise<Connection> {
     await this.ensureInitialized();
-    return neo4jDriverService.updateConnection(connectionId, updates);
+    
+    // Get current user for ownership check
+    const currentUser = await this.getCurrentUser();
+    const userId = currentUser?.id;
+    
+    return neo4jDriverService.updateConnection(connectionId, updates, userId);
   }
 
   public async deleteConnection(connectionId: string): Promise<boolean> {
     await this.ensureInitialized();
-    return neo4jDriverService.deleteConnection(connectionId);
+    
+    // Get current user for ownership check
+    const currentUser = await this.getCurrentUser();
+    const userId = currentUser?.id;
+    
+    return neo4jDriverService.deleteConnection(connectionId, userId);
+  }
+
+  // Method to get connections owned by the current user
+  public async getMyConnections(): Promise<Connection[]> {
+    await this.ensureInitialized();
+    
+    const currentUser = await this.getCurrentUser();
+    if (!currentUser) {
+      return [];
+    }
+    
+    return neo4jDriverService.getConnectionsOwnedByUser(currentUser.id);
   }
 
   // Note methods
@@ -268,19 +295,107 @@ class Neo4jDatabaseService {
     return neo4jDriverService.getNotesForVerse(verseId);
   }
 
-  public async createNote(verseId: string, content: string, tags: string[] = []): Promise<Note> {
+  public async createNote(verseId: string, content: string, tags: string[] = [], userId?: string): Promise<Note> {
     await this.ensureInitialized();
-    return neo4jDriverService.createNote(verseId, content, tags);
+    
+    return neo4jDriverService.createNote(verseId, content, tags, userId);
   }
 
-  public async updateNote(noteId: string, updates: Partial<Note>): Promise<Note> {
+  public async updateNote(noteId: string, updates: Partial<Note>, userId?: string): Promise<Note> {
     await this.ensureInitialized();
-    return neo4jDriverService.updateNote(noteId, updates);
+    
+    return neo4jDriverService.updateNote(noteId, updates, userId);
   }
 
-  public async deleteNote(noteId: string): Promise<boolean> {
+  public async deleteNote(noteId: string, userId?: string): Promise<boolean> {
     await this.ensureInitialized();
-    return neo4jDriverService.deleteNote(noteId);
+    
+    return neo4jDriverService.deleteNote(noteId, userId);
+  }
+
+  // Method to get notes owned by the current user
+  public async getMyNotes(): Promise<Note[]> {
+    await this.ensureInitialized();
+    
+    const currentUser = await this.getCurrentUser();
+    if (!currentUser) {
+      return [];
+    }
+    
+    return neo4jDriverService.getNotesOwnedByUser(currentUser.id);
+  }
+  
+  // Methods for managing ownership
+  public async attachUserToNote(noteId: string, targetUserId: string): Promise<boolean> {
+    await this.ensureInitialized();
+    
+    // Get current user for ownership check
+    const currentUser = await this.getCurrentUser();
+    if (!currentUser) {
+      throw new Error('User must be logged in to manage ownership');
+    }
+    
+    // Check if current user owns the note
+    const ownsNote = await neo4jDriverService.userOwnsNote(currentUser.id, noteId);
+    if (!ownsNote) {
+      throw new Error('You do not have permission to manage this note');
+    }
+    
+    return neo4jDriverService.attachUserToNote(targetUserId, noteId);
+  }
+  
+  public async detachUserFromNote(noteId: string, targetUserId: string): Promise<boolean> {
+    await this.ensureInitialized();
+    
+    // Get current user for ownership check
+    const currentUser = await this.getCurrentUser();
+    if (!currentUser) {
+      throw new Error('User must be logged in to manage ownership');
+    }
+    
+    // Check if current user owns the note
+    const ownsNote = await neo4jDriverService.userOwnsNote(currentUser.id, noteId);
+    if (!ownsNote) {
+      throw new Error('You do not have permission to manage this note');
+    }
+    
+    return neo4jDriverService.detachUserFromNote(targetUserId, noteId);
+  }
+  
+  public async attachUserToConnection(connectionId: string, targetUserId: string): Promise<boolean> {
+    await this.ensureInitialized();
+    
+    // Get current user for ownership check
+    const currentUser = await this.getCurrentUser();
+    if (!currentUser) {
+      throw new Error('User must be logged in to manage ownership');
+    }
+    
+    // Check if current user owns the connection
+    const ownsConnection = await neo4jDriverService.userOwnsConnection(currentUser.id, connectionId);
+    if (!ownsConnection) {
+      throw new Error('You do not have permission to manage this connection');
+    }
+    
+    return neo4jDriverService.attachUserToConnection(targetUserId, connectionId);
+  }
+  
+  public async detachUserFromConnection(connectionId: string, targetUserId: string): Promise<boolean> {
+    await this.ensureInitialized();
+    
+    // Get current user for ownership check
+    const currentUser = await this.getCurrentUser();
+    if (!currentUser) {
+      throw new Error('User must be logged in to manage ownership');
+    }
+    
+    // Check if current user owns the connection
+    const ownsConnection = await neo4jDriverService.userOwnsConnection(currentUser.id, connectionId);
+    if (!ownsConnection) {
+      throw new Error('You do not have permission to manage this connection');
+    }
+    
+    return neo4jDriverService.detachUserFromConnection(targetUserId, connectionId);
   }
 
   // Tag methods
@@ -320,7 +435,12 @@ class Neo4jDatabaseService {
     connections: Array<Omit<Connection, 'id' | 'createdAt' | 'updatedAt'>>
   ): Promise<Connection[]> {
     await this.ensureInitialized();
-    return neo4jDriverService.createConnectionsBatch(connections);
+    
+    // Get current user for ownership
+    const currentUser = await this.getCurrentUser();
+    const userId = currentUser?.id;
+    
+    return neo4jDriverService.createConnectionsBatch(connections, userId);
   }
 
   public async createVerseGroup(
@@ -353,13 +473,19 @@ class Neo4jDatabaseService {
     } = {}
   ): Promise<GroupConnection> {
     await this.ensureInitialized();
+    
+    // Get current user for ownership
+    const currentUser = await this.getCurrentUser();
+    const userId = currentUser?.id;
+    
     // Ensure all required properties are set
     const fullOptions = {
       sourceType: options.sourceType || 'VERSE' as NodeType,
       targetType: options.targetType || 'VERSE' as NodeType,
       relationshipType: options.relationshipType,
       metadata: options.metadata || {},
-      name: options.name
+      name: options.name,
+      userId: userId
     };
     
     return neo4jDriverService.createGroupConnection(

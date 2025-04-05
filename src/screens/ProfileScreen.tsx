@@ -18,6 +18,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { AuthService, StorageService } from '../services';
 import { User } from '../types/bible';
 import { useTranslation } from 'react-i18next';
+import { MaterialIcons } from '@expo/vector-icons';
 
 type ProfileScreenNavigationProp = NativeStackNavigationProp<RootStackParamList, 'Main'>;
 
@@ -229,7 +230,16 @@ const ProfileScreen: React.FC = () => {
             <Text style={styles.logoutText}>{t('profile:logout')}</Text>
           </TouchableOpacity>
           
-          
+          <TouchableOpacity
+            style={[styles.menuItem]}
+            onPress={() => navigation.navigate('MyContent')}
+          >
+            <MaterialIcons name="library-books" size={24} color="#4F46E5" />
+            <Text style={styles.menuItemText}>
+              {t('profile:myContent')}
+            </Text>
+            <MaterialIcons name="chevron-right" size={24} color="#94A3B8" />
+          </TouchableOpacity>
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -348,6 +358,19 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
     fontWeight: '600',
+  },
+  menuItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
+  },
+  menuItemText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#333',
+    marginLeft: 16,
   },
 });
 

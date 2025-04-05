@@ -70,6 +70,7 @@
     "jest-environment-node": "^29.7.0",
     "jest-expo": "~51.0.0",
     "jest-react-native": "^18.0.0",
+    "metro": "^0.82.1",
     "metro-react-native-babel-preset": "^0.77.0",
     "react-native-mock-render": "^0.1.9",
     "react-native-testing-library": "^2.2.0",
