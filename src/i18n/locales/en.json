@@ -281,7 +281,9 @@
     "account": "Account",
     "darkMode": "Dark Mode",
     "darkModeDescription": "Enable dark theme",
-    "preferences": "Preferences"
+    "preferences": "Preferences",
+    "confirmLogout": "Are you sure you want to logout?",
+    "logoutError": "Failed to logout. Please try again."
   },
   "visualization": {
     "title": "Visualization",

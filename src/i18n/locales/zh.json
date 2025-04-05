@@ -272,16 +272,18 @@
     "title": "个人资料",
     "appearance": "外观",
     "offlineMode": "离线模式",
-    "offlineModeDescription": "下载内容供离线使用",
+    "offlineModeDescription": "下载内容以便离线使用",
     "notifications": "通知",
     "notificationsDescription": "接收学习提醒和更新",
-    "defaultTranslation": "默认译本",
-    "defaultTranslationDescription": "选择您偏好的圣经译本",
+    "defaultTranslation": "默认翻译",
+    "defaultTranslationDescription": "选择您首选的圣经翻译",
     "logout": "退出登录",
     "account": "账户",
     "darkMode": "深色模式",
     "darkModeDescription": "启用深色主题",
-    "preferences": "偏好设置"
+    "preferences": "偏好设置",
+    "confirmLogout": "确定要退出登录吗？",
+    "logoutError": "退出登录失败，请重试。"
   },
   "visualization": {
     "title": "可视化",

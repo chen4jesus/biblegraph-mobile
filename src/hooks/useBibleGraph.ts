@@ -1,8 +1,6 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { Verse, Connection, Note, ConnectionType, GraphNode, GraphEdge, VerseGroup, GroupConnection } from '../types/bible';
-import { neo4jService } from '../services/neo4j';
-import { storageService } from '../services/storage';
-import { syncService } from '../services/sync';
+import { DatabaseService, StorageService, SyncService } from '../services';
 
 interface UseBibleGraphProps {
   initialVerseId?: string;
@@ -116,7 +114,7 @@ export const useBibleGraph = ({
         if (processedNodes.current.has(id)) continue;
         
         try {
-          const verse = await neo4jService.getVerse(id, signal);
+          const verse = await DatabaseService.getVerse(id, signal);
           if (verse) {
             const node: GraphNode = {
               id: verse.id,
@@ -127,7 +125,7 @@ export const useBibleGraph = ({
             nodeMap.set(verse.id, node);
             processedNodes.current.add(verse.id);
           }
-        } catch (err) {
+        } catch (err: any) {
           if (err.name === 'AbortError') {
             console.debug('Verse fetch aborted');
             break;
@@ -141,7 +139,7 @@ export const useBibleGraph = ({
         if (signal.aborted) break;
         
         try {
-          const connections = await neo4jService.getConnectionsForVerse(id, signal);
+          const connections = await DatabaseService.getConnectionsForVerse(id, signal);
           
           for (const connection of connections) {
             if (signal.aborted) break;
@@ -149,7 +147,7 @@ export const useBibleGraph = ({
             // Add source verse to nodes if not already present
             if (!nodeMap.has(connection.sourceVerseId) && !processedNodes.current.has(connection.sourceVerseId)) {
               try {
-                const sourceVerse = await neo4jService.getVerse(connection.sourceVerseId, signal);
+                const sourceVerse = await DatabaseService.getVerse(connection.sourceVerseId, signal);
                 if (sourceVerse) {
                   const node: GraphNode = {
                     id: sourceVerse.id,
@@ -160,7 +158,7 @@ export const useBibleGraph = ({
                   nodeMap.set(sourceVerse.id, node);
                   processedNodes.current.add(sourceVerse.id);
                 }
-              } catch (err) {
+              } catch (err: any) {
                 if (err.name === 'AbortError') break;
                 console.error(`Error fetching source verse ${connection.sourceVerseId}:`, err);
               }
@@ -169,7 +167,7 @@ export const useBibleGraph = ({
             // Add target verse to nodes if not already present
             if (!nodeMap.has(connection.targetVerseId) && !processedNodes.current.has(connection.targetVerseId)) {
               try {
-                const targetVerse = await neo4jService.getVerse(connection.targetVerseId, signal);
+                const targetVerse = await DatabaseService.getVerse(connection.targetVerseId, signal);
                 if (targetVerse) {
                   const node: GraphNode = {
                     id: targetVerse.id,
@@ -180,7 +178,7 @@ export const useBibleGraph = ({
                   nodeMap.set(targetVerse.id, node);
                   processedNodes.current.add(targetVerse.id);
                 }
-              } catch (err) {
+              } catch (err: any) {
                 if (err.name === 'AbortError') break;
                 console.error(`Error fetching target verse ${connection.targetVerseId}:`, err);
               }
@@ -219,7 +217,7 @@ export const useBibleGraph = ({
       if (!currentVerseId && startingIds.length > 0) {
         setCurrentVerseId(startingIds[0]);
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error("Error fetching graph data:", err);
       if (isMountedRef.current) {
         setError(err instanceof Error ? err : new Error(String(err)));
@@ -271,7 +269,7 @@ export const useBibleGraph = ({
       
       if (node.type === 'VERSE') {
         // Handle verse node expansion
-        const connections = await neo4jService.getConnectionsForVerse(nodeId);
+        const connections = await DatabaseService.getConnectionsForVerse(nodeId);
         
         for (const connection of connections) {
           // Add target verse to nodes if not already present
@@ -280,7 +278,7 @@ export const useBibleGraph = ({
             : connection.targetVerseId;
           
           if (!processedNodes.current.has(targetId)) {
-            const targetVerse = await neo4jService.getVerse(targetId);
+            const targetVerse = await DatabaseService.getVerse(targetId);
             if (targetVerse) {
               setNodes(prevNodes => {
                 if (prevNodes.some(node => node.id === targetVerse.id)) {
@@ -314,7 +312,7 @@ export const useBibleGraph = ({
         }
         
         // Fetch group connections for this verse
-        const groupConnections = await neo4jService.getGroupConnectionsByVerseId(nodeId);
+        const groupConnections = await DatabaseService.getGroupConnectionsByVerseId(nodeId);
         
         for (const groupConnection of groupConnections) {
           // Add group node if not present
@@ -338,7 +336,7 @@ export const useBibleGraph = ({
             
             for (const verseId of allVerseIds) {
               if (verseId !== nodeId && !processedNodes.current.has(verseId)) {
-                const verse = await neo4jService.getVerse(verseId);
+                const verse = await DatabaseService.getVerse(verseId);
                 if (verse) {
                   setNodes(prevNodes => {
                     if (prevNodes.some(node => node.id === verse.id)) {
@@ -399,7 +397,7 @@ export const useBibleGraph = ({
         
         for (const verseId of allVerseIds) {
           if (!processedNodes.current.has(verseId)) {
-            const verse = await neo4jService.getVerse(verseId);
+            const verse = await DatabaseService.getVerse(verseId);
             if (verse) {
               setNodes(prevNodes => {
                 if (prevNodes.some(node => node.id === verse.id)) {

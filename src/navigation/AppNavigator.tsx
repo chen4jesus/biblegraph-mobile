@@ -3,7 +3,7 @@ import { NavigationContainer, NavigationHelpers, ParamListBase } from '@react-na
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { RootStackParamList, MainTabParamList } from './types';
-import { authService } from '../services/auth';
+import { AuthService } from '../services';
 import LoadingScreen from '../components/LoadingScreen';
 import { Ionicons } from '@expo/vector-icons';
 import { useTranslation } from 'react-i18next';
@@ -190,7 +190,7 @@ const AppNavigator: React.FC = () => {
   // Check auth status on component mount and whenever the app gains focus
   const checkAuthStatus = useCallback(async () => {
     try {
-      const isAuth = await authService.isAuthenticated();
+      const isAuth = await AuthService.isAuthenticated();
       setIsAuthenticated(isAuth);
     } catch (error) {
       console.error('Error checking auth status:', error);
@@ -203,7 +203,7 @@ const AppNavigator: React.FC = () => {
     checkAuthStatus();
     
     // Subscribe to auth state changes
-    const unsubscribe = authService.addAuthStateListener((isAuth) => {
+    const unsubscribe = AuthService.addAuthStateListener((isAuth) => {
       setIsAuthenticated(isAuth);
     });
     

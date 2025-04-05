@@ -14,7 +14,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Tag } from '../types/bible';
-import { neo4jService } from '../services/neo4j';
+import { DatabaseService } from '../services';
 import { useTranslation } from 'react-i18next';
 
 interface TagsManagementModalProps {
@@ -55,7 +55,7 @@ const TagsManagementModal: React.FC<TagsManagementModalProps> = ({
   const loadTags = async () => {
     try {
       setLoading(true);
-      const fetchedTags = await neo4jService.getTags();
+      const fetchedTags = await DatabaseService.getTags();
       setTags(fetchedTags);
     } catch (error) {
       console.error('Error loading tags:', error);
@@ -78,7 +78,7 @@ const TagsManagementModal: React.FC<TagsManagementModalProps> = ({
       const randomColor = colors[Math.floor(Math.random() * colors.length)];
       
       // Create tag
-      const createdTag = await neo4jService.createTag(newTagName.trim(), randomColor);
+      const createdTag = await DatabaseService.createTag(newTagName.trim(), randomColor);
       
       // Update local state
       setTags(prevTags => [...prevTags, createdTag]);
@@ -112,7 +112,7 @@ const TagsManagementModal: React.FC<TagsManagementModalProps> = ({
       setLoading(true);
       
       // Update tag in database
-      const updatedTag = await neo4jService.updateTag(
+      const updatedTag = await DatabaseService.updateTag(
         editingTag.id, 
         { name: editedTagName.trim() }
       );
@@ -157,7 +157,7 @@ const TagsManagementModal: React.FC<TagsManagementModalProps> = ({
               setLoading(true);
               
               // Delete tag from database
-              await neo4jService.deleteTag(tag.id);
+              await DatabaseService.deleteTag(tag.id);
               
               // Update local state
               setTags(prevTags => prevTags.filter(t => t.id !== tag.id));
@@ -203,7 +203,7 @@ const TagsManagementModal: React.FC<TagsManagementModalProps> = ({
       setLoading(true);
       
       // Update the tag in database
-      const updatedTag = await neo4jService.updateTag(
+      const updatedTag = await DatabaseService.updateTag(
         tag.id,
         { color: newColor }
       );

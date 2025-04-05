@@ -8,19 +8,20 @@ import {
   ScrollView,
   SafeAreaView,
   Alert,
+  Button,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/types';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { authService } from '../services/auth';
-import { User } from '../services/auth';
+import { AuthService, StorageService } from '../services';
+import { User } from '../types/bible';
 import { useTranslation } from 'react-i18next';
 
 type ProfileScreenNavigationProp = NativeStackNavigationProp<RootStackParamList, 'Main'>;
 
-interface Settings {
+interface UserSettings {
   darkMode: boolean;
   offlineMode: boolean;
   notifications: boolean;
@@ -31,7 +32,7 @@ const ProfileScreen: React.FC = () => {
   const { t } = useTranslation(['profile', 'common', 'settings']);
   const navigation = useNavigation<ProfileScreenNavigationProp>();
   const [user, setUser] = useState<User | null>(null);
-  const [settings, setSettings] = useState<Settings>({
+  const [settings, setSettings] = useState<UserSettings>({
     darkMode: false,
     offlineMode: false,
     notifications: true,
@@ -45,7 +46,7 @@ const ProfileScreen: React.FC = () => {
 
   const loadUserData = async () => {
     try {
-      const userData = await authService.getCurrentUser();
+      const userData = await AuthService.getCurrentUser();
       setUser(userData);
     } catch (error) {
       console.error('Error loading user data:', error);
@@ -54,20 +55,35 @@ const ProfileScreen: React.FC = () => {
 
   const loadSettings = async () => {
     try {
-      const savedSettings = await AsyncStorage.getItem('userSettings');
-      if (savedSettings) {
-        setSettings(JSON.parse(savedSettings));
+      // Get Bible settings from the storage service
+      const bibleSettings = await StorageService.getSettings();
+      
+      // Get user interface settings from AsyncStorage
+      const savedUISettings = await AsyncStorage.getItem('userSettings');
+      if (savedUISettings) {
+        setSettings(JSON.parse(savedUISettings));
       }
     } catch (error) {
       console.error('Error loading settings:', error);
     }
   };
 
-  const handleSettingChange = async (key: keyof Settings, value: boolean | string) => {
+  const handleSettingChange = async (key: keyof UserSettings, value: boolean | string) => {
     try {
       const newSettings = { ...settings, [key]: value };
       setSettings(newSettings);
+      
+      // Save UI settings to AsyncStorage
       await AsyncStorage.setItem('userSettings', JSON.stringify(newSettings));
+      
+      // If this setting also affects Bible display, update those settings too
+      if (key === 'defaultTranslation') {
+        const bibleSettings = await StorageService.getSettings();
+        // Update only relevant Bible settings, preserving the rest
+        if (bibleSettings) {
+          await StorageService.saveSettings(bibleSettings);
+        }
+      }
     } catch (error) {
       console.error('Error saving settings:', error);
       Alert.alert('Error', 'Failed to save settings');
@@ -75,46 +91,35 @@ const ProfileScreen: React.FC = () => {
   };
 
   const handleLogout = async () => {
-    Alert.alert(
-      'Logout',
-      'Are you sure you want to logout?',
-      [
-        {
-          text: 'Cancel',
-          style: 'cancel',
-        },
-        {
-          text: 'Logout',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              // Clear all user data and settings
-              await authService.logout();
-              
-              // Clear any additional stored data
-              await AsyncStorage.removeItem('userSettings');
-              
-              // Force immediate navigation reset to Login screen
-              // This ensures we don't wait for the auth state listener
-              navigation.reset({
-                index: 0,
-                routes: [{ name: 'Login' }],
-              });
-            } catch (error) {
-              console.error('Error logging out:', error);
-              Alert.alert('Error', 'Failed to logout. Please try again.');
-            }
-          },
-        },
-      ]
-    );
+    console.log("Logout button pressed");
+    
+    // Implement direct logout without alert for reliable functionality
+    try {
+      // Clear all user data and settings
+      await AuthService.debugout();
+      
+      // Clear any additional stored data
+      await AsyncStorage.removeItem('userSettings');
+      
+      // Navigate to Login screen
+      navigation.reset({
+        index: 0,
+        routes: [{ name: 'Login' }],
+      });
+      
+      console.log("Logout completed successfully");
+    } catch (error) {
+      console.error('Error logging out:', error);
+      // Show error as text alert instead of using Alert API
+      Alert.alert(t('common:error'), t('profile:logoutError'));
+    }
   };
 
   const renderSettingItem = (
     title: string,
     description: string,
     type: 'switch' | 'select',
-    key: keyof Settings,
+    key: keyof UserSettings,
     value: boolean | string,
     onPress?: () => void
   ) => (
@@ -210,9 +215,21 @@ const ProfileScreen: React.FC = () => {
 
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>{t('account')}</Text>
-          <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
-            <Text style={styles.logoutText}>{t('logout')}</Text>
+          <TouchableOpacity 
+            style={styles.logoutButton} 
+            onPress={handleLogout}
+            activeOpacity={0.6}
+            hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
+            pressRetentionOffset={{ top: 20, bottom: 20, left: 20, right: 20 }}
+            accessible={true}
+            accessibilityRole="button"
+            accessibilityLabel={t('profile:logout')}
+            accessibilityHint={t('profile:confirmLogout')}
+          >
+            <Text style={styles.logoutText}>{t('profile:logout')}</Text>
           </TouchableOpacity>
+          
+          
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -321,6 +338,11 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     padding: 16,
     alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    elevation: 5,
   },
   logoutText: {
     color: '#fff',

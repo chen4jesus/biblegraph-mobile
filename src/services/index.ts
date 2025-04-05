@@ -270,7 +270,13 @@ export const AuthService = {
   /**
    * Get the current user
    */
-  getCurrentUser: () => authService.getCurrentUser()
+  getCurrentUser: () => authService.getCurrentUser(),
+  
+  /**
+   * Add listener for authentication state changes
+   */
+  addAuthStateListener: (listener: (isAuthenticated: boolean) => void) =>
+    authService.addAuthStateListener(listener)
 };
 
 // Storage Service API

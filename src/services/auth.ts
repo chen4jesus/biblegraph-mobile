@@ -52,6 +52,14 @@ class AuthService {
     });
   }
 
+  /**
+   * Debug login function (alias for login)
+   * Used for development purposes
+   */
+  async debugin(email: string, password: string): Promise<AuthResponse> {
+    return this.login(email, password);
+  }
+
   async login(email: string, password: string): Promise<AuthResponse> {
     try {
       const response = await neo4jService.login(email, password);
@@ -74,6 +82,14 @@ class AuthService {
       console.error('Sign up error:', error);
       throw error;
     }
+  }
+
+  /**
+   * Debug logout function (alias for logout)
+   * Used for development purposes
+   */
+  async debugout(): Promise<void> {
+    return this.logout();
   }
 
   async logout(): Promise<void> {

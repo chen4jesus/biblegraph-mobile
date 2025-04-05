@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, FlatList, TextInput, TouchableOpacity, Alert } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { Verse, VerseGroup } from '../types/bible';
-import { neo4jService } from '../services/neo4j';
+import { DatabaseService } from '../services';
 import theme from '../theme';
 
 interface VerseGroupSelectorProps {
@@ -31,7 +31,7 @@ const VerseGroupSelector: React.FC<VerseGroupSelectorProps> = ({
         setError(null);
         
         console.debug('[VerseGroupSelector] Loading verse groups');
-        const loadedGroups = await neo4jService.getVerseGroups();
+        const loadedGroups = await DatabaseService.getVerseGroups();
         console.debug(`[VerseGroupSelector] Loaded ${loadedGroups.length} verse groups`);
         
         // Ensure each group has valid verseIds to prevent rendering issues
@@ -72,7 +72,7 @@ const VerseGroupSelector: React.FC<VerseGroupSelectorProps> = ({
       }
       
       console.debug(`[VerseGroupSelector] Creating verse group "${newGroupName}" with ${verseIds.length} verses`);
-      const newGroup = await neo4jService.createVerseGroup(
+      const newGroup = await DatabaseService.createVerseGroup(
         newGroupName,
         verseIds,
         description

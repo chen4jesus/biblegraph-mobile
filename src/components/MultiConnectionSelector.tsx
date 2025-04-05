@@ -12,7 +12,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Verse, ConnectionType, Connection, GroupConnection } from '../types/bible';
-import { neo4jService } from '../services/neo4j';
+import { DatabaseService } from '../services';
 import { useTranslation } from 'react-i18next';
 
 interface VerseConnection {
@@ -59,7 +59,7 @@ const MultiConnectionSelector: React.FC<MultiConnectionSelectorProps> = ({
 
   const loadTargetVerse = async () => {
     try {
-      const verse = await neo4jService.getVerse(targetVerseId);
+      const verse = await DatabaseService.getVerse(targetVerseId);
       // Do something with the verse if needed
     } catch (error) {
       console.error('Error loading target verse:', error);
@@ -98,7 +98,7 @@ const MultiConnectionSelector: React.FC<MultiConnectionSelectorProps> = ({
     
     setIsLoading(true);
     try {
-      const results = await neo4jService.searchVerses(query);
+      const results = await DatabaseService.searchVerses(query);
       // Filter out the target verse itself
       setSearchResults(results.filter(v => v.id !== targetVerseId));
     } catch (error) {
@@ -135,7 +135,7 @@ const MultiConnectionSelector: React.FC<MultiConnectionSelectorProps> = ({
         };
           
         // Create the group connection with source and target IDs and custom options
-        const groupConnection = await neo4jService.createGroupConnection(
+        const groupConnection = await DatabaseService.createGroupConnection(
           sourceIds,
           targetIds,
           connectionType,
@@ -171,7 +171,7 @@ const MultiConnectionSelector: React.FC<MultiConnectionSelectorProps> = ({
         }));
 
         // Save connections to Neo4j
-        const results = await neo4jService.createConnectionsBatch(connections);
+        const results = await DatabaseService.createConnectionsBatch(connections);
         
         if (results.length > 0) {
           Alert.alert(

@@ -13,7 +13,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Tag } from '../types/bible';
-import { neo4jService } from '../services/neo4j';
+import { DatabaseService } from '../services';
 import { useTranslation } from 'react-i18next';
 
 interface TagSelectorProps {
@@ -64,7 +64,7 @@ const TagSelector: React.FC<TagSelectorProps> = ({
   const loadTags = async () => {
     try {
       setLoading(true);
-      const fetchedTags = await neo4jService.getTags();
+      const fetchedTags = await DatabaseService.getTags();
       // Ensure fetched tags are unique by ID
       const uniqueTags = Array.from(
         new Map(fetchedTags.map(tag => [tag.id, tag])).values()
@@ -110,7 +110,7 @@ const TagSelector: React.FC<TagSelectorProps> = ({
       const randomColor = colors[Math.floor(Math.random() * colors.length)];
       
       // Create tag
-      const createdTag = await neo4jService.createTag(newTagName.trim(), randomColor);
+      const createdTag = await DatabaseService.createTag(newTagName.trim(), randomColor);
       
       // Add to state - ensure no duplicates
       const tagExists = tags.some(t => t.id === createdTag.id);

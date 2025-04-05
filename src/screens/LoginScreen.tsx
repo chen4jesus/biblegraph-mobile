@@ -14,7 +14,7 @@ import {
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/types';
-import { authService } from '../services/auth';
+import { AuthService } from '../services';
 import { Ionicons } from '@expo/vector-icons';
 
 type LoginScreenNavigationProp = NativeStackNavigationProp<RootStackParamList, 'Login'>;
@@ -44,7 +44,7 @@ const LoginScreen: React.FC = () => {
   useEffect(() => {
     const checkAuth = async () => {
       try {
-        const isAuthenticated = await authService.isAuthenticated();
+        const isAuthenticated = await AuthService.isAuthenticated();
         if (isAuthenticated) {
           navigation.replace('MainTabs');
         }
@@ -86,7 +86,7 @@ const LoginScreen: React.FC = () => {
 
     setIsLoading(true);
     try {
-      await authService.login(form.email, form.password);
+      await AuthService.debugin(form.email, form.password);
       // Don't navigate directly, let the AppNavigator handle it based on auth state
       // This will trigger the conditional rendering in AppNavigator
     } catch (error) {

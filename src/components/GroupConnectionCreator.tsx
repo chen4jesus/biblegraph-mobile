@@ -12,7 +12,7 @@ import {
 } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { VerseGroup, ConnectionType, GroupConnection } from '../types/bible';
-import { neo4jService } from '../services/neo4j';
+import { DatabaseService } from '../services';
 
 // Define theme colors since we might not have access to the actual theme file
 const theme = {
@@ -99,7 +99,7 @@ const GroupConnectionCreator: React.FC<GroupConnectionCreatorProps> = ({
       // Collect all target verse IDs
       const targetGroupIds = selectedGroups.map(group => group.id);
       
-      const newConnection = await neo4jService.createGroupConnection(
+      const newConnection = await DatabaseService.createGroupConnection(
         [sourceGroup.id],
         targetGroupIds,
         connectionType,

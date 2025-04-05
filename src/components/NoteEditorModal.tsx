@@ -21,7 +21,7 @@ import TagSelector from './TagSelector';
 import { useNavigation, useIsFocused } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/types';
-import { neo4jService } from '../services/neo4j';
+import { DatabaseService } from '../services';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
