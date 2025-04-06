@@ -274,7 +274,7 @@ class Neo4jDriver {
   }
 
   // Connection methods
-  public async getConnections(signal?: AbortSignal): Promise<Connection[]> {
+  public async getConnections(userId?: string, signal?: AbortSignal): Promise<Connection[]> {
     if (signal?.aborted) {
       throw new DOMException('Aborted', 'AbortError');
     }
@@ -286,11 +286,32 @@ class Neo4jDriver {
         throw new DOMException('Aborted', 'AbortError');
       }
 
-      const result = await session.run(`
-        MATCH (v1:Verse)-[c:CONNECTS_TO]->(v2:Verse)
-        RETURN c, v1.id as sourceId, v2.id as targetId
-        LIMIT 100
-      `);
+      // Build the query based on userId
+      let query = '';
+      
+      if (userId) {
+        // If userId provided, get user's private connections and all public ones
+        query = `
+          MATCH (v1:Verse)-[c:CONNECTS_TO]->(v2:Verse)
+          WHERE (c.ownership = 'PRIVATE' AND c.userId = $userId)
+          RETURN c, v1.id as sourceId, v2.id as targetId
+          UNION
+          MATCH (v1:Verse)-[c:CONNECTS_TO]->(v2:Verse)
+          WHERE (c.ownership = 'PUBLIC' or c.type = 'DEFAULT')
+          RETURN c, v1.id as sourceId, v2.id as targetId
+          LIMIT 100
+        `;
+      } else {
+        // If no userId, get only public connections
+        query = `
+          MATCH (v1:Verse)-[c:CONNECTS_TO]->(v2:Verse)
+          WHERE (c.ownership = 'PUBLIC' or c.type = 'DEFAULT')
+          RETURN c, v1.id as sourceId, v2.id as targetId
+          LIMIT 100
+        `;
+      }
+      
+      const result = await session.run(query, { userId });
       
       // Check if aborted after query
       if (signal?.aborted) {
@@ -307,6 +328,8 @@ class Neo4jDriver {
           description: connectionProps.description || '',
           createdAt: connectionProps.createdAt || new Date().toISOString(),
           updatedAt: connectionProps.updatedAt || new Date().toISOString(),
+          userId: connectionProps.userId || undefined,
+          ownership: connectionProps.ownership as 'PUBLIC' | 'PRIVATE'
         };
       });
     } finally {
@@ -314,7 +337,7 @@ class Neo4jDriver {
     }
   }
 
-  public async getConnectionsForVerse(verseId: string, signal?: AbortSignal): Promise<Connection[]> {
+  public async getConnectionsForVerse(verseId: string, userId?: string, signal?: AbortSignal): Promise<Connection[]> {
     if (signal?.aborted) {
       throw new DOMException('Aborted', 'AbortError');
     }
@@ -326,14 +349,52 @@ class Neo4jDriver {
         throw new DOMException('Aborted', 'AbortError');
       }
 
-      const result = await session.run(`
-        MATCH (v:Verse {id: $verseId})-[c:CONNECTS_TO]->(v2:Verse)
-        RETURN c, v.id as sourceId, v2.id as targetId
-        UNION
-        MATCH (v1:Verse)-[c:CONNECTS_TO]->(v:Verse {id: $verseId})
-        RETURN c, v1.id as sourceId, v.id as targetId
-        LIMIT 100
-      `, { verseId });
+      // Build the query based on userId
+      let query = '';
+      
+      if (userId) {
+        // If userId provided, get user's private connections and all public and default connections for this verse
+        query = `
+          MATCH (v:Verse {id: $verseId})-[c:CONNECTS_TO]->(v2:Verse)
+          WHERE c.type = 'DEFAULT'
+          RETURN c, v.id as sourceId, v2.id as targetId
+          UNION
+          MATCH (v1:Verse)-[c:CONNECTS_TO]->(v:Verse {id: $verseId})
+          WHERE c.type = 'DEFAULT'
+          RETURN c, v1.id as sourceId, v.id as targetId
+          UNION
+          MATCH (v:Verse {id: $verseId})-[c:CONNECTS_TO]->(v2:Verse)
+          WHERE (c.ownership = 'PRIVATE' AND c.userId = $userId) 
+          RETURN c, v.id as sourceId, v2.id as targetId
+          UNION 
+          MATCH (v1:Verse)-[c:CONNECTS_TO]->(v:Verse {id: $verseId})
+          WHERE (c.ownership = 'PRIVATE' AND c.userId = $userId)
+          RETURN c, v1.id as sourceId, v.id as targetId
+          UNION
+          MATCH (v:Verse {id: $verseId})-[c:CONNECTS_TO]->(v2:Verse)
+          WHERE c.ownership = 'PUBLIC'
+          RETURN c, v.id as sourceId, v2.id as targetId
+          UNION
+          MATCH (v1:Verse)-[c:CONNECTS_TO]->(v:Verse {id: $verseId})
+          WHERE c.ownership = 'PUBLIC'
+          RETURN c, v1.id as sourceId, v.id as targetId          
+          LIMIT 100
+        `;
+      } else {
+        // If no userId, get only public and default connections for this verse
+        query = `
+          MATCH (v:Verse {id: $verseId})-[c:CONNECTS_TO]->(v2:Verse)
+          WHERE (c.ownership = 'PUBLIC' or c.type = 'DEFAULT')
+          RETURN c, v.id as sourceId, v2.id as targetId
+          UNION
+          MATCH (v1:Verse)-[c:CONNECTS_TO]->(v:Verse {id: $verseId})
+          WHERE (c.ownership = 'PUBLIC' or c.type = 'DEFAULT')
+          RETURN c, v1.id as sourceId, v.id as targetId
+          LIMIT 100
+        `;
+      }
+      
+      const result = await session.run(query, { verseId, userId });
       
       // Check if aborted after query
       if (signal?.aborted) {
@@ -379,6 +440,8 @@ class Neo4jDriver {
               description: connectionProps.description || '',
               createdAt: connectionProps.createdAt || new Date().toISOString(),
               updatedAt: connectionProps.updatedAt || new Date().toISOString(),
+              userId: connectionProps.userId || undefined,
+              ownership: connectionProps.ownership as 'PUBLIC' | 'PRIVATE'
             });
           }
         } catch (error) {
@@ -403,6 +466,9 @@ class Neo4jDriver {
       const id = uuidv4();
       const timestamp = new Date().toISOString();
       
+      // Determine ownership based on userId
+      const ownership = userId ? 'PRIVATE' : 'PUBLIC';
+      
       // Start building the query
       let query = `
         MATCH (source:Verse {id: $sourceVerseId})
@@ -424,19 +490,14 @@ class Neo4jDriver {
           description: $description,
           sourceVerseId: $sourceVerseId,
           targetVerseId: $targetVerseId,
+          userId: $userId,
+          ownership: $ownership,
           createdAt: $timestamp,
           updatedAt: $timestamp
         })
         CREATE (c)-[:FROM]->(source)
         CREATE (c)-[:TO]->(target)
       `;
-      
-      // Add user ownership relationship if userId is provided
-      if (userId) {
-        query += `
-          CREATE (user)-[:OWNS]->(c)
-        `;
-      }
       
       // Return the connection
       query += `
@@ -450,6 +511,7 @@ class Neo4jDriver {
         sourceVerseId: connection.sourceVerseId,
         targetVerseId: connection.targetVerseId,
         userId: userId || null,
+        ownership,
         timestamp
       });
       
@@ -466,7 +528,9 @@ class Neo4jDriver {
         type: connectionProps.type as ConnectionType,
         description: connectionProps.description || undefined,
         createdAt: connectionProps.createdAt,
-        updatedAt: connectionProps.updatedAt
+        updatedAt: connectionProps.updatedAt,
+        userId: connectionProps.userId || undefined,
+        ownership: connectionProps.ownership as 'PUBLIC' | 'PRIVATE'
       };
     } finally {
       await session.close();
@@ -492,11 +556,18 @@ class Neo4jDriver {
         .map(([key, value]) => `c.${key} = $${key}`)
         .join(', ');
       
-      const params = {
+      // Always update the updatedAt timestamp
+      const params: Record<string, any> = {
         id: connectionId,
         ...updates,
         updatedAt: now
       };
+      
+      // If ownership is being changed and no userId is provided for a PRIVATE connection,
+      // ensure we're not setting invalid state
+      if (updates.ownership === 'PRIVATE' && !userId && !updates.userId) {
+        throw new Error('Cannot set ownership to PRIVATE without a userId');
+      }
       
       const query = `
         MATCH (v1:Verse)-[c:CONNECTS_TO {id: $id}]->(v2:Verse)
@@ -521,6 +592,8 @@ class Neo4jDriver {
         description: connectionProps.description,
         createdAt: connectionProps.createdAt,
         updatedAt: connectionProps.updatedAt,
+        userId: connectionProps.userId || undefined,
+        ownership: connectionProps.ownership as 'PUBLIC' | 'PRIVATE'
       };
     } finally {
       await session.close();
@@ -551,14 +624,27 @@ class Neo4jDriver {
   }
 
   // Note methods
-  public async getNote(noteId: string): Promise<Note | null> {
+  public async getNote(noteId: string, userId?: string): Promise<Note | null> {
     const session = this.getSession();
     try {
-      const result = await session.run(`
+      // Build the query based on whether we're filtering by userId
+      let query = `
         MATCH (n:Note {id: $id})-[:ABOUT]->(v:Verse)
+      `;
+      
+      // Add user ownership check if userId is provided
+      if (userId) {
+        query += `
+        MATCH (u:User {id: $userId})-[:OWNS]->(n)
+        `;
+      }
+      
+      query += `
         OPTIONAL MATCH (n)-[:HAS_TAG]->(t:Tag)
         RETURN n, v.id as verseId, collect(t.name) as tagNames
-      `, { id: noteId });
+      `;
+      
+      const result = await session.run(query, { id: noteId, userId });
       
       if (result.records.length === 0) {
         return null;
@@ -575,29 +661,47 @@ class Neo4jDriver {
         content: noteProps.content,
         tags: tagNames, // This will be an array from collect()
         createdAt: noteProps.createdAt,
-        updatedAt: noteProps.updatedAt
+        updatedAt: noteProps.updatedAt,
+        userId: noteProps.userId
       };
     } finally {
       await session.close();
     }
   }
 
-  public async getNotes(skip: number = 0, limit: number = 20): Promise<Note[]> {
+  public async getNotes(skip: number = 0, limit: number = 20, userId?: string): Promise<Note[]> {
     const session = this.getSession();
     try {
       // Ensure skip and limit are integers
       const skipInt = Math.max(0, Math.floor(skip));
       const limitInt = Math.max(1, Math.floor(limit));
       
-      const result = await session.run(`
+      // Build the query based on whether we're filtering by userId
+      let query = `
         MATCH (n:Note)-[:ABOUT]->(v:Verse)
+      `;
+      
+      // Add user ownership match if userId is provided
+      if (userId) {
+        query += `
+        MATCH (u:User {id: $userId})-[:OWNS]->(n)
+        `;
+      }
+      
+      query += `
         OPTIONAL MATCH (n)-[:HAS_TAG]->(t:Tag)
         WITH n, v, collect(t.name) as tagNames
         RETURN n, v.id as verseId, tagNames
         ORDER BY n.updatedAt DESC
         SKIP toInteger($skipInt)
         LIMIT toInteger($limitInt)
-      `, { skipInt, limitInt });
+      `;
+      
+      const result = await session.run(query, { 
+        skipInt, 
+        limitInt,
+        userId
+      });
       
       return result.records.map(record => {
         const noteProps = record.get('n').properties;
@@ -609,6 +713,7 @@ class Neo4jDriver {
           tags: tagNames, // This will be an array from collect()
           createdAt: noteProps.createdAt,
           updatedAt: noteProps.updatedAt,
+          userId: noteProps.userId
         };
       });
     } finally {
@@ -616,21 +721,35 @@ class Neo4jDriver {
     }
   }
 
-  public async getNotesForVerse(verseId: string): Promise<Note[]> {
+  public async getNotesForVerse(verseId: string, userId?: string): Promise<Note[]> {
     const session = this.getSession();
     try {
       const limitValue = 100; // Use a constant integer
       
-      const result = await session.run(`
+      // Build the query based on whether we're filtering by userId
+      let query = `
         MATCH (n:Note)-[:ABOUT]->(v:Verse {id: $verseId})
+      `;
+      
+      // Add user ownership match if userId is provided
+      if (userId) {
+        query += `
+        MATCH (u:User {id: $userId})-[:OWNS]->(n)
+        `;
+      }
+      
+      query += `
         OPTIONAL MATCH (n)-[:HAS_TAG]->(t:Tag)
         WITH n, collect(t.name) as tagNames
         RETURN n, tagNames
         ORDER BY n.updatedAt DESC
         LIMIT toInteger($limit)
-      `, { 
+      `;
+      
+      const result = await session.run(query, { 
         verseId,
-        limit: limitValue 
+        limit: limitValue,
+        userId
       });
       
       return result.records.map(record => {
@@ -643,6 +762,7 @@ class Neo4jDriver {
           tags: tagNames, // This will be an array from collect()
           createdAt: noteProps.createdAt,
           updatedAt: noteProps.updatedAt,
+          userId: noteProps.userId
         };
       });
     } finally {
@@ -846,13 +966,26 @@ class Neo4jDriver {
         }
       }
       
-      // First verify the note exists
+      // First verify the note exists with a proper ownership check
       const checkResult = await session.run(`
         MATCH (n:Note {id: $id})
-        RETURN count(n) as noteExists
-      `, { id: noteId });
+        ${userId ? 'MATCH (u:User {id: $userId})' : ''}
+        ${userId ? 'OPTIONAL MATCH (u)-[:OWNS]->(n)' : ''}
+        RETURN count(n) as noteExists ${userId ? ', count((u)-[:OWNS]->(n)) as userOwns' : ''}
+      `, { id: noteId, userId });
       
-      if (checkResult.records[0].get('noteExists') === 0) {
+      const noteExists = checkResult.records[0].get('noteExists') !== 0;
+      
+      // If userId is provided, verify ownership
+      if (userId) {
+        const userOwns = checkResult.records[0].get('userOwns') !== 0;
+        if (!userOwns) {
+          console.debug(`User ${userId} does not have permission to delete note ${noteId}`);
+          return false;
+        }
+      }
+      
+      if (!noteExists) {
         console.debug(`Note with id ${noteId} not found, nothing to delete`);
         return false;
       }
@@ -866,20 +999,12 @@ class Neo4jDriver {
           RETURN count(n) as deleted
         `, { id: noteId });
         
-        const deleted = deleteResult.records[0].get('deleted') > 0;
-        
-        if (deleted) {
-          await txc.commit();
-          console.debug(`Successfully deleted note ${noteId}`);
-          return true;
-        } else {
-          await txc.rollback();
-          console.error(`Failed to delete note ${noteId}`);
-          return false;
-        }
+        const deleted = deleteResult.records[0].get('deleted') !== 0;
+        await txc.commit();
+        return deleted;
       } catch (txError) {
         await txc.rollback();
-        console.error(`Transaction error deleting note ${noteId}:`, txError);
+        console.error('Transaction error deleting note:', txError);
         throw txError;
       }
     } catch (error) {
@@ -1013,6 +1138,9 @@ class Neo4jDriver {
         for (const connection of connections) {
           const id = uuidv4();
           
+          // Determine ownership based on userId
+          const ownership = userId ? 'PRIVATE' : 'PUBLIC';
+          
           // Verify both verses exist within the transaction
           const versesResult = await txc.run(`
             MATCH (source:Verse {id: $sourceId})
@@ -1050,6 +1178,8 @@ class Neo4jDriver {
               description: existingProps.description,
               createdAt: existingProps.createdAt,
               updatedAt: existingProps.updatedAt,
+              userId: existingProps.userId || undefined,
+              ownership: existingProps.ownership as 'PUBLIC' | 'PRIVATE'
             });
             continue;
           }
@@ -1073,18 +1203,13 @@ class Neo4jDriver {
               id: $id,
               type: $type,
               description: $description,
+              ownership: 'PRIVATE',
+              userId: $userId,
               createdAt: $now,
               updatedAt: $now
             }]->(v2)
           `;
-          
-          // Add user ownership relationship if userId is provided
-          if (userId) {
-            query += `
-              CREATE (user)-[:OWNS]->(c)
-            `;
-          }
-          
+                  
           // Return the connection
           query += `
             RETURN c, v1.id as sourceId, v2.id as targetId
@@ -1097,6 +1222,7 @@ class Neo4jDriver {
             type: connection.type,
             description: connection.description,
             userId: userId || null,
+            ownership,
             now
           });
           
@@ -1112,6 +1238,8 @@ class Neo4jDriver {
               description: connectionProps.description,
               createdAt: connectionProps.createdAt,
               updatedAt: connectionProps.updatedAt,
+              userId: connectionProps.userId || undefined,
+              ownership: connectionProps.ownership as 'PUBLIC' | 'PRIVATE'
             });
           }
         }
@@ -1604,14 +1732,27 @@ class Neo4jDriver {
   }
 
   // Tag methods
-  public async getTags(): Promise<Tag[]> {
+  public async getTags(userId?: string): Promise<Tag[]> {
     const session = this.getSession();
     try {
-      const result = await session.run(`
+      // Modify query to filter by user ownership if userId is provided
+      let query = `
         MATCH (t:Tag)
+      `;
+      
+      // Add user ownership filter if userId is provided
+      if (userId) {
+        query += `
+        MATCH (u:User {id: $userId})-[:OWNS]->(t)
+        `;
+      }
+      
+      query += `
         RETURN t
         ORDER BY t.name
-      `);
+      `;
+      
+      const result = await session.run(query, { userId });
       
       return result.records.map(record => {
         const tagProps = record.get('t').properties;
@@ -1628,16 +1769,29 @@ class Neo4jDriver {
     }
   }
 
-  public async getTagsWithCount(): Promise<(Tag & { count: number })[]> {
+  public async getTagsWithCount(userId?: string): Promise<(Tag & { count: number })[]> {
     const session = this.getSession();
     try {
-      const result = await session.run(`
+      // Modify query to filter by user ownership if userId is provided
+      let query = `
         MATCH (t:Tag)
+      `;
+      
+      // Add user ownership filter if userId is provided
+      if (userId) {
+        query += `
+        MATCH (u:User {id: $userId})-[:OWNS]->(t)
+        `;
+      }
+      
+      query += `
         OPTIONAL MATCH (t)<-[:HAS_TAG]-(n)
         WITH t, count(n) as usageCount
         RETURN t, usageCount
         ORDER BY usageCount DESC, t.name
-      `);
+      `;
+      
+      const result = await session.run(query, { userId });
       
       return result.records.map(record => {
         const tagProps = record.get('t').properties;
@@ -1656,7 +1810,7 @@ class Neo4jDriver {
     }
   }
 
-  public async createTag(name: string, color: string): Promise<Tag> {
+  public async createTag(name: string, color: string, userId?: string): Promise<Tag> {
     if (!name || !name.trim()) {
       throw new Error('Tag name is required');
     }
@@ -1677,7 +1831,18 @@ class Neo4jDriver {
         throw new Error(`Tag with name "${name}" already exists`);
       }
       
-      const result = await session.run(`
+      // Start building the query
+      let query = '';
+      
+      // Add user match if userId is provided
+      if (userId) {
+        query += `
+          MATCH (u:User {id: $userId})
+        `;
+      }
+      
+      // Create the tag
+      query += `
         CREATE (t:Tag {
           id: $id,
           name: $name,
@@ -1685,11 +1850,25 @@ class Neo4jDriver {
           createdAt: $now,
           updatedAt: $now
         })
+      `;
+      
+      // Add ownership relationship if userId is provided
+      if (userId) {
+        query += `
+          CREATE (u)-[:OWNS]->(t)
+        `;
+      }
+      
+      // Return the tag
+      query += `
         RETURN t
-      `, {
+      `;
+      
+      const result = await session.run(query, {
         id,
         name: name.trim(),
         color,
+        userId: userId || null,
         now
       });
       
@@ -1699,18 +1878,26 @@ class Neo4jDriver {
         name: tagProps.name,
         color: tagProps.color,
         createdAt: tagProps.createdAt,
-        updatedAt: tagProps.updatedAt,
+        updatedAt: tagProps.updatedAt
       };
     } finally {
       await session.close();
     }
   }
 
-  public async updateTag(tagId: string, updates: Partial<Tag>): Promise<Tag> {
+  public async updateTag(tagId: string, updates: Partial<Tag>, userId?: string): Promise<Tag> {
     const session = this.getSession();
     const now = new Date().toISOString();
     
     try {
+      // Check ownership if userId is provided
+      if (userId) {
+        const ownershipCheck = await this.userOwnsTag(userId, tagId);
+        if (!ownershipCheck) {
+          throw new Error(`User ${userId} does not have permission to update tag ${tagId}`);
+        }
+      }
+      
       let updateProps = '';
       const params: Record<string, any> = { id: tagId, now };
       
@@ -1767,9 +1954,17 @@ class Neo4jDriver {
     }
   }
 
-  public async deleteTag(tagId: string): Promise<boolean> {
+  public async deleteTag(tagId: string, userId?: string): Promise<boolean> {
     const session = this.getSession();
     try {
+      // Check ownership if userId is provided
+      if (userId) {
+        const ownershipCheck = await this.userOwnsTag(userId, tagId);
+        if (!ownershipCheck) {
+          throw new Error(`User ${userId} does not have permission to delete tag ${tagId}`);
+        }
+      }
+      
       // Use a transaction to handle both checking and deletion
       const txc = session.beginTransaction();
       
@@ -1802,6 +1997,24 @@ class Neo4jDriver {
         console.error('Transaction error deleting tag:', txError);
         throw txError;
       }
+    } finally {
+      await session.close();
+    }
+  }
+
+  // Check if a user owns a tag
+  public async userOwnsTag(userId: string, tagId: string): Promise<boolean> {
+    const session = this.getSession();
+    try {
+      const result = await session.run(`
+        MATCH (u:User {id: $userId})-[:OWNS]->(t:Tag {id: $tagId})
+        RETURN count(t) as count
+      `, { userId, tagId });
+      
+      return result.records[0].get('count').toNumber() > 0;
+    } catch (error) {
+      console.error(`Error checking if user ${userId} owns tag ${tagId}:`, error);
+      throw error;
     } finally {
       await session.close();
     }
@@ -1962,76 +2175,6 @@ class Neo4jDriver {
     }
   }
   
-  // Associate a user with a verse
-  public async attachUserToVerse(userId: string, verseId: string): Promise<boolean> {
-    const session = this.getSession();
-    try {
-      const result = await session.run(`
-        MATCH (u:User {id: $userId})
-        MATCH (v:Verse {id: $verseId})
-        MERGE (u)-[r:OWNS]->(v)
-        RETURN r
-      `, { userId, verseId });
-      
-      return result.records.length > 0;
-    } catch (error) {
-      console.error(`Error attaching user ${userId} to verse ${verseId}:`, error);
-      throw error;
-    } finally {
-      await session.close();
-    }
-  }
-  
-  // Disassociate a user from a verse
-  public async detachUserFromVerse(userId: string, verseId: string): Promise<boolean> {
-    const session = this.getSession();
-    try {
-      const result = await session.run(`
-        MATCH (u:User {id: $userId})-[r:OWNS]->(v:Verse {id: $verseId})
-        DELETE r
-        RETURN count(r) as deleted
-      `, { userId, verseId });
-      
-      return result.records[0].get('deleted').toNumber() > 0;
-    } catch (error) {
-      console.error(`Error detaching user ${userId} from verse ${verseId}:`, error);
-      throw error;
-    } finally {
-      await session.close();
-    }
-  }
-  
-  // Get all verses owned by a user
-  public async getVersesOwnedByUser(userId: string): Promise<Verse[]> {
-    const session = this.getSession();
-    try {
-      const result = await session.run(`
-        MATCH (u:User {id: $userId})-[:OWNS]->(v:Verse)
-        RETURN v
-        ORDER BY v.book, v.chapter, v.verse
-      `, { userId });
-      
-      return result.records.map(record => {
-        const verseProps = record.get('v').properties;
-        return {
-          id: verseProps.id.toString(),
-          book: verseProps.book,
-          chapter: this.toLongInt(verseProps.chapter),
-          verse: this.toLongInt(verseProps.verse),
-          text: verseProps.text,
-          translation: verseProps.translation || 'ESV',
-          createdAt: verseProps.createdAt || new Date().toISOString(),
-          updatedAt: verseProps.updatedAt || new Date().toISOString(),
-        };
-      });
-    } catch (error) {
-      console.error(`Error getting verses owned by user ${userId}:`, error);
-      throw error;
-    } finally {
-      await session.close();
-    }
-  }
-  
   // Check if a user owns a note
   public async userOwnsNote(userId: string, noteId: string): Promise<boolean> {
     const session = this.getSession();
@@ -2055,31 +2198,14 @@ class Neo4jDriver {
     const session = this.getSession();
     try {
       const result = await session.run(`
-        MATCH (u:User {id: $userId})-[:OWNS]->(c:Connection {id: $connectionId})
+        MATCH ()-[c:CONNECTS_TO]->()
+        WHERE c.id = $connectionId AND c.userId = $userId
         RETURN count(c) as count
       `, { userId, connectionId });
       
       return result.records[0].get('count').toNumber() > 0;
     } catch (error) {
       console.error(`Error checking if user ${userId} owns connection ${connectionId}:`, error);
-      throw error;
-    } finally {
-      await session.close();
-    }
-  }
-  
-  // Check if a user owns a verse
-  public async userOwnsVerse(userId: string, verseId: string): Promise<boolean> {
-    const session = this.getSession();
-    try {
-      const result = await session.run(`
-        MATCH (u:User {id: $userId})-[:OWNS]->(v:Verse {id: $verseId})
-        RETURN count(v) as count
-      `, { userId, verseId });
-      
-      return result.records[0].get('count').toNumber() > 0;
-    } catch (error) {
-      console.error(`Error checking if user ${userId} owns verse ${verseId}:`, error);
       throw error;
     } finally {
       await session.close();

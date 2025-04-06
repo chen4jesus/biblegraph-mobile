@@ -13,7 +13,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Tag } from '../types/bible';
-import { DatabaseService } from '../services';
+import { DatabaseService, AuthService } from '../services';
 import { useTranslation } from 'react-i18next';
 
 interface TagSelectorProps {
@@ -64,7 +64,8 @@ const TagSelector: React.FC<TagSelectorProps> = ({
   const loadTags = async () => {
     try {
       setLoading(true);
-      const fetchedTags = await DatabaseService.getTags();
+      const currentUser = await AuthService.getCurrentUser();
+      const fetchedTags = await DatabaseService.getTags(currentUser?.id);
       // Ensure fetched tags are unique by ID
       const uniqueTags = Array.from(
         new Map(fetchedTags.map(tag => [tag.id, tag])).values()
@@ -110,7 +111,8 @@ const TagSelector: React.FC<TagSelectorProps> = ({
       const randomColor = colors[Math.floor(Math.random() * colors.length)];
       
       // Create tag
-      const createdTag = await DatabaseService.createTag(newTagName.trim(), randomColor);
+      const currentUser = await AuthService.getCurrentUser();
+      const createdTag = await DatabaseService.createTag(newTagName.trim(), randomColor, currentUser?.id);
       
       // Add to state - ensure no duplicates
       const tagExists = tags.some(t => t.id === createdTag.id);

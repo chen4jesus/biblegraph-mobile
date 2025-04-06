@@ -38,7 +38,7 @@ const Stack = createNativeStackNavigator<RootStackParamList>();
 const Tab = createBottomTabNavigator<MainTabParamList>();
 
 const MainTabs = () => {
-  const { t } = useTranslation(['navigation', 'common']);
+  const { t } = useTranslation(['navigation', 'common', 'home', 'graph', 'notes', 'profile']);
   const [isVisualizationModalVisible, setIsVisualizationModalVisible] = useState<boolean>(false);
   const navigation = useNavigation();
 
@@ -394,7 +394,7 @@ const AppNavigator: React.FC = () => {
                 name="MyContent"
                 component={MyContentScreen}
                 options={{
-                  title: t('myContent.title'),
+                  title: t('myContent:title'),
                   headerShown: true,
                 }}
               />

@@ -20,7 +20,7 @@ import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/types';
 import { Note, Tag } from '../types/bible';
-import { DatabaseService } from '../services';
+import { AuthService, DatabaseService } from '../services';
 import { Ionicons } from '@expo/vector-icons';
 import { useTranslation } from 'react-i18next';
 import { BlurView } from 'expo-blur';
@@ -171,7 +171,8 @@ const TagsManagementScreen: React.FC = () => {
     try {
       setIsLoading(true);
       // Fetch tags with their usage counts
-      const fetchedTags = await DatabaseService.getTagsWithCount();
+      const currentUser = await AuthService.getCurrentUser();
+      const fetchedTags = await DatabaseService.getTagsWithCount(currentUser?.id);
       setTags(fetchedTags);
     } catch (error) {
       console.error('Error loading tags:', error);
@@ -189,7 +190,8 @@ const TagsManagementScreen: React.FC = () => {
       const color = generateRandomColor();
       
       // Call the service with proper parameters
-      const newTag = await DatabaseService.createTag(newTagName.trim(), color);
+      const currentUser = await AuthService.getCurrentUser();
+      const newTag = await DatabaseService.createTag(newTagName.trim(), color, currentUser?.id);
       
       // Add the new tag to local state with count=0 for new tags
       setTags(prevTags => [...prevTags, {...newTag, count: 0}]);
@@ -220,9 +222,10 @@ const TagsManagementScreen: React.FC = () => {
     
     try {
       // Update tag in database
+      const currentUser = await AuthService.getCurrentUser();
       await DatabaseService.updateTag(tag.id, {
         name: editedTagName.trim(),
-      });
+      }, currentUser?.id);
       
       // Reload data to ensure consistency
       await loadData();
@@ -238,7 +241,8 @@ const TagsManagementScreen: React.FC = () => {
   const deleteTag = async (tagId: string) => {
     try {
       setIsLoading(true);
-      const success = await DatabaseService.deleteTag(tagId);
+      const currentUser = await AuthService.getCurrentUser();
+      const success = await DatabaseService.deleteTag(tagId, currentUser?.id);
       // Remove the tag from local state
       setTags(prevTags => prevTags.filter(tag => tag.id !== tagId));
       Alert.alert(t('common:success'), t('tags:deleteSuccess'));

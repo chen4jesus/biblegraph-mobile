@@ -1,10 +1,10 @@
 export enum ConnectionType {
+  DEFAULT = 'DEFAULT',
   CROSS_REFERENCE = 'CROSS_REFERENCE',
-  THEME = 'THEME',
   PARALLEL = 'PARALLEL',
-  NOTE = 'NOTE',
   THEMATIC = 'THEMATIC',
   PROPHECY = 'PROPHECY',
+  NOTE = 'NOTE',
 }
 
 export interface Verse {
@@ -33,9 +33,11 @@ export interface Connection {
   targetVerseId: string;
   type: ConnectionType;
   description?: string;
-  groupConnectionId?: string;
   createdAt: string;
   updatedAt: string;
+  userId?: string;
+  ownership?: 'PUBLIC' | 'PRIVATE';
+  expanded?: boolean;
 }
 
 export type NodeType = 'VERSE' | 'GROUP' | 'NOTE' | 'TAG' | 'TOPIC';
@@ -69,6 +71,7 @@ export interface Note {
   tags?: string[];
   createdAt: string;
   updatedAt: string;
+  userId?: string;
 }
 
 export interface User {

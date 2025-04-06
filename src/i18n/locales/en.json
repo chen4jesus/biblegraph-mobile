@@ -118,8 +118,8 @@
     "editConnection": "Edit Connection",
     "deleteConnection": "Delete Connection",
     "connectionTypes": {
+      "default": "Default",
       "crossReference": "Cross Reference",
-      "theme": "Theme",
       "parallel": "Parallel",
       "note": "Note",
       "thematic": "Thematic",
@@ -139,9 +139,6 @@
     "addMultipleConnections": "Add Multiple Connections",
     "addConnectionHint": "Use the button above to add connections",
     "enterVerseReference": "Enter verse reference (e.g. John 3:16)",
-    "thematic": "Thematic",
-    "crossReference": "Cross Reference",
-    "prophecy": "Prophecy",
     "connectionAdded": "Connection added successfully",
     "connectionsAdded": "{count} connections added successfully",
     "failedToAddConnection": "Failed to add connection",
@@ -308,8 +305,7 @@
     "crossReference": "Cross Reference",
     "theme": "Theme",
     "note": "Note",
-    "parallel": "Parallel",
-    "shownTogether": "Shown together"
+    "parallel": "Parallel"
   },
   "myContent": {
     "title": "My Content",

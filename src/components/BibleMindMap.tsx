@@ -114,7 +114,7 @@ const BibleMindMap: React.FC<BibleMindMapProps> = ({
   const screenHeight = Dimensions.get('window').height;
   
   // Get translation functions
-  const { t } = useTranslation(['visualization', 'common']);
+  const { t } = useTranslation(['visualization', 'common', 'connections']);
   
   // State declarations - always keep these at the top level
   const [nodes, setNodes] = useState<Node[]>([]);
@@ -361,13 +361,22 @@ const BibleMindMap: React.FC<BibleMindMapProps> = ({
           case ConnectionType.CROSS_REFERENCE:
             color = '#FF9500';
             break;
-          case ConnectionType.THEME:
+          case ConnectionType.THEMATIC:
             color = '#34C759';
+            break;
+          case ConnectionType.PARALLEL:
+            color = '#5856D6';
+            break;
+          case ConnectionType.PROPHECY:
+            color = '#FBBC05';
+            break;
+          case ConnectionType.DEFAULT:
+            color = '#999999';
             break;
           case ConnectionType.NOTE:
             color = '#4285F4';
             break;
-        }
+        } 
 
         // Find the correct source and target nodes using our nodeMap
         const sourceNodeId = nodeMap.get(connection.sourceVerseId) || connection.sourceVerseId;
@@ -439,11 +448,11 @@ const BibleMindMap: React.FC<BibleMindMapProps> = ({
             id: `default-edge-${i}`,
             source: newNodes[i].id,
             target: newNodes[i + 1].id,
-            label: getEdgeLabel(ConnectionType.THEME),
+            label: getEdgeLabel(ConnectionType.DEFAULT),
             color: '#dddddd',
             data: {
-              type: ConnectionType.THEME,
-              description: t('visualization:shownTogether')
+              type: ConnectionType.DEFAULT,
+              description: t('connections:connectionTypes.default')
             }
           });
         }
@@ -905,15 +914,15 @@ const BibleMindMap: React.FC<BibleMindMapProps> = ({
   const getEdgeLabel = (type: ConnectionType) => {
     switch (type) {
       case ConnectionType.CROSS_REFERENCE:
-        return t('visualization:crossReference');
-      case ConnectionType.THEME:
-        return t('visualization:theme');
-      case ConnectionType.NOTE:
-        return t('visualization:note');
+        return t('connections:connectionTypes.crossReference');
+      case ConnectionType.THEMATIC:
+        return t('connections:connectionTypes.thematic');
       case ConnectionType.PARALLEL:
-        return t('visualization:parallel');
+        return t('connections:connectionTypes.parallel');
+      case ConnectionType.NOTE:
+        return t('connections:connectionTypes.note'); 
       default:
-        return t('visualization:shownTogether');
+        return t('connections:connectionTypes.default');
     }
   };
 

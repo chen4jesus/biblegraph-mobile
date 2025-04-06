@@ -1,4 +1,4 @@
-import { Verse } from '../types/bible';
+import { Verse, ConnectionType, Connection, GroupConnection } from '../types/bible';
 
 export type RootStackParamList = {
   Login: undefined;
@@ -30,6 +30,16 @@ export type RootStackParamList = {
   };
   GroupDetail: { groupId: string };
   MyContent: undefined;
+  ConnectionSelector: { 
+    source: { 
+      id: string; 
+      title: string; 
+      subtitle: string 
+    }; 
+    type: ConnectionType; 
+    onConnectionsCreated: (newConnections: (Connection | GroupConnection)[], userId?: string) => Promise<void>; 
+    userId?: string 
+  };
 };
 
 export type MainTabParamList = {

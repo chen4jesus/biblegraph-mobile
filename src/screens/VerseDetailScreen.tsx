@@ -71,7 +71,7 @@ interface ConnectionWithVerse extends Connection {
 
 // Update the component type declaration
 const VerseDetailScreen: React.FC = () => {
-  const { t } = useTranslation(['verseDetail', 'common', 'navigation']);
+  const { t } = useTranslation(['verseDetail', 'common', 'connections', 'navigation']);
   const route = useRoute<RouteProp<RootStackParamList, 'VerseDetail'>>();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const [verse, setVerse] = useState<Verse | null>(null);
@@ -164,7 +164,8 @@ const VerseDetailScreen: React.FC = () => {
 
   const loadTagColors = async () => {
     try {
-      const tags = await DatabaseService.getTags();
+      const currentUser = await AuthService.getCurrentUser();
+      const tags = await DatabaseService.getTags(currentUser?.id);
       const colorMap: Record<string, string> = {};
       
       tags.forEach(tag => {
@@ -226,11 +227,12 @@ const VerseDetailScreen: React.FC = () => {
         setVerse(verseToDisplay);
         
         // Load notes for this verse
-        const verseNotes = await DatabaseService.getNotesForVerse(verseToDisplay.id);
+        const currentUser = await AuthService.getCurrentUser();
+        const verseNotes = await DatabaseService.getNotesForVerse(verseToDisplay.id, currentUser?.id);
         setNotes(verseNotes);
         
         // First load regular connections for this verse
-        const regularConnections = await DatabaseService.getConnectionsForVerse(verseToDisplay.id);
+        const regularConnections = await DatabaseService.getConnectionsForVerse(verseToDisplay.id, currentUser?.id);
         
         // Filter out connections that are part of groups (have a groupConnectionId)
         const singleConnections = regularConnections.filter(conn => !conn.groupConnectionId);
@@ -389,65 +391,84 @@ const VerseDetailScreen: React.FC = () => {
     try {
       // Get current user for ownership
       const currentUser = await AuthService.getCurrentUser();
-      DatabaseService.createNote(verse.id, newNote, newNoteTags, currentUser);
       const note = await DatabaseService.createNote(verse.id, newNote, newNoteTags, currentUser?.id);
       setNotes([...notes, note]);
       setNewNote('');
       setNewNoteTags([]);
+      showNotification('Note added successfully');
     } catch (error) {
       console.error('Error adding note:', error);
-      Alert.alert(t('common:error'), t('verseDetail:failedToAddNote'));
+      showNotification('Failed to add note');
     }
   };
 
-  const handleEditNote = (note: Note) => {
-    setCurrentNote(note);
-    setNoteModalVisible(true);
+  const handleEditNote = async (note: Note) => {
+    try {
+      const currentUser = await AuthService.getCurrentUser();
+      setCurrentNote({
+        ...note,
+        updatedContent: note.content,
+        updatedTags: [...(note.tags || [])]
+      });
+      setNoteModalVisible(true);
+    } catch (error) {
+      console.error('Error preparing to edit note:', error);
+    }
   };
 
   const handleSaveNote = async (content: string, tags: string[]) => {
-    if (!currentNote || !verse) {
-      setNoteModalVisible(false);
-      return;
-    }
-
     try {
-      const savedNote = await DatabaseService.updateNote(currentNote.id, {
-        content,
-        tags
-      });
+      if (!currentNote) return;
       
-      // Update the notes array with the edited note
+      // Get current user for ownership check
+      const currentUser = await AuthService.getCurrentUser();
+      
+      // Update the note with user ownership
+      const updatedNote = await DatabaseService.updateNote(
+        currentNote.id,
+        { content, tags },
+        currentUser?.id
+      );
+      
+      // Update the UI
       setNotes(notes.map(note => 
-        note.id === currentNote.id ? savedNote : note
+        note.id === updatedNote.id ? updatedNote : note
       ));
       
-      // Close the modal
-      setNoteModalVisible(false);
+      // Clear editing state
       setCurrentNote(null);
+      
+      // Update note in the notes screen if in verse detail
+      const notesScreenRef = getNotesScreenRef();
+      if (notesScreenRef) {
+        notesScreenRef.updateSingleNote(updatedNote.id, false, currentUser?.id);
+      }
+      
+      setNoteModalVisible(false);
+      showNotification('Note updated successfully');
     } catch (error) {
-      console.error('Error updating note:', error);
-      Alert.alert(t('common:error'), t('verseDetail:failedToUpdateNote'));
+      console.error('Error saving note:', error);
+      showNotification('Failed to update note');
     }
   };
 
   const handleDeleteNote = async (noteId: string) => {
     try {
       const success = await DatabaseService.deleteNote(noteId);
-      
-      if (success) {
-        setNotes(notes.filter(note => note.id !== noteId));
+                
+                if (success) {
+                  setNotes(notes.filter(note => note.id !== noteId));
         if (editingNoteId === noteId) {
           setEditingNoteId(null);
           setEditedNoteContent('');
           setEditedNoteTags([]);
         }
-      } else {
+                } else {
         console.error(`Failed to delete note ${noteId}`);
         Alert.alert(t('common:error'), t('verseDetail:failedToDeleteNote'));
-      }
-    } catch (error) {
-      console.error('Error deleting note:', error);
+                }
+              } catch (error) {
+                console.error('Error deleting note:', error);
       Alert.alert(t('common:error'), t('verseDetail:failedToDeleteNote'));
     }
   };
@@ -571,7 +592,7 @@ const VerseDetailScreen: React.FC = () => {
       
       // Refresh connections list
       await loadVerseDetails();
-      
+        
       // Switch to connections tab
       setActiveTab('connections');
       
@@ -687,7 +708,7 @@ const VerseDetailScreen: React.FC = () => {
     const connectionColor = isOutgoing ? CONNECTION_COLORS.OUTGOING : CONNECTION_COLORS.INCOMING;
     
     // Check if this is a protected "Consecutive verses" connection
-    const isProtectedConnection = item.type === ConnectionType.PARALLEL && item.description === 'Consecutive verses';
+    const isProtectedConnection = item.type === ConnectionType.DEFAULT;
     
     return (
       <View style={styles.connectionItemContainer}>
@@ -701,8 +722,12 @@ const VerseDetailScreen: React.FC = () => {
                 item.type === ConnectionType.THEMATIC
                   ? 'link'
                   : item.type === ConnectionType.PROPHECY
-                  ? 'star'
-                  : 'git-compare'
+                  ? 'star'  
+                  : item.type === ConnectionType.CROSS_REFERENCE
+                  ? 'git-compare'
+                  : item.type === ConnectionType.PARALLEL
+                  ? 'git-compare'
+                  : 'shield-checkmark'
               }
               size={20}
               color={connectionColor}
@@ -730,21 +755,27 @@ const VerseDetailScreen: React.FC = () => {
             
             {showLabels && (
               <View style={styles.connectionLabels}>
-                <Text style={[styles.connectionTypeLabel, { backgroundColor: isOutgoing ? '#E1F0FF' : '#FFF5E6' }]}>
-                  {item.type === ConnectionType.THEMATIC
-                    ? t('verseDetail:thematic')
-                    : item.type === ConnectionType.PROPHECY
-                    ? t('verseDetail:prophecy')
-                    : t('verseDetail:crossReference')}
-                </Text>
-                <Text style={[styles.connectionDirectionLabel, { backgroundColor: isOutgoing ? '#E1F0FF' : '#FFF5E6' }]}>
-                  {isOutgoing ? t('verseDetail:connectsTo') : t('verseDetail:connectedBy')}
-                </Text>
+                {!isProtectedConnection && (
+                  <Text style={[styles.connectionTypeLabel, { backgroundColor: isOutgoing ? '#E1F0FF' : '#FFF5E6' }]}>
+                    {item.type === ConnectionType.THEMATIC
+                      ? t('connections:connectionTypes.thematic')
+                      : item.type === ConnectionType.PROPHECY
+                      ? t('connections:connectionTypes.prophecy')
+                      : item.type === ConnectionType.CROSS_REFERENCE
+                      ? t('connections:connectionTypes.crossReference') 
+                      : item.type === ConnectionType.PARALLEL
+                      ? t('connections:connectionTypes.parallel')
+                      : t('connections:connectionTypes.note')}
+                  </Text>
+                )}
                 {isProtectedConnection && (
                   <Text style={[styles.protectedLabel, { backgroundColor: '#E9FFF0' }]}>
                     {t('verseDetail:systemProtected')}
                   </Text>
                 )}
+                <Text style={[styles.connectionDirectionLabel, { backgroundColor: isOutgoing ? '#E1F0FF' : '#FFF5E6' }]}>
+                  {isOutgoing ? t('verseDetail:connectsTo') : t('verseDetail:connectedBy')}
+                </Text>
               </View>
             )}
           </View>
@@ -756,17 +787,20 @@ const VerseDetailScreen: React.FC = () => {
             style={[styles.deleteConnectionButton, { padding: 12 }]}
             onPress={() => {
               console.debug('Directly deleting connection with ID:', item.id);
-              DatabaseService.deleteConnection(item.id);
-              console.debug('Connection deleted from database');
-              
-              // Update the connections state to remove this connection
-              setConnections(prev => prev.filter(c => c.id !== item.id));
-              
-              // Show success message
-              showNotification(t('verseDetail:connectionDeleted'));
+              // Get current user for ownership
+              AuthService.getCurrentUser().then(currentUser => {
+                DatabaseService.deleteConnection(item.id, currentUser?.id);
+                console.debug('Connection deleted from database');
+                
+                // Update the connections state to remove this connection
+                setConnections(prev => prev.filter(c => c.id !== item.id));
+                
+                // Show success message
+                showNotification(t('verseDetail:connectionDeleted'));
+              });
             }}
           >
-            <Ionicons name="trash" size={26} color="#FF3B30" />
+            <Ionicons name="trash-outline" size={18} color="#FF3B30" />
           </TouchableOpacity>
         )}
       </View>
@@ -1014,10 +1048,13 @@ const VerseDetailScreen: React.FC = () => {
             style: 'destructive',
             onPress: async () => {
               try {
+                // Get current user for ownership
+                const currentUser = await AuthService.getCurrentUser();
+                
                 // Delete all individual connections in the group
                 if (connection.groupedConnections && connection.groupedConnections.length > 0) {
                   for (const conn of connection.groupedConnections) {
-                    await DatabaseService.deleteConnection(conn.id);
+                    await DatabaseService.deleteConnection(conn.id, currentUser?.id);
                   }
                 }
                 
@@ -1073,7 +1110,7 @@ const VerseDetailScreen: React.FC = () => {
         await DatabaseService.updateNote(noteId, {
           content,
           tags,
-        });
+        }, currentUser?.id);
         
         // Update local notes state
         setNotes(prevNotes => 
@@ -1469,6 +1506,109 @@ const VerseDetailScreen: React.FC = () => {
   const clearFilters = () => {
     setSearchQuery('');
     setSelectedTags([]);
+  };
+
+  const loadVerseConnections = async (verseId: string) => {
+    try {
+      // Get current user for ownership
+      const currentUser = await AuthService.getCurrentUser();
+      
+      const connectionsData = await DatabaseService.getConnectionsForVerse(verseId, currentUser?.id);
+      
+      // Process connections to include connected verse data
+      const connectionsWithVerses: ConnectionWithVerse[] = [];
+      
+      for (const connection of connectionsData) {
+        const connectedVerseId = connection.sourceVerseId === verseId
+          ? connection.targetVerseId
+          : connection.sourceVerseId;
+          
+        const connectedVerse = await DatabaseService.getVerse(connectedVerseId);
+        
+        connectionsWithVerses.push({
+          ...connection,
+          connectedVerse,
+          expanded: false
+        });
+      }
+      
+      setConnections(connectionsWithVerses);
+    } catch (error) {
+      console.error('Error loading verse connections:', error);
+    }
+  };
+
+  // Add a function to toggle a connection's ownership (public/private)
+  const toggleConnectionOwnership = async (connection: ConnectionWithVerse) => {
+    try {
+      // Get current user for ownership check
+      const currentUser = await AuthService.getCurrentUser();
+      
+      // Only allow toggling ownership if the user owns the connection
+      if (!currentUser || connection.userId !== currentUser.id) {
+        Alert.alert(
+          t('common:error'),
+          t('verseDetail:cannotChangeOwnership')
+        );
+        return;
+      }
+      
+      // Toggle ownership between PUBLIC and PRIVATE
+      const newOwnership = connection.ownership === 'PUBLIC' ? 'PRIVATE' : 'PUBLIC';
+      
+      // Update the connection
+      const updatedConnection = await DatabaseService.updateConnection(
+        connection.id,
+        { ownership: newOwnership },
+        currentUser.id
+      );
+      
+      // Update the connections in state
+      setConnections(prev => 
+        prev.map(conn => 
+          conn.id === connection.id 
+            ? { ...conn, ownership: newOwnership } 
+            : conn
+        )
+      );
+      
+      // Show success message
+      showNotification(t('verseDetail:ownershipChanged', { status: newOwnership.toLowerCase() }));
+    } catch (error) {
+      console.error('Error toggling connection ownership:', error);
+      showNotification(t('verseDetail:failedToChangeOwnership'));
+    }
+  };
+
+  // Add UI component to render ownership badge
+  const renderOwnershipBadge = (connection: ConnectionWithVerse) => {
+    // Get current user to check if they own this connection
+    const currentUser = currentUserRef.current;
+    const isOwner = currentUser && connection.userId === currentUser.id;
+    
+    if (!isOwner) return null;
+    
+    const isPrivate = connection.ownership === 'PRIVATE';
+    
+    return (
+      <TouchableOpacity
+        style={[
+          styles.ownershipBadge, 
+          isPrivate ? styles.privateBadge : styles.publicBadge
+        ]}
+        onPress={() => toggleConnectionOwnership(connection)}
+      >
+        <Ionicons 
+          name={isPrivate ? 'lock-closed' : 'globe'} 
+          size={12} 
+          color={isPrivate ? '#ffffff' : '#ffffff'} 
+          style={styles.ownershipIcon}
+        />
+        <Text style={styles.ownershipText}>
+          {isPrivate ? t('verseDetail:private') : t('verseDetail:public')}
+        </Text>
+      </TouchableOpacity>
+    );
   };
 
   if (isLoading) {
@@ -2657,6 +2797,26 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: '#999',
     textAlign: 'center',
+  },
+  ownershipBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 4,
+    borderRadius: 4,
+    marginRight: 8,
+  },
+  ownershipIcon: {
+    marginRight: 4,
+  },
+  ownershipText: {
+    fontSize: 12,
+    color: '#666',
+  },
+  privateBadge: {
+    backgroundColor: '#FF4500',
+  },
+  publicBadge: {
+    backgroundColor: '#7CFC00',
   },
 });
 

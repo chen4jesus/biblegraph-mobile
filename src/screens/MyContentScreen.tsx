@@ -20,6 +20,7 @@ import { Note, Connection, ConnectionType, User } from '../types/bible';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
+import { useTranslation } from 'react-i18next';
 
 // Define colors here instead of using useTheme
 const colors = {
@@ -39,6 +40,7 @@ type MyContentScreenProps = {
 };
 
 const MyContentScreen: React.FC<MyContentScreenProps> = ({ navigation }) => {
+  const { t } = useTranslation(['myContent', 'common']);
   const [isLoading, setIsLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [myNotes, setMyNotes] = useState<Note[]>([]);
@@ -187,11 +189,15 @@ const MyContentScreen: React.FC<MyContentScreenProps> = ({ navigation }) => {
   const getConnectionTypeText = (type: ConnectionType) => {
     switch (type) {
       case 'CROSS_REFERENCE':
-        return 'Cross Reference';
-      case 'THEME':
-        return 'Theme';
+        return t('connections:connectionTypes.crossReference');
+      case 'THEMATIC':
+        return t('connections:connectionTypes.thematic');
+      case 'PARALLEL':
+        return t('connections:connectionTypes.parallel');
+      case 'PROPHETIC':
+        return t('connections:connectionTypes.prophetic');
       case 'NOTE':
-        return 'Note';
+        return t('connections:connectionTypes.note');
       default:
         return type;
     }
@@ -285,8 +291,8 @@ const MyContentScreen: React.FC<MyContentScreenProps> = ({ navigation }) => {
       />
       <Text style={[styles.emptyText, { color: colors.text }]}>
         {activeTab === 'notes' 
-          ? "You haven't created any notes yet" 
-          : "You haven't created any connections yet"}
+          ? t('myContent:noNotes') 
+          : t('myContent:noConnections')}
       </Text>
       <TouchableOpacity
         style={[styles.createButton, { backgroundColor: colors.primary }]}
@@ -294,8 +300,8 @@ const MyContentScreen: React.FC<MyContentScreenProps> = ({ navigation }) => {
       >
         <Text style={styles.createButtonText}>
           {activeTab === 'notes' 
-            ? "Create a Note" 
-            : "Create a Connection"}
+            ? t('myContent:createNote') 
+            : t('myContent:createConnection')}
         </Text>
       </TouchableOpacity>
     </View>
@@ -364,7 +370,7 @@ const MyContentScreen: React.FC<MyContentScreenProps> = ({ navigation }) => {
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
       <View style={styles.header}>
         <Text style={[styles.title, { color: colors.text }]}>
-          My Content
+          {t('myContent:title')}
         </Text>
       </View>
 
@@ -382,7 +388,7 @@ const MyContentScreen: React.FC<MyContentScreenProps> = ({ navigation }) => {
               { color: activeTab === 'notes' ? colors.white : colors.text }
             ]}
           >
-            Notes
+            {t('myContent:notes')}
           </Text>
         </TouchableOpacity>
         <TouchableOpacity
@@ -398,7 +404,7 @@ const MyContentScreen: React.FC<MyContentScreenProps> = ({ navigation }) => {
               { color: activeTab === 'connections' ? colors.white : colors.text }
             ]}
           >
-            Connections
+            {t('myContent:connections')}
           </Text>
         </TouchableOpacity>
       </View>
@@ -421,7 +427,7 @@ const MyContentScreen: React.FC<MyContentScreenProps> = ({ navigation }) => {
         <View style={styles.modalContainer}>
           <View style={[styles.modalContent, { backgroundColor: colors.cardBackground }]}>
             <Text style={[styles.modalTitle, { color: colors.text }]}>
-              Share with User
+              {t('myContent:shareTitle')}
             </Text>
             
             <TextInput
@@ -432,7 +438,7 @@ const MyContentScreen: React.FC<MyContentScreenProps> = ({ navigation }) => {
               }]}
               value={shareEmail}
               onChangeText={setShareEmail}
-              placeholder="Enter user email"
+              placeholder={t('myContent:emailPlaceholder')}
               placeholderTextColor={colors.textLight}
               keyboardType="email-address"
               autoCapitalize="none"
@@ -443,7 +449,7 @@ const MyContentScreen: React.FC<MyContentScreenProps> = ({ navigation }) => {
                 style={[styles.modalButton, styles.cancelButton, { borderColor: colors.border }]}
                 onPress={() => setShareModalVisible(false)}
               >
-                <Text style={{ color: colors.text }}>Cancel</Text>
+                <Text style={{ color: colors.text }}>{t('common:cancel')}</Text>
               </TouchableOpacity>
               
               <TouchableOpacity
@@ -451,7 +457,7 @@ const MyContentScreen: React.FC<MyContentScreenProps> = ({ navigation }) => {
                 onPress={handleShareSubmit}
                 disabled={!shareEmail.trim()}
               >
-                <Text style={styles.shareButtonText}>Share</Text>
+                <Text style={styles.shareButtonText}>{t('common:share')}</Text>
               </TouchableOpacity>
             </View>
           </View>

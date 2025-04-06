@@ -98,14 +98,14 @@ export const DatabaseService = {
   /**
    * Get connections between verses
    */
-  getConnections: (signal?: AbortSignal) => 
-    neo4jDatabaseService.getConnections(signal),
+  getConnections: (userId?: string, signal?: AbortSignal) => 
+    neo4jDatabaseService.getConnections(userId, signal),
 
   /**
    * Get connections for a specific verse
    */
-  getConnectionsForVerse: (verseId: string, signal?: AbortSignal) => 
-    neo4jDatabaseService.getConnectionsForVerse(verseId, signal),
+  getConnectionsForVerse: (verseId: string, userId?: string) => 
+    neo4jDatabaseService.getConnectionsForVerse(verseId, userId),
 
   /**
    * Create a connection between verses
@@ -116,38 +116,38 @@ export const DatabaseService = {
   /**
    * Create multiple connections in a batch
    */
-  createConnectionsBatch: (connections: Array<Omit<Connection, 'id' | 'createdAt' | 'updatedAt'>>) => 
-    neo4jDatabaseService.createConnectionsBatch(connections),
+  createConnectionsBatch: (connections: Array<Omit<Connection, 'id' | 'createdAt' | 'updatedAt'>>, userId?: string) => 
+    neo4jDatabaseService.createConnectionsBatch(connections, userId),
 
   /**
    * Update an existing connection
    */
-  updateConnection: (connectionId: string, updates: Partial<Connection>) => 
-    neo4jDatabaseService.updateConnection(connectionId, updates),
+  updateConnection: (connectionId: string, updates: Partial<Connection>, userId?: string) => 
+    neo4jDatabaseService.updateConnection(connectionId, updates, userId),
 
   /**
    * Delete a connection
    */
-  deleteConnection: (connectionId: string) => 
-    neo4jDatabaseService.deleteConnection(connectionId),
+  deleteConnection: (connectionId: string, userId?: string) => 
+    neo4jDatabaseService.deleteConnection(connectionId, userId),
 
   /**
    * Get notes (with optional pagination)
    */
-  getNotes: (skip?: number, limit?: number) => 
-    neo4jDatabaseService.getNotes(skip, limit),
+  getNotes: (skip?: number, limit?: number, userId?: string) => 
+    neo4jDatabaseService.getNotes(skip, limit, userId),
 
   /**
    * Get a specific note by ID
    */
-  getNote: (noteId: string) =>
-    neo4jDatabaseService.getNote(noteId),
+  getNote: (noteId: string, userId?: string) =>
+    neo4jDatabaseService.getNote(noteId, userId),
 
   /**
    * Get notes for a specific verse
    */
-  getNotesForVerse: (verseId: string) => 
-    neo4jDatabaseService.getNotesForVerse(verseId),
+  getNotesForVerse: (verseId: string, userId?: string) => 
+    neo4jDatabaseService.getNotesForVerse(verseId, userId),
 
   /**
    * Create a new note
@@ -158,42 +158,42 @@ export const DatabaseService = {
   /**
    * Update an existing note
    */
-  updateNote: (noteId: string, updates: Partial<Note>) => 
-    neo4jDatabaseService.updateNote(noteId, updates),
+  updateNote: (noteId: string, updates: Partial<Note>, userId?: string) => 
+    neo4jDatabaseService.updateNote(noteId, updates, userId),
 
   /**
    * Delete a note
    */
-  deleteNote: (noteId: string) => 
-    neo4jDatabaseService.deleteNote(noteId),
+  deleteNote: (noteId: string, userId?: string) => 
+    neo4jDatabaseService.deleteNote(noteId, userId),
 
   /**
    * Get all tags
    */
-  getTags: () => neo4jDatabaseService.getTags(),
+  getTags: (userId?: string) => neo4jDatabaseService.getTags(userId),
 
   /**
    * Get tags with usage count
    */
-  getTagsWithCount: () => neo4jDatabaseService.getTagsWithCount(),
+  getTagsWithCount: (userId?: string) => neo4jDatabaseService.getTagsWithCount(userId),
 
   /**
    * Create a new tag
    */
-  createTag: (name: string, color: string) => 
-    neo4jDatabaseService.createTag(name, color),
+  createTag: (name: string, color: string, userId?: string) => 
+    neo4jDatabaseService.createTag(name, color, userId),
 
   /**
    * Update an existing tag
    */
-  updateTag: (tagId: string, updates: Partial<Tag>) => 
-    neo4jDatabaseService.updateTag(tagId, updates),
+  updateTag: (tagId: string, updates: Partial<Tag>, userId?: string) => 
+    neo4jDatabaseService.updateTag(tagId, updates, userId),
 
   /**
    * Delete a tag
    */
-  deleteTag: (tagId: string) => 
-    neo4jDatabaseService.deleteTag(tagId),
+  deleteTag: (tagId: string, userId?: string) => 
+    neo4jDatabaseService.deleteTag(tagId, userId),
 
   /**
    * Create a verse group

@@ -54,11 +54,10 @@ const NODE_STROKE_COLOR = '#4285F4';
 const NODE_SELECTED_COLOR = '#EA4335';
 const EDGE_COLORS = {
   [ConnectionType.CROSS_REFERENCE]: '#FF9500',
-  [ConnectionType.THEME]: '#34C759',
   [ConnectionType.PARALLEL]: '#5856D6',
-  [ConnectionType.NOTE]: '#4285F4',
   [ConnectionType.THEMATIC]: '#EA4335',
   [ConnectionType.PROPHECY]: '#FBBC05',
+  [ConnectionType.NOTE]: '#4285F4',
 };
 
 // Add ZOOM constants with the other constants

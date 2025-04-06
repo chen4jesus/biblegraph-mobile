@@ -14,7 +14,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Tag } from '../types/bible';
-import { DatabaseService } from '../services';
+import { DatabaseService, AuthService } from '../services';
 import { useTranslation } from 'react-i18next';
 
 interface TagsManagementModalProps {
@@ -55,7 +55,8 @@ const TagsManagementModal: React.FC<TagsManagementModalProps> = ({
   const loadTags = async () => {
     try {
       setLoading(true);
-      const fetchedTags = await DatabaseService.getTags();
+      const currentUser = await AuthService.getCurrentUser();
+      const fetchedTags = await DatabaseService.getTags(currentUser?.id);
       setTags(fetchedTags);
     } catch (error) {
       console.error('Error loading tags:', error);
@@ -78,7 +79,8 @@ const TagsManagementModal: React.FC<TagsManagementModalProps> = ({
       const randomColor = colors[Math.floor(Math.random() * colors.length)];
       
       // Create tag
-      const createdTag = await DatabaseService.createTag(newTagName.trim(), randomColor);
+      const currentUser = await AuthService.getCurrentUser();
+      const createdTag = await DatabaseService.createTag(newTagName.trim(), randomColor, currentUser?.id);
       
       // Update local state
       setTags(prevTags => [...prevTags, createdTag]);
@@ -110,11 +112,12 @@ const TagsManagementModal: React.FC<TagsManagementModalProps> = ({
 
     try {
       setLoading(true);
-      
+      const currentUser = await AuthService.getCurrentUser();
       // Update tag in database
       const updatedTag = await DatabaseService.updateTag(
         editingTag.id, 
-        { name: editedTagName.trim() }
+        { name: editedTagName.trim() },
+        currentUser?.id
       );
       
       // Update local state
@@ -155,9 +158,9 @@ const TagsManagementModal: React.FC<TagsManagementModalProps> = ({
           onPress: async () => {
             try {
               setLoading(true);
-              
+              const currentUser = await AuthService.getCurrentUser();
               // Delete tag from database
-              await DatabaseService.deleteTag(tag.id);
+              await DatabaseService.deleteTag(tag.id, currentUser?.id);
               
               // Update local state
               setTags(prevTags => prevTags.filter(t => t.id !== tag.id));
@@ -201,11 +204,12 @@ const TagsManagementModal: React.FC<TagsManagementModalProps> = ({
   const updateTagColor = async (tag: Tag, newColor: string) => {
     try {
       setLoading(true);
-      
+      const currentUser = await AuthService.getCurrentUser();
       // Update the tag in database
       const updatedTag = await DatabaseService.updateTag(
         tag.id,
-        { color: newColor }
+        { color: newColor },
+        currentUser?.id
       );
       
       // Update local state

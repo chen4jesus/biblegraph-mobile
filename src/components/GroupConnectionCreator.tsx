@@ -165,11 +165,10 @@ const GroupConnectionCreator: React.FC<GroupConnectionCreatorProps> = ({
 
   const connectionTypes: ConnectionType[] = [
     ConnectionType.CROSS_REFERENCE,
-    ConnectionType.THEME,
     ConnectionType.PARALLEL,
-    ConnectionType.NOTE,
     ConnectionType.THEMATIC,
-    ConnectionType.PROPHECY
+    ConnectionType.PROPHECY,
+    ConnectionType.NOTE,
   ];
 
   return (

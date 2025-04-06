@@ -1,4 +1,7 @@
 {
+  "app": {
+    "title": "圣经研读"
+  },
   "common": {
     "loading": "加载中...",
     "error": "错误",
@@ -26,7 +29,8 @@
     "initializingDatabase": "初始化数据库...",
     "chooseVisualization": "选择可视化类型",
     "selectVisualizationType": "选择一种可视化方式",
-    "selectedVerses": "已选择的经文"
+    "selectedVerses": "已选择的经文",
+    "share": "分享"
   },
   "home": {
     "title": "圣经研读",
@@ -114,8 +118,8 @@
     "editConnection": "编辑连接",
     "deleteConnection": "删除连接",
     "connectionTypes": {
+      "default": "默认",
       "crossReference": "交叉引用",
-      "theme": "主题",
       "parallel": "平行经文",
       "note": "笔记",
       "thematic": "主题性",
@@ -135,9 +139,6 @@
     "addMultipleConnections": "添加多个关联",
     "addConnectionHint": "使用上方按钮添加关联",
     "enterVerseReference": "输入经文引用（例如：约翰福音 3:16）",
-    "thematic": "主题",
-    "crossReference": "交叉引用",
-    "prophecy": "预言",
     "connectionAdded": "成功添加关联",
     "connectionsAdded": "成功添加 {count} 个关联",
     "failedToAddConnection": "添加关联失败",
@@ -150,7 +151,7 @@
     "manageTags": "管理标签",
     "verseNotFound": "经文未找到",
     "connectsTo": "指向",
-    "connectedBy": "被引用",
+    "connectedBy": "被指向",
     "multiConnectionHint": "搜索并选择多个经文以将它们与当前经文关联",
     "useGroupConnection": "使用群组关联",
     "groupName": "群组名称",
@@ -283,7 +284,8 @@
     "darkModeDescription": "启用深色主题",
     "preferences": "偏好设置",
     "confirmLogout": "确定要退出登录吗？",
-    "logoutError": "退出登录失败，请重试。"
+    "logoutError": "退出登录失败，请重试。",
+    "myContent": "我的笔记和连接"
   },
   "visualization": {
     "title": "可视化",
@@ -303,7 +305,29 @@
     "crossReference": "交叉引用",
     "theme": "主题",
     "note": "笔记",
-    "parallel": "平行经文",
-    "shownTogether": "一起显示"
-  }
+    "parallel": "平行经文"
+  },
+  "myContent": {
+    "title": "我的内容",
+    "notes": "笔记",
+    "connections": "连接",
+    "noNotes": "您还没有创建任何笔记",
+    "noConnections": "您还没有创建任何连接",
+    "createNote": "创建笔记",
+    "createConnection": "创建连接",
+    "shareTitle": "分享给用户",
+    "emailPlaceholder": "输入用户邮箱",
+    "shareSuccess": "内容分享成功",
+    "deleteConfirm": "您确定要删除这个项目吗？",
+    "deleteSuccess": "项目删除成功",
+    "loginPrompt": "请登录以查看您的内容"
+  },
+  "errors": {
+    "general": "发生错误。请重试。",
+    "network": "网络错误。请检查您的连接。",
+    "loadingContent": "加载内容时出错。请重试。",
+    "refreshingContent": "刷新内容时出错。请重试。",
+    "sharingItem": "分享项目时出错。请重试。",
+    "deletingItem": "删除项目时出错。请重试。"
+  } 
 } 

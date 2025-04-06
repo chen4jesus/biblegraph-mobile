@@ -42,7 +42,7 @@ class StorageService {
   }
 
   // Connection methods
-  async getConnections(): Promise<Connection[]> {
+  async getConnections(userId?: string): Promise<Connection[]> {
     try {
       const data = await AsyncStorage.getItem(STORAGE_KEYS.CONNECTIONS);
       return data ? JSON.parse(data) : [];
@@ -52,7 +52,7 @@ class StorageService {
     }
   }
 
-  async saveConnections(connections: Connection[]): Promise<void> {
+  async saveConnections(connections: Connection[], userId?: string): Promise<void> {
     try {
       await AsyncStorage.setItem(STORAGE_KEYS.CONNECTIONS, JSON.stringify(connections));
     } catch (error) {
@@ -62,7 +62,7 @@ class StorageService {
   }
 
   // Note methods
-  async getNotes(): Promise<Note[]> {
+  async getNotes(userId?: string): Promise<Note[]> {
     try {
       const data = await AsyncStorage.getItem(STORAGE_KEYS.NOTES);
       return data ? JSON.parse(data) : [];
@@ -72,7 +72,7 @@ class StorageService {
     }
   }
 
-  async saveNotes(notes: Note[]): Promise<void> {
+  async saveNotes(notes: Note[], userId?: string): Promise<void> {
     try {
       await AsyncStorage.setItem(STORAGE_KEYS.NOTES, JSON.stringify(notes));
     } catch (error) {
@@ -82,7 +82,7 @@ class StorageService {
   }
 
   // Settings methods
-  async getSettings(): Promise<BibleSettings | null> {
+  async getSettings(userId?: string): Promise<BibleSettings | null> {
     try {
       const data = await AsyncStorage.getItem(STORAGE_KEYS.SETTINGS);
       return data ? JSON.parse(data) : null;
@@ -92,7 +92,7 @@ class StorageService {
     }
   }
 
-  async saveSettings(settings: BibleSettings): Promise<void> {
+  async saveSettings(settings: BibleSettings, userId?: string ): Promise<void> {
     try {
       await AsyncStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(settings));
     } catch (error) {

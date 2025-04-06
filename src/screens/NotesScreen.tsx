@@ -16,7 +16,7 @@ import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/types';
 import { Note, Verse } from '../types/bible';
-import { DatabaseService } from '../services';
+import { DatabaseService, AuthService } from '../services';
 import { Ionicons } from '@expo/vector-icons';
 import { useTranslation } from 'react-i18next';
 import WebViewModal from '../components/WebViewModal';
@@ -37,7 +37,7 @@ interface AnimatedNoteInfo {
 
 // Define the ref interface
 export interface NotesScreenRef {
-  updateSingleNote: (noteId: string, isNew: boolean) => Promise<void>;
+  updateSingleNote: (noteId: string, isNew?: boolean, userId?: string) => Promise<void>;
 }
 
 const NotesScreen = forwardRef<NotesScreenRef, {}>((props, ref) => {
@@ -225,9 +225,12 @@ const NotesScreen = forwardRef<NotesScreenRef, {}>((props, ref) => {
     }
 
     try {
+      // Get current user for ownership
+      const currentUser = await AuthService.getCurrentUser();
+      
       // Fetch notes from the Neo4j database with pagination
       const skip = refresh ? 0 : page * NOTES_PER_PAGE;
-      const fetchedNotes = await DatabaseService.getNotes(skip, NOTES_PER_PAGE);
+      const fetchedNotes = await DatabaseService.getNotes(skip, NOTES_PER_PAGE, currentUser?.id);
       
       // If we got fewer notes than requested, there are no more to load
       if (fetchedNotes.length < NOTES_PER_PAGE) {
@@ -294,7 +297,10 @@ const NotesScreen = forwardRef<NotesScreenRef, {}>((props, ref) => {
 
   const loadTagColors = async () => {
     try {
-      const tags = await DatabaseService.getTags();
+      // Get current user for ownership
+      const currentUser = await AuthService.getCurrentUser();
+      
+      const tags = await DatabaseService.getTags(currentUser?.id);
       const colorMap: Record<string, string> = {};
       
       tags.forEach(tag => {
@@ -355,12 +361,18 @@ const NotesScreen = forwardRef<NotesScreenRef, {}>((props, ref) => {
   };
 
   // Add this new method to update a single note
-  const updateSingleNote = async (noteId: string, isNew = false) => {
+  const updateSingleNote = async (noteId: string, isNew = false, userId?: string) => {
     try {
+      // Get current user for ownership if userId not provided
+      if (!userId) {
+        const currentUser = await AuthService.getCurrentUser();
+        userId = currentUser?.id;
+      }
+      
       // If it's a new note, we'll add it to the top of the list after fetching
       if (isNew) {
         // For new notes, get just the latest note and add it to the existing list
-        const latestNotes = await DatabaseService.getNotes(0, 1);
+        const latestNotes = await DatabaseService.getNotes(0, 1, userId);
         if (latestNotes.length > 0) {
           const newNote = latestNotes[0];
           
@@ -404,7 +416,7 @@ const NotesScreen = forwardRef<NotesScreenRef, {}>((props, ref) => {
         }
       } else {
         // For existing notes, fetch just that specific note and update it in the list
-        const updatedNote = await DatabaseService.getNote(noteId);
+        const updatedNote = await DatabaseService.getNote(noteId, userId);
         if (updatedNote) {
           // Fetch the verse for this note if it has one
           let verse = null;

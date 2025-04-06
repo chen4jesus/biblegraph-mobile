@@ -24,13 +24,14 @@ interface VerseConnection {
 interface MultiConnectionSelectorProps {
   targetVerseId: string;
   targetVerse?: Verse;
-  onConnectionsCreated?: (connections: (Connection | GroupConnection)[]) => void;
+  onConnectionsCreated?: (connections: (Connection | GroupConnection)[], userId?: string) => void;
+  shouldAutoCloseOnSuccess?: boolean;
+  onClose?: () => void;
 }
 
 const CONNECTION_TYPES = [
   { value: ConnectionType.PROPHECY, label: '预言/应验' },
   { value: ConnectionType.CROSS_REFERENCE, label: '引用' },
-  { value: ConnectionType.THEME, label: '主题' },
   { value: ConnectionType.PARALLEL, label: '平行对应' },
   { value: ConnectionType.THEMATIC, label: '主题相关' },
 ];
@@ -39,6 +40,8 @@ const MultiConnectionSelector: React.FC<MultiConnectionSelectorProps> = ({
   targetVerseId,
   targetVerse,
   onConnectionsCreated,
+  shouldAutoCloseOnSuccess,
+  onClose,
 }) => {
   const { t } = useTranslation(['verseDetail', 'common']);
   const [searchQuery, setSearchQuery] = useState('');
@@ -50,6 +53,10 @@ const MultiConnectionSelector: React.FC<MultiConnectionSelectorProps> = ({
   const [useGroupConnection, setUseGroupConnection] = useState(false);
   const [groupName, setGroupName] = useState('');
   const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [statusMessage, setStatusMessage] = useState('');
+  const [isSuccessVisible, setIsSuccessVisible] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
+  const [isErrorVisible, setIsErrorVisible] = useState(false);
 
   // Load the current user
   useEffect(() => {
@@ -124,91 +131,51 @@ const MultiConnectionSelector: React.FC<MultiConnectionSelectorProps> = ({
   };
 
   const handleSaveConnections = async () => {
-    if (selectedVerses.length === 0) {
-      Alert.alert(t('common:error'), t('verseDetail:selectVersesFirst'));
-      return;
-    }
-
-    setIsSaving(true);
+    if (!targetVerse) return;
+    
     try {
-      if (useGroupConnection) {
-        // Create a group connection
-        const sourceIds = [targetVerseId];
-        const targetIds = selectedVerses.map(item => item.verse.id);
-        
-        // Use the group name or generate one based on the connection type
-        const effectiveGroupName = groupName || 
-          `${targetVerse?.book} ${targetVerse?.chapter}:${targetVerse?.verse} - ${
-            CONNECTION_TYPES.find(t => t.value === connectionType)?.label || 'Connection'
-          }`;
-        
-        // Prepare metadata with primitive values that Neo4j can handle  
-        const metadata = {
-          createdBy: 'MultiConnectionSelector',
-          verseCount: targetIds.length,
-          sourceVerse: targetVerse ? `${targetVerse.book} ${targetVerse.chapter}:${targetVerse.verse}` : 'Unknown'
-        };
-          
-        // Create the group connection with source and target IDs and custom options
-        const groupConnection = await DatabaseService.createGroupConnection(
-          sourceIds,
-          targetIds,
-          connectionType,
-          `Group connection from verse to multiple targets`,
-          {
-            name: effectiveGroupName,
-            sourceType: 'VERSE',
-            targetType: 'VERSE',
-            metadata: metadata
-          }
-        );
-        
-        Alert.alert(
-          t('common:success'), 
-          t('verseDetail:groupConnectionCreated').replace('{count}', String(targetIds.length))
-        );
-        
-        // Clear selections after successful save
-        setSelectedVerses([]);
-        setGroupName('');
-        
-        // Notify parent component
-        if (onConnectionsCreated) {
-          onConnectionsCreated([groupConnection]);
-        }
-      } else {
-        // Create individual connections (original implementation)
-        const connections = selectedVerses.map(item => ({
-          sourceVerseId: targetVerseId,
-          targetVerseId: item.verse.id,
-          type: item.connectionType,
-          description: '',
-        }));
-
-        // Save connections to Neo4j
-        const results = await DatabaseService.createConnectionsBatch(connections, currentUser?.id);
-        
-        if (results.length > 0) {
-          Alert.alert(
-            t('common:success'), 
-            t('verseDetail:connectionsAdded').replace('{count}', String(results.length))
-          );
-          // Clear selections after successful save
-          setSelectedVerses([]);
-          
-          // Notify parent component
-          if (onConnectionsCreated) {
-            onConnectionsCreated(results);
-          }
-        } else {
-          Alert.alert(t('common:info'), t('verseDetail:noConnectionsCreated'));
-        }
+      // Get current user for ownership
+      const currentUser = await AuthService.getCurrentUser();
+      
+      // Prepare selected verses for batch connection
+      const connections = selectedVerses.map(verseConnection => ({
+        sourceVerseId: targetVerseId,
+        targetVerseId: verseConnection.verse.id,
+        type: connectionType,
+        description: ''
+      }));
+      
+      // Create connections in a batch with user ownership
+      const createdConnections = await DatabaseService.createConnectionsBatch(connections, currentUser?.id);
+      
+      if (onConnectionsCreated && currentUser) {
+        onConnectionsCreated(createdConnections, currentUser.id);
       }
+      
+      // Reset state
+      setSelectedVerses([]);
+      
+      setStatusMessage(t('multiConnectionSelector:connectionsCreated', { count: createdConnections.length }));
+      setIsSuccessVisible(true);
+      
+      // Auto-hide success message after 3 seconds
+      setTimeout(() => {
+        setIsSuccessVisible(false);
+        
+        // Auto-close the component if requested
+        if (shouldAutoCloseOnSuccess && onClose) {
+          onClose();
+        }
+      }, 3000);
     } catch (error) {
-      console.error('Error saving connections:', error);
-      Alert.alert(t('common:error'), t('verseDetail:errorSavingConnections'));
-    } finally {
-      setIsSaving(false);
+      console.error('Error creating connections:', error);
+      setErrorMessage(t('multiConnectionSelector:errorCreatingConnections'));
+      setIsErrorVisible(true);
+      
+      // Auto-hide error message after 3 seconds
+      setTimeout(() => {
+        setIsErrorVisible(false);
+      }, 3000);
     }
   };
 

@@ -29,14 +29,14 @@ const offlineDataService = {
     return verses.find(verse => verse.id === id) || null;
   },
   
-  async getConnections() {
+  async getConnections(userId?: string) {
     console.log('Using offline mode for getConnections');
-    return storageService.getConnections();
+    return storageService.getConnections(userId);
   },
   
-  async getConnectionsForVerse(verseId: string) {
+  async getConnectionsForVerse(verseId: string, userId?: string) {
     console.log('Using offline mode for getConnectionsForVerse');
-    const connections = await storageService.getConnections();
+    const connections = await storageService.getConnections(userId);
     return connections.filter(
       conn => conn.sourceVerseId === verseId || conn.targetVerseId === verseId
     );
@@ -217,24 +217,24 @@ class Neo4jDatabaseService {
   }
 
   // Connection methods
-  public async getConnections(signal?: AbortSignal): Promise<Connection[]> {
+  public async getConnections(userId?: string, signal?: AbortSignal): Promise<Connection[]> {
     await this.ensureInitialized();
     
     if (this.offlineMode) {
-      return offlineDataService.getConnections();
+      return offlineDataService.getConnections(userId);
     }
     
-    return neo4jDriverService.getConnections(signal);
+    return neo4jDriverService.getConnections(userId, signal);
   }
 
-  public async getConnectionsForVerse(verseId: string, signal?: AbortSignal): Promise<Connection[]> {
+  public async getConnectionsForVerse(verseId: string, userId?: string, signal?: AbortSignal): Promise<Connection[]> {
     await this.ensureInitialized();
     
     if (this.offlineMode) {
-      return offlineDataService.getConnectionsForVerse(verseId);
+      return offlineDataService.getConnectionsForVerse(verseId, userId);
     }
     
-    return neo4jDriverService.getConnectionsForVerse(verseId, signal);
+    return neo4jDriverService.getConnectionsForVerse(verseId, userId, signal);
   }
 
   public async createConnection(connection: Omit<Connection, 'id' | 'createdAt' | 'updatedAt'>): Promise<Connection> {
@@ -247,22 +247,26 @@ class Neo4jDatabaseService {
     return neo4jDriverService.createConnection(connection, userId);
   }
 
-  public async updateConnection(connectionId: string, updates: Partial<Connection>): Promise<Connection> {
+  public async updateConnection(connectionId: string, updates: Partial<Connection>, userId?: string): Promise<Connection> {
     await this.ensureInitialized();
     
-    // Get current user for ownership check
-    const currentUser = await this.getCurrentUser();
-    const userId = currentUser?.id;
+    // If userId is not provided, get current user for ownership check
+    if (!userId) {
+      const currentUser = await this.getCurrentUser();
+      userId = currentUser?.id;
+    }
     
     return neo4jDriverService.updateConnection(connectionId, updates, userId);
   }
 
-  public async deleteConnection(connectionId: string): Promise<boolean> {
+  public async deleteConnection(connectionId: string, userId?: string): Promise<boolean> {
     await this.ensureInitialized();
     
-    // Get current user for ownership check
-    const currentUser = await this.getCurrentUser();
-    const userId = currentUser?.id;
+    // If userId is not provided, get current user for ownership check
+    if (!userId) {
+      const currentUser = await this.getCurrentUser();
+      userId = currentUser?.id;
+    }
     
     return neo4jDriverService.deleteConnection(connectionId, userId);
   }
@@ -280,19 +284,19 @@ class Neo4jDatabaseService {
   }
 
   // Note methods
-  public async getNotes(skip: number = 0, limit: number = 20): Promise<Note[]> {
+  public async getNotes(skip: number = 0, limit: number = 20, userId?: string): Promise<Note[]> {
     await this.ensureInitialized();
-    return neo4jDriverService.getNotes(skip, limit);
+    return neo4jDriverService.getNotes(skip, limit, userId);
   }
 
-  public async getNote(noteId: string): Promise<Note | null> {
+  public async getNote(noteId: string, userId?: string): Promise<Note | null> {
     await this.ensureInitialized();
-    return neo4jDriverService.getNote(noteId);
+    return neo4jDriverService.getNote(noteId, userId);
   }
 
-  public async getNotesForVerse(verseId: string): Promise<Note[]> {
+  public async getNotesForVerse(verseId: string, userId?: string): Promise<Note[]> {
     await this.ensureInitialized();
-    return neo4jDriverService.getNotesForVerse(verseId);
+    return neo4jDriverService.getNotesForVerse(verseId, userId);
   }
 
   public async createNote(verseId: string, content: string, tags: string[] = [], userId?: string): Promise<Note> {
@@ -314,15 +318,10 @@ class Neo4jDatabaseService {
   }
 
   // Method to get notes owned by the current user
-  public async getMyNotes(): Promise<Note[]> {
+  public async getMyNotes(userId?: string): Promise<Note[]> {
     await this.ensureInitialized();
     
-    const currentUser = await this.getCurrentUser();
-    if (!currentUser) {
-      return [];
-    }
-    
-    return neo4jDriverService.getNotesOwnedByUser(currentUser.id);
+    return neo4jDriverService.getNotesOwnedByUser(userId || '');
   }
   
   // Methods for managing ownership
@@ -399,29 +398,29 @@ class Neo4jDatabaseService {
   }
 
   // Tag methods
-  public async getTags(): Promise<Tag[]> {
+  public async getTags(userId?: string): Promise<Tag[]> {
     await this.ensureInitialized();
-    return neo4jDriverService.getTags();
+    return neo4jDriverService.getTags(userId);
   }
 
-  public async getTagsWithCount(): Promise<(Tag & { count: number })[]> {
+  public async getTagsWithCount(userId?: string): Promise<(Tag & { count: number })[]> {
     await this.ensureInitialized();
-    return neo4jDriverService.getTagsWithCount();
+    return neo4jDriverService.getTagsWithCount(userId);
   }
 
-  public async createTag(name: string, color: string): Promise<Tag> {
+  public async createTag(name: string, color: string, userId?: string): Promise<Tag> {
     await this.ensureInitialized();
-    return neo4jDriverService.createTag(name, color);
+    return neo4jDriverService.createTag(name, color, userId);
   }
 
-  public async updateTag(tagId: string, updates: Partial<Tag>): Promise<Tag> {
+  public async updateTag(tagId: string, updates: Partial<Tag>, userId?: string): Promise<Tag> {
     await this.ensureInitialized();
-    return neo4jDriverService.updateTag(tagId, updates);
+    return neo4jDriverService.updateTag(tagId, updates, userId);
   }
 
-  public async deleteTag(tagId: string): Promise<boolean> {
+  public async deleteTag(tagId: string, userId?: string): Promise<boolean> {
     await this.ensureInitialized();
-    return neo4jDriverService.deleteTag(tagId);
+    return neo4jDriverService.deleteTag(tagId, userId);
   }
 
   // Helper methods
@@ -432,13 +431,16 @@ class Neo4jDatabaseService {
   }
 
   public async createConnectionsBatch(
-    connections: Array<Omit<Connection, 'id' | 'createdAt' | 'updatedAt'>>
+    connections: Array<Omit<Connection, 'id' | 'createdAt' | 'updatedAt'>>,
+    userId?: string
   ): Promise<Connection[]> {
     await this.ensureInitialized();
     
-    // Get current user for ownership
-    const currentUser = await this.getCurrentUser();
-    const userId = currentUser?.id;
+    // If userId is not provided, get the current user
+    if (!userId) {
+      const currentUser = await this.getCurrentUser();
+      userId = currentUser?.id;
+    }
     
     return neo4jDriverService.createConnectionsBatch(connections, userId);
   }
