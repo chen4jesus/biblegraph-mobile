@@ -809,13 +809,15 @@ class Neo4jDriver {
       if (tags.length > 0) {
         query += `
           WITH n
-          UNWIND $tags as tagName
-          MERGE (t:Tag {name: tagName})
-          ON CREATE SET t.id = ${"'" + uuidv4() + "'"},
-                        t.color = $randomColor,
-                        t.createdAt = $timestamp,
-                        t.updatedAt = $timestamp
-          CREATE (n)-[:HAS_TAG]->(t)
+          UNWIND $tags AS tagName
+          MERGE (t:Tag {name: tagName, userId: $userId})
+          ON CREATE SET 
+            t.id = $tagId,
+            t.color = $randomColor,
+            t.userId = $userId,
+            t.createdAt = $timestamp,
+            t.updatedAt = $timestamp
+          MERGE (n)-[:HAS_TAG]->(t)
         `;
       }
       
@@ -832,6 +834,7 @@ class Neo4jDriver {
         userId: userId || null,
         timestamp,
         tags,
+        tagId: uuidv4(),
         randomColor
       });
       
@@ -901,11 +904,12 @@ class Neo4jDriver {
             // Use MERGE with ON CREATE to only set properties if the tag is new
             await txc.run(`
               MERGE (t:Tag {name: $tagName})
-              ON CREATE SET 
-                t.id = $tagId, 
-                t.color = $color, 
-                t.createdAt = $now, 
-                t.updatedAt = $now
+                ON CREATE SET 
+                  t.id = $tagId,
+                  t.color = $color,
+                  t.userId = $userId,
+                  t.createdAt = $now,
+                  t.updatedAt = $now
               WITH t
               MATCH (n:Note {id: $noteId})
               MERGE (n)-[:HAS_TAG]->(t)
@@ -914,7 +918,8 @@ class Neo4jDriver {
               tagId: uuidv4(),
               color: this.getRandomTagColor(),
               now,
-              noteId
+              noteId,
+              userId: userId || null
             });
           }
         }
@@ -943,7 +948,8 @@ class Neo4jDriver {
           content: noteProps.content,
           tags: tagNames,
           createdAt: noteProps.createdAt,
-          updatedAt: noteProps.updatedAt
+          updatedAt: noteProps.updatedAt,
+          userId: noteProps.userId
         };
       } catch (txError) {
         await txc.rollback();
@@ -1031,7 +1037,9 @@ class Neo4jDriver {
       await session.run('CREATE CONSTRAINT group_id IF NOT EXISTS FOR (g:VerseGroup) REQUIRE g.id IS UNIQUE');
       await session.run('CREATE CONSTRAINT group_connection_id IF NOT EXISTS FOR (gc:GroupConnection) REQUIRE gc.id IS UNIQUE');
       await session.run('CREATE CONSTRAINT tag_id IF NOT EXISTS FOR (t:Tag) REQUIRE t.id IS UNIQUE');
-      await session.run('CREATE CONSTRAINT tag_name IF NOT EXISTS FOR (t:Tag) REQUIRE t.name IS UNIQUE');
+      
+      // Create an index on the userId property for faster tag lookups by user
+      await session.run('CREATE INDEX tag_user_id_idx IF NOT EXISTS FOR (t:Tag) ON (t.userId)');
       
       console.debug('Neo4j database indexes and constraints created');
     } catch (error) {
@@ -1735,15 +1743,15 @@ class Neo4jDriver {
   public async getTags(userId?: string): Promise<Tag[]> {
     const session = this.getSession();
     try {
-      // Modify query to filter by user ownership if userId is provided
+      // Modify query to filter by userId instead of user ownership relationship
       let query = `
         MATCH (t:Tag)
       `;
       
-      // Add user ownership filter if userId is provided
+      // Filter by userId if provided
       if (userId) {
         query += `
-        MATCH (u:User {id: $userId})-[:OWNS]->(t)
+        WHERE t.userId = $userId
         `;
       }
       
@@ -1762,6 +1770,7 @@ class Neo4jDriver {
           color: tagProps.color,
           createdAt: tagProps.createdAt,
           updatedAt: tagProps.updatedAt,
+          userId: tagProps.userId
         };
       });
     } finally {
@@ -1772,15 +1781,15 @@ class Neo4jDriver {
   public async getTagsWithCount(userId?: string): Promise<(Tag & { count: number })[]> {
     const session = this.getSession();
     try {
-      // Modify query to filter by user ownership if userId is provided
+      // Modify query to filter by userId property instead of ownership relationship
       let query = `
         MATCH (t:Tag)
       `;
       
-      // Add user ownership filter if userId is provided
+      // Add userId filter if provided
       if (userId) {
         query += `
-        MATCH (u:User {id: $userId})-[:OWNS]->(t)
+        WHERE t.userId = $userId
         `;
       }
       
@@ -1802,6 +1811,7 @@ class Neo4jDriver {
           color: tagProps.color,
           createdAt: tagProps.createdAt,
           updatedAt: tagProps.updatedAt,
+          userId: tagProps.userId,
           count,
         };
       });
@@ -1820,47 +1830,38 @@ class Neo4jDriver {
     const id = uuidv4();
     
     try {
-      // Check if tag with same name already exists (case insensitive)
-      const existingTagResult = await session.run(`
+      // Check if tag with same name already exists for this user (case insensitive)
+      let existingTagQuery = `
         MATCH (t:Tag)
         WHERE toLower(t.name) = toLower($name)
-        RETURN t
-      `, { name: name.trim() });
+      `;
+      
+      // Add userId condition if provided
+      if (userId) {
+        existingTagQuery += ` AND t.userId = $userId`;
+      }
+      
+      existingTagQuery += ` RETURN t`;
+      
+      const existingTagResult = await session.run(existingTagQuery, { 
+        name: name.trim(), 
+        userId: userId || null 
+      });
       
       if (existingTagResult.records.length > 0) {
         throw new Error(`Tag with name "${name}" already exists`);
       }
       
-      // Start building the query
-      let query = '';
-      
-      // Add user match if userId is provided
-      if (userId) {
-        query += `
-          MATCH (u:User {id: $userId})
-        `;
-      }
-      
-      // Create the tag
-      query += `
+      // Create the tag with userId property instead of OWNS relationship
+      const query = `
         CREATE (t:Tag {
           id: $id,
           name: $name,
           color: $color,
+          userId: $userId,
           createdAt: $now,
           updatedAt: $now
         })
-      `;
-      
-      // Add ownership relationship if userId is provided
-      if (userId) {
-        query += `
-          CREATE (u)-[:OWNS]->(t)
-        `;
-      }
-      
-      // Return the tag
-      query += `
         RETURN t
       `;
       
@@ -1878,7 +1879,8 @@ class Neo4jDriver {
         name: tagProps.name,
         color: tagProps.color,
         createdAt: tagProps.createdAt,
-        updatedAt: tagProps.updatedAt
+        updatedAt: tagProps.updatedAt,
+        userId: tagProps.userId
       };
     } finally {
       await session.close();
@@ -1890,10 +1892,19 @@ class Neo4jDriver {
     const now = new Date().toISOString();
     
     try {
-      // Check ownership if userId is provided
+      // Check ownership using userId property instead of relationship
       if (userId) {
-        const ownershipCheck = await this.userOwnsTag(userId, tagId);
-        if (!ownershipCheck) {
+        const tagResult = await session.run(`
+          MATCH (t:Tag {id: $tagId})
+          RETURN t.userId as ownerId
+        `, { tagId });
+        
+        if (tagResult.records.length === 0) {
+          throw new Error(`Tag with ID ${tagId} not found`);
+        }
+        
+        const ownerId = tagResult.records[0].get('ownerId');
+        if (ownerId && ownerId !== userId) {
           throw new Error(`User ${userId} does not have permission to update tag ${tagId}`);
         }
       }
@@ -1904,11 +1915,23 @@ class Neo4jDriver {
       if (updates.name) {
         // Check if the new name conflicts with an existing tag
         if (updates.name.trim()) {
-          const existingTagResult = await session.run(`
+          let existingQuery = `
             MATCH (t:Tag)
             WHERE t.id <> $id AND toLower(t.name) = toLower($name)
-            RETURN t
-          `, { id: tagId, name: updates.name.trim() });
+          `;
+          
+          // Add userId check if provided
+          if (userId) {
+            existingQuery += ` AND t.userId = $userId`;
+          }
+          
+          existingQuery += ` RETURN t`;
+          
+          const existingTagResult = await session.run(existingQuery, { 
+            id: tagId, 
+            name: updates.name.trim(),
+            userId 
+          });
           
           if (existingTagResult.records.length > 0) {
             throw new Error(`Tag with name "${updates.name}" already exists`);
@@ -1948,6 +1971,7 @@ class Neo4jDriver {
         color: tagProps.color,
         createdAt: tagProps.createdAt,
         updatedAt: tagProps.updatedAt,
+        userId: tagProps.userId
       };
     } finally {
       await session.close();
@@ -1957,10 +1981,19 @@ class Neo4jDriver {
   public async deleteTag(tagId: string, userId?: string): Promise<boolean> {
     const session = this.getSession();
     try {
-      // Check ownership if userId is provided
+      // Check ownership using userId property instead of OWNS relationship
       if (userId) {
-        const ownershipCheck = await this.userOwnsTag(userId, tagId);
-        if (!ownershipCheck) {
+        const tagResult = await session.run(`
+          MATCH (t:Tag {id: $tagId})
+          RETURN t.userId as ownerId
+        `, { tagId });
+        
+        if (tagResult.records.length === 0) {
+          throw new Error(`Tag with ID ${tagId} not found`);
+        }
+        
+        const ownerId = tagResult.records[0].get('ownerId');
+        if (ownerId && ownerId !== userId) {
           throw new Error(`User ${userId} does not have permission to delete tag ${tagId}`);
         }
       }
@@ -1970,20 +2003,14 @@ class Neo4jDriver {
       
       try {
         // First detach all relationships
-        await txc.run(`
-          MATCH (t:Tag {id: $id})
-          OPTIONAL MATCH (t)<-[r:HAS_TAG]-()
-          DELETE r
-        `, { id: tagId });
-        
-        // Then delete the tag
         const result = await txc.run(`
           MATCH (t:Tag {id: $id})
-          DELETE t
-          RETURN count(t) as deleted
+          WITH t, t.id AS deletedTagId
+          DETACH DELETE t
+          RETURN deletedTagId
         `, { id: tagId });
         
-        const deleted = result.records[0].get('deleted').toNumber() > 0;
+        const deleted = result.records[0].get('deletedTagId') !== null;
         
         if (deleted) {
           await txc.commit();
@@ -1997,24 +2024,6 @@ class Neo4jDriver {
         console.error('Transaction error deleting tag:', txError);
         throw txError;
       }
-    } finally {
-      await session.close();
-    }
-  }
-
-  // Check if a user owns a tag
-  public async userOwnsTag(userId: string, tagId: string): Promise<boolean> {
-    const session = this.getSession();
-    try {
-      const result = await session.run(`
-        MATCH (u:User {id: $userId})-[:OWNS]->(t:Tag {id: $tagId})
-        RETURN count(t) as count
-      `, { userId, tagId });
-      
-      return result.records[0].get('count').toNumber() > 0;
-    } catch (error) {
-      console.error(`Error checking if user ${userId} owns tag ${tagId}:`, error);
-      throw error;
     } finally {
       await session.close();
     }

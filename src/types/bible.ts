@@ -97,6 +97,7 @@ export interface Tag {
   color: string;
   createdAt: string;
   updatedAt: string;
+  userId?: string;
 }
 
 export interface VerseTag {
