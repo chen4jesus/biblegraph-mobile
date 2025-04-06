@@ -454,7 +454,8 @@ const VerseDetailScreen: React.FC = () => {
 
   const handleDeleteNote = async (noteId: string) => {
     try {
-      const success = await DatabaseService.deleteNote(noteId);
+      const currentUser = await AuthService.getCurrentUser();
+      const success = await DatabaseService.deleteNote(noteId, currentUser?.id);
                 
                 if (success) {
                   setNotes(notes.filter(note => note.id !== noteId));
@@ -780,29 +781,29 @@ const VerseDetailScreen: React.FC = () => {
             )}
           </View>
         </TouchableOpacity>
-        
-        {!isProtectedConnection && (
-          // Simplified delete button implementation
-          <TouchableOpacity
-            style={[styles.deleteConnectionButton, { padding: 12 }]}
-            onPress={() => {
-              console.debug('Directly deleting connection with ID:', item.id);
-              // Get current user for ownership
-              AuthService.getCurrentUser().then(currentUser => {
-                DatabaseService.deleteConnection(item.id, currentUser?.id);
-                console.debug('Connection deleted from database');
-                
-                // Update the connections state to remove this connection
-                setConnections(prev => prev.filter(c => c.id !== item.id));
-                
-                // Show success message
-                showNotification(t('verseDetail:connectionDeleted'));
-              });
-            }}
-          >
-            <Ionicons name="trash-outline" size={18} color="#FF3B30" />
-          </TouchableOpacity>
-        )}
+
+          {!isProtectedConnection && (
+            // Simplified delete button implementation
+            <TouchableOpacity
+              style={[styles.deleteConnectionButton, { padding: 12 }]}
+              onPress={() => {
+                console.debug('Directly deleting connection with ID:', item.id);
+                // Get current user for ownership
+                AuthService.getCurrentUser().then(currentUser => {
+                  DatabaseService.deleteConnection(item.id, currentUser?.id);
+                  console.debug('Connection deleted from database');
+                  
+                  // Update the connections state to remove this connection
+                  setConnections(prev => prev.filter(c => c.id !== item.id));
+                  
+                  // Show success message
+                  showNotification(t('verseDetail:connectionDeleted'));
+                });
+              }}
+            >
+              <Ionicons name="trash-outline" size={18} color="#FF3B30" />
+            </TouchableOpacity>
+          )}
       </View>
     );
   };
@@ -1003,7 +1004,6 @@ const VerseDetailScreen: React.FC = () => {
               data={connections}
               keyExtractor={(item) => `connection-${item.id}-${item.sourceVerseId}-${item.targetVerseId}`}
               renderItem={renderConnectionItem}
-              
             />
           )}
         </>
