@@ -970,8 +970,8 @@ class Neo4jDriver {
       const checkResult = await session.run(`
         MATCH (n:Note {id: $id})
         ${userId ? 'MATCH (u:User {id: $userId})' : ''}
-        ${userId ? 'OPTIONAL MATCH (u)-[:OWNS]->(n)' : ''}
-        RETURN count(n) as noteExists ${userId ? ', count((u)-[:OWNS]->(n)) as userOwns' : ''}
+        ${userId ? 'OPTIONAL MATCH p=(u)-[:OWNS]->(n)' : ''}
+        RETURN count(n) as noteExists ${userId ? ', count(p) as userOwns' : ''}
       `, { id: noteId, userId });
       
       const noteExists = checkResult.records[0].get('noteExists') !== 0;
